@@ -120,7 +120,7 @@ and security explicitly, before a step counts as done. "It runs" is not "done."
 ## 1. Status Summary
 
 **Current phase:** Phase 1 — Foundation (complete, pending U12b's human-ack formality — see B5)
-**Last updated:** 2026-09-02 (Units 1-12 + 12a/12b/12c done — Phase 1 genuinely complete, 11/11 checklist items closed; the same audit found 4 more checklist items with no covering unit in Phases 2-3, recorded as a standing correction to apply when those units are scoped — see B7/§4/DD-17/DD-18)
+**Last updated:** 2026-09-02 (Units 1-12 + 12a/12b/12c done — Phase 1 genuinely complete, 11/11 checklist items closed; committed to git. The same audit found 4 more checklist items with no covering unit in Phases 2-3, recorded as a standing correction to apply when those units are scoped — see B7/§4/DD-17/DD-18. Per the user's standing instruction, paused here to discuss and PRD-amend the Builder↔Analyst persona-chat feature before starting Phase 2 — see B8/DD-19; U21/U23 descriptions corrected, new placeholder unit U21a added for Phase 3)
 
 | Phase | Status |
 |---|---|
@@ -142,6 +142,7 @@ and security explicitly, before a step counts as done. "It runs" is not "done."
 | B5 | harness-os units classified risk=critical require `human-ack` (`harness approve`), which this non-interactive session cannot run | Tracked per-unit as they arise | See table below |
 | B6 | harness-os's `tests`-stage auto-capture never fires for Python units — `~/.local/bin/pytest` resolves to an unrelated project's (`ApexTrade`) venv, missing MeadowOps' deps | User decision 2026-09-01 (harness-os decision id 1516): leave shared tooling alone. See §0.1 "Known limitation." | Accepted, won't fix |
 | B7 | Unit decomposition (U1-U33) was never validated item-by-item against each phase's own checklist (§4/§5/§6/§7) — it has gaps in 3 of 4 phases. Discriminator: every unit's spec-id prefix is backend-typed (INFRA/DATA/DOM/DOMAIN/API/PROD/QA/HARDEN) except `MEADOWOPS-UI-001` (U21) — the only UI-typed unit in the whole 33-unit plan — and U8, made full-stack by an explicit advisor-consulted exception. Any checklist item that requires an actually-rendered, wired page has no unit behind it unless U21 or U8 covers it. **Phase 1** (3 of 11 items): Appendix D pages wired to the real API; simulation-clock skeleton (`advance_simulation()` deferred at U4, initial `world_state`/`simulation_clock` seed row deferred at U5, neither picked up since); control-tower dashboard skeleton. **Phase 2** (3 of 10 items): item 4 dashboard drill-down (U16 is `API-003`, "endpoints" only); item 8 scenario builder controls (U18 is `DOMAIN-009`, Builder-facing UI with no UI-typed unit); item 9 Query Playground full functionality — editor/results/confirm dialog (U19 is `DOMAIN-010`, and this is Phase 2's own exit criterion). **Phase 3** (1 of 10 items): item 6 admin SQL query history view (U28 is `API-005`, same "titled a view, spec'd as endpoints" pattern as U16). Phase 4 checked clean — no rendered-page-dependent item lacks a covering unit. See DD-17 for the full per-item pass and reasoning. | **Decided 2026-09-02.** (1) New units U12a/U12b/U12c scope the 3 actionable Phase 1 items — see §4. (2) Confirmed: no new sibling units for the Phase 2/3 items — **U16** (dashboard drill-down, not U14 — U14 is the KPI-calculation dependency, U16 is the unit that owns the page) will be built full-stack, and likewise U18 (scenario builder controls), U19 (Query Playground), U28 (admin query-history view), when each is scoped in its own phase. Applies going forward: the same spec-id-prefix check runs before any future unit is scoped. | Phase 1 portion **done** (U12a/b/c — see §4, 11/11 checklist items closed); Phase 2/3 portion recorded as a standing correction, applied when those units are reached |
+| B8 | Per the user's standing instruction to pause after Phase 1 for a PRD discussion before touching Phase 2, the Builder↔Analyst live persona-chat feature (real-time, Messenger-style, one thread per stakeholder persona, Builder-composed via an on-demand AI sufficiency check, Analyst-side file attachments) was discussed and folded into `prd/MeadowOps_PRD_FINAL.md` (§6.1/6.4/6.6/6.13, §7, §8.4, §5.1/5.4, Appendix B/D, §10, §13 — all revised in place, not a bolt-on appendix). This expands scope beyond the original 33-unit plan: U21 needed a description correction (its Analyst-facing half moved from Subsystem 2 to Subsystem 1), U23 gained the AI-sufficiency-check responsibility, and a wholly new unit (U21a, placeholder) is needed for chat delivery infrastructure (data model, websocket layer, the new §7 cross-subsystem exception) that no existing unit covers | **Decided 2026-09-02.** PRD amendment done now (see DD-19). Formal harness-os scoping of U21a deliberately deferred to when Phase 3 begins, not scoped ahead of Phase 2 — same discipline as B7's "when scoped" deferral for U16/U18/U19/U28. U18 (Phase 2, "no AI yet") is explicitly unaffected — the AI-dependent pieces of this feature (composer's AI-suggested message, sufficiency check) can't be usefully built until Phase 3 wires in live AI anyway | PRD amendment done; U21/U23 descriptions corrected in §6; U21a's actual harness-os spec creation open until Phase 3 |
 
 **Critical-risk units awaiting human-ack:**
 | Unit | Spec ID | Decision ID | Notes |
@@ -788,6 +789,74 @@ process decisions. Newest last.
      the prose" pattern as U11's shallow-copy test correction, recurring
      here in a new unit.
 
+- **DD-19 (Builder↔Analyst persona-chat feature — PRD amendment, 2026-09-02,
+  see B8):** Discussed per the user's standing instruction to pause after
+  Phase 1 for this before starting Phase 2. Three rounds of clarifying
+  questions (purpose, threading model, real-time need; relationship to the
+  existing §6 scenario/evaluation system; identity model; chat's location
+  across the two subsystems; document-revision style; message immutability;
+  file-upload scope) converged on a specific design, confirmed back to the
+  user verbatim before any PRD text was written:
+  1. **Chat is the delivery UI for the existing §6 scenario/evaluation
+     system, not a parallel or replacement mechanism.** The AI still
+     generates ground truth and evaluates; the Builder now composes/edits
+     the persona's messages live in chat rather than only approving a
+     pre-generated scenario. This reframing turned out to be bigger than
+     the "add a chat page" framing the discussion started with — it touches
+     §6.1 (work interface), §6.4 (Builder controls), §6.6 (interaction-loop
+     steps 2/5-7), §7 (the subsystem boundary), Appendix D.1/D.2 (both
+     previously said "discard Chat"), and 5.1/8.4 (identity). All revised
+     in place per the user's explicit choice (not a dated appendix) so the
+     PRD stays internally consistent — a bolt-on section would have left
+     §6.1 still saying "email/Slack-like" and D.1 still saying "discard
+     Chat," which is exactly the class of self-contradiction B7's audit
+     exists to catch.
+  2. **Split by role, not duplicated:** the Builder's persona composer +
+     on-demand AI sufficiency check live in Subsystem 2 (Mail page
+     repurposed, D.2); the Analyst's chat inbox lives in Subsystem 1
+     (Chat page un-discarded, D.1) — reached only after the user's first
+     answer ("both subsystems") turned out to mean one app per side of the
+     conversation, not the same UI duplicated in both.
+  3. **The AI sufficiency check is Builder-invoked and advisory, never
+     automatic** — the AI recommends whether a thread is ready to close or
+     needs another pushback round; the Builder decides. Kept explicitly
+     distinct from §6.8's existing post-submission Draft AI evaluation,
+     which still runs once after a thread is marked Completed — conflating
+     the two would have been an easy mistake for a future unit to make.
+  4. **Message immutability wins over the Messenger/Instagram reference
+     UX.** Every sent chat message is permanent — no edit, no unsend — by
+     explicit user choice, matching the Decision & Event Ledger's existing
+     "never silently rewritten" principle (4.4/ER-6) rather than the
+     editable-message behavior of the app this feature is modeled on.
+  5. **File attachments included now, tightly scoped** (type allowlist,
+     hard size cap, object storage not the operational DB, never executed,
+     served only to the two authenticated roles) rather than deferred —
+     the user's explicit choice, since it was the single largest new
+     attack surface this feature introduces and 8.4 would otherwise have
+     nothing to say about it.
+  6. **§7's API-only subsystem boundary gets one new named exception**,
+     following the same pattern 8.4 already uses to justify the SQL
+     Playground's sandboxed-schema carve-out: a shared message store both
+     subsystems' own API layers read/write, with a websocket push for live
+     delivery — not a direct cross-schema database connection.
+  7. **Placement: not a new phase.** This is delivery infrastructure/UI for
+     capabilities already assigned to Phase 2 (scenario controls) and
+     Phase 3 (full simulation loop), not a new category of system
+     capability. U18 (Phase 2, "scenario builder controls... no AI yet") is
+     unaffected — the AI-dependent halves of this feature (AI-suggested
+     compose text, the sufficiency check) can't be usefully built before
+     Phase 3 wires in live AI anyway, so building a no-AI stub in Phase 2
+     just to redo it in Phase 3 would repeat the "plumbing with no real
+     reader yet" mistake DD-11/DD-14/DD-15/DD-17/DD-18 point 3 already
+     declined. Phase 3's U21 needed its description corrected (its
+     Analyst-facing half moved subsystems); U23 gained the sufficiency
+     check; a new placeholder unit (U21a) is needed for chat delivery
+     infrastructure that no existing unit's original scope covers. Formal
+     harness-os scoping of U21a is deliberately deferred to when Phase 3
+     begins — same discipline as B7's "when scoped" deferral for
+     U16/U18/U19/U28 — not scoped ahead of Phase 2, per the user's own
+     sequencing (discuss the chat feature, *then* Phase 2).
+
 *(Further entries — exact field-level schema, prompt wording, exception-threshold
 defaults, KPI SQL specifics — are appended here as each unit lands.)*
 
@@ -871,7 +940,7 @@ Query Playground including its confirmation flow.
 
 Mirrors PRD §10 Phase 3 checklist (10 items) + Exit Criterion.
 
-- [ ] In-app work interface complete (home page, notifications, drafting, deadlines)
+- [ ] In-app work interface complete: real-time persona-chat inbox (Subsystem 1) and composer/thread monitor (Subsystem 2), notifications, drafting, deadlines, file attachments (6.1/6.13, added 2026-09-02 — see B8/DD-19)
 - [ ] Full multi-round loop working end-to-end (6.6, steps 1–10), validated via QA test-analyst runs
 - [ ] Stakeholder personas implemented and behaving distinctly
 - [ ] Decision & Event Ledger live with at least one full lifecycle tested (proposed → outcome)
@@ -889,9 +958,10 @@ evaluation, ledger recording. A simulated callback scenario has actually run.
 ### Phase 3 units
 | Unit | Spec ID (planned) | Description | Status |
 |---|---|---|---|
-| U21 | MEADOWOPS-UI-001 | In-app work interface (Mail-style: home/notifications/drafting/deadlines) | Not started |
+| U21 | MEADOWOPS-UI-001 | **Corrected 2026-09-02 (see B8/DD-19):** Analyst's persona-chat inbox (Subsystem 1, Appendix D.1's Chat page, S1-FR-15) + Builder's composer/thread monitor (Subsystem 2, Mail page repurposed) — was "Mail-style, Subsystem 2 only," now full-stack across both apps per 6.1/6.13's chat redesign | Not started |
+| U21a | *(not yet scoped — placeholder)* | **Added 2026-09-02 (see B8/DD-19):** Chat delivery infrastructure — Chat Thread/Chat Message data model (Appendix B), websocket real-time layer, the §7 named cross-subsystem exception (shared message store, each side still API-only). U21 depends on this existing first. To be formally scoped via harness-os when Phase 3 begins, not scoped ahead of Phase 2 | Not scoped |
 | U22 | MEADOWOPS-DOMAIN-011 | Claude scenario generation + validation pipeline (6.4) | Not started |
-| U23 | MEADOWOPS-DOMAIN-012 | Stakeholder persona roleplay + multi-round pushback loop (6.5, 6.6) | Not started |
+| U23 | MEADOWOPS-DOMAIN-012 | Stakeholder persona roleplay + multi-round pushback loop (6.5, 6.6). **Amended 2026-09-02 (see B8/DD-19):** also covers the Builder-invoked AI sufficiency check (6.13) — same AI-wiring moment, same conversational mechanics | Not started |
 | U24 | MEADOWOPS-DOMAIN-013 | Ledger full lifecycle wiring + callback mechanism (4.4) | Not started |
 | U25 | MEADOWOPS-DOMAIN-014 | AI evaluation framework (schema-validated) + adaptive difficulty engine (6.7, 6.8) | Not started |
 | U26 | MEADOWOPS-DOMAIN-015 | Human review workflow mechanism (ER-1–ER-6) + portfolio export (6.9, 6.10) | Not started |

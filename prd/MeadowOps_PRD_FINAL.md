@@ -151,7 +151,7 @@ One consolidated mechanism. Every record is either an **operational event** or a
 
 ### 5.1 Scope boundaries
 
-**In scope:** entities/flows below; procure-to-stock; order-to-ship; realistic imperfections (5.5); warehouse transfers; carrier variability; world-state snapshot/reset (4.2); the Decision & Event Ledger (4.4); full master-data CRUD via admin panel (5.6); the SQL Query Playground (5.9).
+**In scope:** entities/flows below; procure-to-stock; order-to-ship; realistic imperfections (5.5); warehouse transfers; carrier variability; world-state snapshot/reset (4.2); the Decision & Event Ledger (4.4); full master-data CRUD via admin panel (5.6); the SQL Query Playground (5.9); **the Analyst's persona-chat inbox (S1-FR-15, 6.13 — added 2026-09-02)**.
 
 **Out of scope:** multi-currency/region, batch/lot or serial tracking, returns/reverse logistics, GL/invoicing beyond basic PO cost, real supplier/carrier API integrations, route optimization, live carrier integrations, auth/multi-tenant complexity beyond two users.
 
@@ -179,6 +179,7 @@ See Appendix A. Exact inclusion/exclusion rules are defined by the Builder durin
 | S1-FR-12 | Admin panel supports full CRUD (create, edit, deactivate) for Warehouse, Supplier, and Carrier master data — the data in Section 3 is the seeded starting point, not a fixed constant |
 | S1-FR-13 | A "Query" page provides a SQL playground: free-form SQL execution against a sandboxed replica of the operational schema, with a syntax-highlighted editor and tabular results (5.9) |
 | S1-FR-14 | Every query submitted through the Query page — read or write, executed or cancelled — is logged (timestamp, user, query text, statement type, result status) for the admin history view (6.12) |
+| S1-FR-15 | *(Added 2026-09-02)* A real-time, persona-threaded chat inbox delivers and receives persona-chat messages (6.13) with unread-thread badges and Analyst-side file attachments |
 
 ### 5.5 Realistic data imperfections
 
@@ -227,12 +228,12 @@ A page where the Analyst (or the Builder, during testing) can write and run **an
 ## 6. Subsystem 2: The Analyst Work Simulation Engine
 
 ### 6.1 The in-app work experience
-An **email/Slack-like work interface**. A scenario begins with an inbound request from a stakeholder persona (6.5).
+**Amended 2026-09-02 (see 6.13):** a **real-time, persona-threaded chat interface** — Messenger/Instagram-style, one thread per stakeholder persona, delivered live over a websocket connection — replaces the earlier email/Slack-inbox model. A scenario begins with the Builder, acting as a stakeholder persona (6.5), sending the thread's opening chat message from Subsystem 2's persona composer (6.4/6.13); the Analyst receives and works it from her chat inbox in Subsystem 1 (6.13).
 
-- **Home page:** Open Work, Company Status, Notifications, Completed Work. **Difficulty tier and evaluation scores are never shown here** (6.7).
-- **Notifications (in-app only):** new request, stakeholder response, pushback, reminder, deadline approaching/missed, scenario completed, monthly review available.
-- **Drafting:** save indefinitely, edit across sessions; immutable on Send or deadline expiry.
-- **Response windows:** default **3–5 real-world days per round**, once Active Use begins.
+- **Home page:** Open Threads, Company Status, Notifications, Completed Work. **Difficulty tier and evaluation scores are never shown here** (6.7).
+- **Notifications:** unread-thread badges in both the Analyst's inbox (Subsystem 1) and the Builder's composer (Subsystem 2) — new message, deadline approaching/missed, scenario completed, monthly review available.
+- **Drafting:** composer content (the Builder's persona message or the Analyst's reply) can be saved and edited indefinitely before Send. **Once a message is sent it is immutable — no edit, no unsend** (6.13), consistent with the Decision & Event Ledger's never-silently-rewritten principle (4.4/ER-6), even though this diverges from a real Messenger/Instagram app.
+- **Response windows:** default **3–5 real-world days per round**, once Active Use begins, surfaced as a deadline banner on the open thread.
 - **Late handling:** marked late, Builder notified; lateness affects evaluation only when explicitly part of what's assessed.
 - **External tools:** explicitly permitted (Excel, SQL tools, Python, search, even other AI tools) — the evaluator judges reasoning and communication, not tool use.
 - **Work states:** Draft → Open → Awaiting Analyst → Awaiting Stakeholder Reply → Deadline Approaching → Overdue → Under AI Evaluation → Pending Human Review → Completed.
@@ -259,7 +260,7 @@ Hidden ground-truth package per diagnosable scenario: **Known Cause, Evidence, S
 
 **Scenario validation** before reaching the Analyst: referenced IDs/values match the database, dates are consistent, KPI claims are correct, no contradiction with world state, ground-truth evidence exists, difficulty is valid. On failure: reject, notify Builder, regenerate or edit. **The failure path itself is a required test case** (9.2) — the system must handle a scenario that fails validation gracefully, not silently.
 
-**Builder scenario controls:** select type/storyline/injected issue, set difficulty, preview, inspect evidence/ground truth, edit, regenerate, approve/cancel/activate.
+**Builder scenario controls:** select type/storyline/injected issue, set difficulty, preview, inspect evidence/ground truth, edit, regenerate, approve/cancel/activate. **Amended 2026-09-02:** also includes the live persona composer and the on-demand AI sufficiency check (6.13).
 
 ### 6.5 Stakeholder personas & information asymmetry
 
@@ -273,14 +274,15 @@ Hidden ground-truth package per diagnosable scenario: **Known Cause, Evidence, S
 | CFO | Financial impact, cost, risk, measurable outcomes | Concise, financially oriented |
 
 ### 6.6 The iterative interaction loop
+**Amended 2026-09-02:** steps 2 and 5–7 are now live chat turns in the persona thread (6.13), not scripted inbox events.
 1. **Trigger** — Builder (or, in Active Use, the ongoing cadence) approves a scenario at the current difficulty tier, optionally referencing the Decision & Event Ledger for continuity.
-2. **Notification & initial request.**
+2. **Notification & initial request** — the Builder, as the chosen persona, composes and sends the thread's opening chat message (typed or AI-suggested, 6.13).
 3. **Investigation.**
-4. **Initial response**, within the response window.
-5. **Stakeholder pushback.**
-6. **Revision.**
+4. **Initial response**, within the response window, sent as a chat message by the Analyst.
+5. **Stakeholder pushback** — the Builder, optionally after invoking the AI sufficiency check (6.13), composes and sends a pushback message as the persona.
+6. **Revision** — the Analyst's next chat message.
 7. *(Optional additional round.)*
-8. **Final submission** — immutable.
+8. **Final submission** — the Builder marks the thread Completed, informed by the AI sufficiency check's recommendation but never automatically triggered by it (6.13); the Analyst's most recent message is the submission of record. Immutable, same as every prior message.
 9. **Draft AI evaluation** plus a difficulty-tier recommendation.
 10. **Decision recording** into the Ledger, if applicable.
 11. **Human review (monthly, Active Use only)** — tier recommendations approved or rejected.
@@ -325,10 +327,30 @@ The admin panel surfaces Query-page activity (5.9, S1-FR-14) — a table of subm
 ### 6.11 Non-functional requirements
 Reusable/templated prompts; versioned prompts that never silently rewrite history; full exportable history.
 
+### 6.13 Live persona chat: delivery, composer & AI sufficiency check
+**Added 2026-09-02.** Full mechanics for the chat redesign referenced throughout 6.1/6.4/6.6.
+
+**Thread model:** one persistent thread per stakeholder persona (6.5) per scenario, not one flat inbox — a Messenger/Instagram-style thread list. A given persona can have more than one thread open across different scenarios.
+
+**Split by role, one shared thread store:**
+- **Builder's persona composer (Subsystem 2):** pick the persona, pick an attitude, then type a message or accept an AI-suggested one, and send it as that persona. Also where the Builder invokes the on-demand **AI sufficiency check**.
+- **Analyst's chat inbox (Subsystem 1):** receives and replies to threads live, with unread-thread badges (Appendix D.1).
+- Both sides read and write through their own subsystem's API layer only — see 7's named exception for how the same thread is reachable, live, from both sides without either side reaching into the other's database.
+
+**AI sufficiency check:** Builder-invoked, mid-conversation, on the current thread. The AI reviews the Analyst's latest message against the scenario's ground truth (6.4) and **recommends** either "sufficient — safe to mark this thread Completed" or "insufficient — here's a suggested pushback message." This is a recommendation only, consistent with the AI never being authoritative (ER-1) — the Builder decides whether to act on it. It is distinct from the post-submission **Draft AI evaluation** (6.8), which runs once after a thread is marked Completed and produces the full graded write-up; the sufficiency check never writes an evaluation record itself.
+
+**Immutability:** every sent chat message is permanent — no edit, no unsend, by either role — per 6.1's amended Drafting bullet. Unlike a real Messenger/Instagram app, "send" has no undo here; it is deliberately the same rule already applied to the rest of the Decision & Event Ledger (4.4/ER-6).
+
+**File attachments (Analyst-side, tightly scoped):** allowlisted types only (images, PDF, CSV); a hard per-file size cap; stored in object storage, never in the operational Postgres database; never executed or interpreted server-side; served back only to the two authenticated roles on the thread. See 8.4.
+
+**Identity:** the Builder and Analyst are distinguished by separate static per-role credentials (still just two users, not a full identity system — 5.1's scope boundary is unchanged) so the real-time delivery layer knows which inbox a given connection belongs to. See 8.4.
+
 ---
 
 ## 7. Integration Between Subsystems
 Subsystem 2 reads Subsystem 1's data exclusively through its API layer (S1-FR-6) — never via a direct database connection (8.4). Data changes are reflected in scenarios generated afterward. Schema, KPI definitions, and scenario types are designed together, not sequentially, since they're interdependent.
+
+**Amended 2026-09-02 — the one named exception to this boundary:** live persona-chat delivery (6.13) needs bidirectional, real-time message flow between the Builder's composer (Subsystem 2) and the Analyst's inbox (Subsystem 1). This is implemented as a single shared message store that each subsystem's own API layer reads and writes, with a websocket push on top for live delivery — **not** a direct database connection from one subsystem into the other's schema. Each subsystem still only ever queries its own API layer; the real-time transport is the deliberate carve-out, the same pattern 8.4 already uses for the SQL Query Playground's sandboxed-schema exception.
 
 ---
 
@@ -349,6 +371,8 @@ Low-volume LLM calls, evidence-only retrieval, free-tier hosting where practical
 
 ### 8.4 Security & safety
 Isolate LLM access from direct database write access; **Subsystem 2 reads Subsystem 1's data only through the API layer (S1-FR-6), never via direct SQL** — one boundary, not two overlapping paths; parameterized queries only in application code; secrets (Claude API key, DB credentials) live in environment variables — `.env` locally, the hosting platform's secret store in the deployed environment, never committed to source control; restrict admin operations to the Builder; validate all AI-generated scenario references before activation. **The SQL Query Playground (5.9) is the one deliberate exception to "no raw SQL"** — it connects through a Postgres role scoped only to the sandbox replica schema, unable to reach the live operational schema or Subsystem 2's ledger/evaluation tables under any query — a boundary that must be verified with an actual permission test (9.2), not just asserted.
+
+**Amended 2026-09-02 — persona chat (6.13):** the Builder and Analyst are distinguished by two separate static bearer credentials (one per role), still just a shared-secret model for two known users, not a full identity/session system — consistent with 5.1's "auth/multi-tenant complexity beyond two users" being explicitly out of scope. **File attachments** are the largest new attack surface this feature introduces and are scoped narrowly: an allowlist of file types (images, PDF, CSV), a hard per-file size cap, storage in object storage rather than the operational Postgres database, no server-side execution or interpretation of uploaded content, and files served back only to the two authenticated roles on the owning thread — this boundary must be tested directly (9.2), not just asserted, same as the Query Playground's.
 
 ### 8.5 Non-functional requirements
 Reliability (drafts/submissions never lost — verified by the test suite in Section 9, not just asserted); maintainability (one Builder can understand the system); observability (can answer "what did the Analyst see/submit/when" for any completed scenario); documentation kept current.
@@ -480,14 +504,14 @@ No calendar targets — phases are sequential and dependency-based. Each has a c
 - [ ] API layer exposed for Subsystem 2
 - [ ] Reporting-layer lag implemented (SR-2)
 - [ ] At least one seeded conflicting-source or bad-data case working (SR-3/SR-4)
-- [ ] Scenario builder controls working (select/inject/preview/approve)
+- [ ] Scenario builder controls working (select/inject/preview/approve), including the persona composer and AI sufficiency check (6.4/6.13, added 2026-09-02)
 - [ ] SQL Query Playground fully functional: editor, results table, confirmation dialog for DML/DDL, query logging, statement timeout, row limits (5.9, S1-FR-13/14)
 - [ ] Integration tests covering the Subsystem 1 ↔ Subsystem 2 API boundary passing
 
 **Exit criterion:** the dashboard is demoable with real KPIs and drill-down; a data-quality issue can be injected and observed; a QA test run has exercised the Query Playground including its confirmation flow.
 
 ### Phase 3 — Full Simulation Loop
-- [ ] In-app work interface complete (home page, notifications, drafting, deadlines)
+- [ ] In-app work interface complete: real-time persona-chat inbox (Subsystem 1) and composer/thread monitor (Subsystem 2), notifications, drafting, deadlines, file attachments (6.1/6.13, added 2026-09-02)
 - [ ] Full multi-round loop working end-to-end (6.6, steps 1–10), validated via QA test-analyst runs
 - [ ] Stakeholder personas implemented and behaving distinctly
 - [ ] Decision & Event Ledger live with at least one full lifecycle tested (proposed → outcome)
@@ -571,6 +595,8 @@ The target scenario-type coverage for QA validation remains all 6; if genuinely 
 | LLM costs exceed budget | $20/month target; evidence-only retrieval, applies to QA test traffic too (8.3) |
 | Query Playground's sandbox boundary has a gap | Explicit database-permission test required before Done, not just design intent (9.2) |
 | Untested backup turns out not to actually work when needed | Restore drill required before Done, not just backup configuration (8.6, 9.3) |
+| Persona-chat's real-time cross-subsystem path erodes the API-only boundary (added 2026-09-02) | Named as the one explicit exception (7), both sides still only query their own API layer, shared message store not a cross-schema DB connection (6.13) |
+| Chat file attachments become an injection/storage vector (added 2026-09-02) | Type allowlist, size cap, object storage (not the operational DB), no server-side execution, tested directly like the Query Playground boundary (8.4, 9.2) |
 
 ---
 
@@ -595,6 +621,7 @@ Everything substantive has been resolved. What remains is entirely execution, no
 **Dimensions (6):** Product, Warehouse, Supplier, Customer, Carrier, Date.
 **Facts (7):** Inventory Snapshot, Inventory Transaction, Purchase Order, Sales Order, Shipment, Warehouse Transfer, Decision & Event (unified ledger).
 **Subsystem 2 supporting tables (~9):** Scenario, Scenario Snapshot, Stakeholder Persona, Interaction, Evaluation, Human Review, Portfolio Artifact, Prompt Version, Template Version.
+**Chat (added 2026-09-02, 6.13):** Chat Thread (one per persona per scenario) and Chat Message (individual sent messages, immutable, optionally carrying a file-attachment reference) — Interaction rows for a scenario now correspond to its thread's Chat Messages rather than a separate parallel record.
 
 ---
 
@@ -629,16 +656,17 @@ Next.js 16, TypeScript, Tailwind v4, shadcn/ui, Recharts, TanStack Table. Demo d
 | Auth (Login only) | Simple auth (8.4) | Drop Register/OTP/Lock-screen variants |
 | 404 | Basic error handling | Drop 403/500/503/Maintenance/Coming-soon |
 | — | **Query page (5.9)** | Not in the template — build with CodeMirror 6 or Monaco, results shown in the reused data table |
+| Chat | **Analyst's persona-chat inbox (S1-FR-15, 6.13)** | **Added 2026-09-02, reversing the original "discard" call below** — thread list = one row per persona, unread badges, file attachment on the Analyst's replies |
 
-**Discard entirely:** Crypto/Web3, Healthcare, HR, Real Estate dashboards; Cart, Checkout, Discounts, Reviews, Categories; Kanban/Timeline/Gantt/Team/Roles & Permissions/Contacts; AI Assistant, Chat, Mail, Calendar, Tasks, Notes, File Manager, Support, Blog; Developers/API-keys, Pricing, Integrations, Help Center; Landing page, Onboarding.
+**Discard entirely:** Crypto/Web3, Healthcare, HR, Real Estate dashboards; Cart, Checkout, Discounts, Reviews, Categories; Kanban/Timeline/Gantt/Team/Roles & Permissions/Contacts; AI Assistant, Mail, Calendar, Tasks, Notes, File Manager, Support, Blog; Developers/API-keys, Pricing, Integrations, Help Center; Landing page, Onboarding. *(Chat removed from this list 2026-09-02 — see the table row above.)*
 
 ### D.2 Subsystem 2 (Analyst Work Simulation Engine) — `chanseek/shadcn-dashboard`
 Use the **Next.js version** (the repo also ships a Vite version) — keeps both subsystems on the same framework. React 19, TypeScript, Tailwind v4, shadcn/ui v3, Zustand, TanStack Table. It's a fork of a landing-page/dashboard combo template — the landing-page half is entirely unrelated and discarded outright.
 
 | Template page | Adapt for | Notes |
 |---|---|---|
-| Mail (Inbox / Read / Compose) | **The core work interface (6.1)** | The single best match in either template — Inbox = Open Work list, Read = scenario detail + stakeholder thread, Compose = drafting a response |
-| Dashboard (Overview) | Home page (6.1) | Open Work / Company Status / Notifications / Completed Work — **must not surface difficulty tier or scores here (6.1, ER-5)** |
+| Mail (Inbox / Read / Compose) | **Builder's persona composer & thread monitor (6.4/6.13)** | **Amended 2026-09-02** — the Analyst's own work interface moved to Subsystem 1's Chat page (Appendix D.1, 6.13); this page is repurposed as the Builder's side instead: Inbox = all active persona threads, Read = a thread's full history, Compose = pick persona/attitude, type or accept an AI-suggested message, send — and invoke the AI sufficiency check |
+| Dashboard (Overview) | Home page (6.1) | Open Threads / Company Status / Notifications / Completed Work — **must not surface difficulty tier or scores here (6.1, ER-5)** |
 | Calendar | Response-window deadline view | Across active scenarios |
 | Users (advanced table) | **Repurposed** — not literal user management (there's one Analyst) | Reused as the table pattern for scenario/portfolio history and the SQL query-history admin view (6.12) |
 | Settings | Analyst notification preferences; separate admin-only area for scenario templates/prompt versions/difficulty overrides | |
@@ -646,4 +674,4 @@ Use the **Next.js version** (the repo also ships a Vite version) — keeps both 
 | Error pages (404 only) | Basic error handling | Drop 401/403/500/Maintenance |
 | Tasks (drag & drop) | *Optional* — kanban view of work-queue states (6.1) | Nice-to-have secondary view, not required for Done |
 
-**Discard entirely:** the full Landing Page template (Hero/About/Features/Stats/Logo Carousel/Team/Testimonials/Blog/Pricing/FAQ/Contact/CTA); Chat (the stakeholder pushback conversation already lives inside the scenario/Mail thread); Billing/Plans, Connections, Pricing, FAQ.
+**Discard entirely:** the full Landing Page template (Hero/About/Features/Stats/Logo Carousel/Team/Testimonials/Blog/Pricing/FAQ/Contact/CTA); Chat (the persona conversation lives in the repurposed Mail page above, on the Builder's side — see 6.13; this app's own Chat template page still isn't needed); Billing/Plans, Connections, Pricing, FAQ.
