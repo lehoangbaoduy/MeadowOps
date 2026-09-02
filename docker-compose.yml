@@ -1,0 +1,21 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: meadowops_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: meadowops
+      POSTGRES_PASSWORD: ${MEADOWOPS_POSTGRES_PASSWORD:?set MEADOWOPS_POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: meadowops
+    ports:
+      - "127.0.0.1:5434:5432"
+    volumes:
+      - meadowops_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U meadowops -d meadowops"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  meadowops_pgdata:
