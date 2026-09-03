@@ -13,8 +13,8 @@ testpaths is scoped to backend/tests):
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SUBSYSTEM_1 = REPO_ROOT / "templates/subsystem_1/orbynadmin"
-SUBSYSTEM_2 = REPO_ROOT / "templates/subsystem_2/shadcn-dashboard"
+SUBSYSTEM_1 = REPO_ROOT / "frontend/subsystem_1/orbynadmin"
+SUBSYSTEM_2 = REPO_ROOT / "frontend/subsystem_2/shadcn-dashboard"
 S2_APP = SUBSYSTEM_2 / "nextjs-version"
 
 S1_KEEP = [

@@ -14,6 +14,13 @@ baseline catalog (baseline_data.py: WH-EAST/S-00x/C-00x/SKU-xxx-0xx) and
 other units' own `-TEST` fixtures, and are deleted in an autouse fixture
 after every test — DD-9/DD-10 already burned this project once on leaked
 test rows breaking a later migration/seeder.
+
+Unit 17a (MEADOWOPS-DOM-010, DD-22): auth migrated from the single shared
+Builder bearer token to signed session tokens minted via
+tests/support/auth.py — list stays reachable by either role
+(require_authenticated), create/update now require the admin role
+(require_admin), so this file also covers the Analyst-gets-403 case that
+require_builder's single shared token had no way to express.
 """
 
 import os
@@ -30,9 +37,11 @@ from app.db.dimensions import Carrier, Product, Supplier, Warehouse
 from app.db.enums import PurchaseOrderStatus, SourceSystem
 from app.db.facts import PurchaseOrder
 from app.main import create_app
+from tests.support.auth import TEST_SESSION_SECRET, make_token
 
-_TOKEN = "test-builder-token-value"
+_TOKEN = make_token("admin")
 _AUTH = {"Authorization": f"Bearer {_TOKEN}"}
+_ANALYST_AUTH = {"Authorization": f"Bearer {make_token('analyst')}"}
 
 _PRODUCT_ID = "ZZTEST-SKU-01"
 _WAREHOUSE_ID = "ZZTEST-WH-01"
@@ -52,7 +61,7 @@ def client() -> Generator[TestClient, None, None]:
     # `with` triggers the app's lifespan (creates app.state.engine) — a bare
     # TestClient(create_app()) would not, and every route in this file needs
     # a real DB session.
-    with TestClient(create_app(settings=Settings(builder_token=_TOKEN))) as c:
+    with TestClient(create_app(settings=Settings(session_secret_key=TEST_SESSION_SECRET))) as c:
         yield c
 
 
@@ -77,15 +86,33 @@ def _cleanup_test_rows(db_session: Session) -> Generator[None, None, None]:
 
 
 @pytest.mark.parametrize("path", _ENTITY_PATHS)
-def test_list_requires_builder_auth(client: TestClient, path: str) -> None:
+def test_list_requires_auth(client: TestClient, path: str) -> None:
     response = client.get(path)
     assert response.status_code == 401
 
 
 @pytest.mark.parametrize("path", _ENTITY_PATHS)
-def test_create_requires_builder_auth(client: TestClient, path: str) -> None:
+def test_create_requires_auth(client: TestClient, path: str) -> None:
     response = client.post(path, json={})
     assert response.status_code == 401
+
+
+@pytest.mark.parametrize("path", _ENTITY_PATHS)
+def test_list_is_reachable_by_the_analyst_role(client: TestClient, path: str) -> None:
+    response = client.get(path, headers=_ANALYST_AUTH)
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("path", _ENTITY_PATHS)
+def test_create_is_forbidden_for_the_analyst_role(client: TestClient, path: str) -> None:
+    response = client.post(path, json={}, headers=_ANALYST_AUTH)
+    assert response.status_code == 403
+
+
+@pytest.mark.parametrize("path", _ENTITY_PATHS)
+def test_update_is_forbidden_for_the_analyst_role(client: TestClient, path: str) -> None:
+    response = client.patch(f"{path}/does-not-matter", json={}, headers=_ANALYST_AUTH)
+    assert response.status_code == 403
 
 
 def test_create_product_then_appears_in_list(client: TestClient) -> None:

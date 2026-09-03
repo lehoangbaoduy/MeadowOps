@@ -18,7 +18,7 @@ import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SUBSYSTEM_1 = REPO_ROOT / "templates/subsystem_1/orbynadmin"
+SUBSYSTEM_1 = REPO_ROOT / "frontend/subsystem_1/orbynadmin"
 LOGISTICS_PAGE = SUBSYSTEM_1 / "src/app/(app)/dashboard/logistics/page.tsx"
 KPI_CARD_COMPONENT = SUBSYSTEM_1 / "src/components/kpi-card.tsx"
 

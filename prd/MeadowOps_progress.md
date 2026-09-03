@@ -119,13 +119,13 @@ and security explicitly, before a step counts as done. "It runs" is not "done."
 
 ## 1. Status Summary
 
-**Current phase:** Phase 1 — Foundation (complete, pending U12b's human-ack formality — see B5)
-**Last updated:** 2026-09-02 (Units 1-12 + 12a/12b/12c done — Phase 1 genuinely complete, 11/11 checklist items closed; committed to git. The same audit found 4 more checklist items with no covering unit in Phases 2-3, recorded as a standing correction to apply when those units are scoped — see B7/§4/DD-17/DD-18. Per the user's standing instruction, paused here to discuss and PRD-amend the Builder↔Analyst persona-chat feature before starting Phase 2 — see B8/DD-19; U21/U23 descriptions corrected, new placeholder unit U21a added for Phase 3)
+**Current phase:** Phase 2 — Operational System — **genuinely complete, 10/10 checklist items closed** (U13-U20 + U20a, see §5/DD-29)
+**Last updated:** 2026-09-03 (Units 1-12 + 12a/12b/12c done — Phase 1 genuinely complete, 11/11 checklist items closed; committed to git. The same audit found 4 more checklist items with no covering unit in Phases 2-3, recorded as a standing correction to apply when those units are scoped — see B7/§4/DD-17/DD-18. Per the user's standing instruction, paused to discuss and PRD-amend the Builder↔Analyst persona-chat feature before starting Phase 2 — see B8/DD-19; U21/U23 descriptions corrected, new placeholder unit U21a added for Phase 3 — committed to git. Phase 2 now underway: U13-U17 done. U16 (dashboard API + drill-down, full-stack) closed B9 by wiring the KPI/exception engines into the scheduler tick, added a net-new Supplier view (S1-FR-5 names it, Appendix D has no page mapping for it), and was Playwright-verified live against 20 real scheduler ticks of seeded data — see DD-20. U16's own security review (1 MEDIUM, 2 LOW) is now fully remediated — unbounded result sets fixed with limit/offset params and query-pushed filters, auth-test coverage expanded to all 13 routes. U17 (Reporting-layer lag + one seeded SR-4 conflict) is the first unit *not* auto-classified critical by the DD-5 keyword false positive, and scoped narrower than its own title — SR-2 + SR-4 only, with SR-1/SR-3 explicitly deferred to Phase 3's own edge-case-catalog item — see DD-21. 445 backend tests passing, orbynadmin `npm run build`/`npm run lint` clean. `templates/` renamed to `frontend/` repo-wide (all path references updated; PRD's own conceptual mentions of "templates" left untouched). Paused again before U18 over a real scope question: the user's answer to a scoping question expanded into admin-panel role-gating (Admin edit-only, Analyst view-only) plus a real email+password login — PRD-amended in place (5.1, 8.4, 346, new S1-FR-16) and inserted as new unit **U17a**, since U18's Builder-only controls depend on `require_admin` existing — see DD-22. **U17a now done** — role-based login shipped full-stack (backend + orbynadmin), `require_builder` fully removed, `require_authenticated`/`require_admin` split across every existing protected route, 57 new tests (445→502), live-verified end-to-end against real dev servers, security-reviewed twice (pre- and post-implementation, both APPROVE) — see DD-23. U18 is now unblocked and ready to be scoped for real (Clients confirmed synonymous with Customer, no new entity; Addresses still undefined and unaddressed). **U18 now done (backend-only)** — scenario builder controls (`engine.scenario`, state machine, approve-time validation, admin-only API) shipped, 561 backend tests passing (502→561), code-reviewer + security-reviewer both APPROVE-after-fixes; frontend deferred to U20 by explicit user decision, since Subsystem 2 has no backend/auth wiring at all yet — see DD-24/DD-26. U21/U21a's persona-chat interface design captured as forward notes, not built — see DD-25. **U19 now done, full-stack** — SQL Query Playground (sandbox refresh via staging-schema atomic-rename swap + explicit table allowlist, app-enforced out-of-band query-cancellation timeout, write-statement confirm dialog, S1-FR-14 audit log, full orbynadmin UI) shipped, 658 backend tests passing (561→658), live-verified end-to-end in a real browser (which also surfaced and fixed a real `search_path` UX bug no automated test caught, migration 0017). code-reviewer + security-reviewer both dispatched post-implementation: one HIGH finding (a PL/pgSQL exception handler supposedly defeating the cancel timeout) was investigated empirically against the real dev Postgres instance and found not exploitable as described — corrected the code's own documentation and its regression test rather than building a fix for a non-existent bug, per this session's standing instruction to adapt to empirical evidence over blindly implementing reviewer specs; the other HIGH (multi-statement submissions unprotected against a mid-flight sandbox refresh) was real and fixed via a shared/exclusive Postgres advisory lock — see DD-27. **U20 now done, boundary/backend only** — the Subsystem1↔Subsystem2 API boundary (DD-2): a new internal-service auth credential (`Settings.internal_service_token`), an `httpx.AsyncClient`/`ASGITransport` built once against the running app instance, an AST-based import-boundary checker, a route-inventory allowlist test, and genuine ASGITransport round-trip integration tests. Scope was narrowed at the user's explicit direction — asked first, since an earlier note had conflictingly bundled U18's scenario-builder UI into this unit — to boundary/backend only, matching Phase 2's actual exit criterion; the UI becomes its own not-yet-scoped follow-on unit. A pre-implementation security review (required by the `security-change` workflow) found the original auth design's "read-only for every route" claim was false against Query Playground's own existing routes (they do real work before ever checking the credential's identity) and required a structural fix (a new `reject_service_role` dependency) before any code shipped; the post-implementation review found one more real gap (the route-allowlist test didn't pin the "public, no-auth-at-all" bucket) plus a missing regression test, both fixed. 689 backend tests passing (658→689). Phase 2's own checklist (§5) was fully closed except item 4 (scenario-builder controls UI), left unchecked pending that follow-on unit. **U20a now done, full-stack** — the scenario-builder-UI follow-on unit, scoped via 9 clarifying `AskUserQuestion`s (all answered "Recommended") after the user asked for exhaustive scoping questions before starting: shadcn-dashboard's own independent login/session (mirroring orbynadmin's Unit 8/17a pattern), a real browsable/filterable picker over open exceptions, a formatted narrative/provenance-split preview, and all 7 of U18's scenario lifecycle operations wired in — zero new backend routes. A pre-implementation security review found the original design's admin-only login gate was a bypassable non-boundary (checking role client-side after the cookie was already set) and a cookie-name collision risk with orbynadmin (browsers scope cookies by host+path, not port); both fixed before any code was written. Live-verified end-to-end in a real browser: admin login, Analyst-login rejection with no session ever established, the full scenario lifecycle (create from a real seeded open exception → edit ground truth → approve → activate, plus a separate regenerate → cancel run), and logout. Post-implementation code review found one real HIGH — a Server Component can't clear a cookie during render, so the admin-gate's redirect on a stale/expired/forged session left the cookie attached and the presence-only middleware bounced `/sign-in` straight back to `/dashboard`, an unrecoverable loop guaranteed to eventually hit every session since the cookie outlives the 8-hour backend JWT — fixed via a new `/api/session-expired` route that clears the cookie and redirects in one response, live-verified by forging an invalid cookie and confirming a clean single redirect with no loop. Also fixed along the way: `components/ui/sonner.tsx` was missing `"use client"` (crashed any page rendering the toast provider) and `nav-user.tsx`'s "Log out" was a dead link that never actually cleared the session. Post-implementation security review: APPROVE, independently confirmed all 5 pre-implementation fixes. No backend changes; backend's 689 tests unaffected. Not committed to git individually — see DD-29.
 
 | Phase | Status |
 |---|---|
 | Phase 1 — Foundation | **Done** (U1-U12 + U12a/U12b/U12c, 11/11 checklist items — see §4). U12b's decision (1546) is `pending_approval`, a critical-risk human-ack formality per B5, not an implementation gap |
-| Phase 2 — Operational System | Not started |
+| Phase 2 — Operational System | **Done — U13-U20 + U20a, checklist (§5) fully closed 10/10** (see §5/DD-29). Decisions 1550/1552/1555/1557 (see §2 B5 table) are `pending_approval`, same B5 human-ack formality. U17's own decision (1559) is `pending_approval` too, but is medium-risk, not critical — it isn't in the B5 table since B5 only tracks critical-risk human-ack. U20's decisions (1569/1570) and U20a's decisions (1573/1574/1575) are also `pending_approval` (same formality) |
 | Phase 3 — Full Simulation Loop | Not started |
 | Phase 4 — Hardening & Delivery | Not started |
 
@@ -143,6 +143,9 @@ and security explicitly, before a step counts as done. "It runs" is not "done."
 | B6 | harness-os's `tests`-stage auto-capture never fires for Python units — `~/.local/bin/pytest` resolves to an unrelated project's (`ApexTrade`) venv, missing MeadowOps' deps | User decision 2026-09-01 (harness-os decision id 1516): leave shared tooling alone. See §0.1 "Known limitation." | Accepted, won't fix |
 | B7 | Unit decomposition (U1-U33) was never validated item-by-item against each phase's own checklist (§4/§5/§6/§7) — it has gaps in 3 of 4 phases. Discriminator: every unit's spec-id prefix is backend-typed (INFRA/DATA/DOM/DOMAIN/API/PROD/QA/HARDEN) except `MEADOWOPS-UI-001` (U21) — the only UI-typed unit in the whole 33-unit plan — and U8, made full-stack by an explicit advisor-consulted exception. Any checklist item that requires an actually-rendered, wired page has no unit behind it unless U21 or U8 covers it. **Phase 1** (3 of 11 items): Appendix D pages wired to the real API; simulation-clock skeleton (`advance_simulation()` deferred at U4, initial `world_state`/`simulation_clock` seed row deferred at U5, neither picked up since); control-tower dashboard skeleton. **Phase 2** (3 of 10 items): item 4 dashboard drill-down (U16 is `API-003`, "endpoints" only); item 8 scenario builder controls (U18 is `DOMAIN-009`, Builder-facing UI with no UI-typed unit); item 9 Query Playground full functionality — editor/results/confirm dialog (U19 is `DOMAIN-010`, and this is Phase 2's own exit criterion). **Phase 3** (1 of 10 items): item 6 admin SQL query history view (U28 is `API-005`, same "titled a view, spec'd as endpoints" pattern as U16). Phase 4 checked clean — no rendered-page-dependent item lacks a covering unit. See DD-17 for the full per-item pass and reasoning. | **Decided 2026-09-02.** (1) New units U12a/U12b/U12c scope the 3 actionable Phase 1 items — see §4. (2) Confirmed: no new sibling units for the Phase 2/3 items — **U16** (dashboard drill-down, not U14 — U14 is the KPI-calculation dependency, U16 is the unit that owns the page) will be built full-stack, and likewise U18 (scenario builder controls), U19 (Query Playground), U28 (admin query-history view), when each is scoped in its own phase. Applies going forward: the same spec-id-prefix check runs before any future unit is scoped. | Phase 1 portion **done** (U12a/b/c — see §4, 11/11 checklist items closed); Phase 2/3 portion recorded as a standing correction, applied when those units are reached |
 | B8 | Per the user's standing instruction to pause after Phase 1 for a PRD discussion before touching Phase 2, the Builder↔Analyst live persona-chat feature (real-time, Messenger-style, one thread per stakeholder persona, Builder-composed via an on-demand AI sufficiency check, Analyst-side file attachments) was discussed and folded into `prd/MeadowOps_PRD_FINAL.md` (§6.1/6.4/6.6/6.13, §7, §8.4, §5.1/5.4, Appendix B/D, §10, §13 — all revised in place, not a bolt-on appendix). This expands scope beyond the original 33-unit plan: U21 needed a description correction (its Analyst-facing half moved from Subsystem 2 to Subsystem 1), U23 gained the AI-sufficiency-check responsibility, and a wholly new unit (U21a, placeholder) is needed for chat delivery infrastructure (data model, websocket layer, the new §7 cross-subsystem exception) that no existing unit covers | **Decided 2026-09-02.** PRD amendment done now (see DD-19). Formal harness-os scoping of U21a deliberately deferred to when Phase 3 begins, not scoped ahead of Phase 2 — same discipline as B7's "when scoped" deferral for U16/U18/U19/U28. U18 (Phase 2, "no AI yet") is explicitly unaffected — the AI-dependent pieces of this feature (composer's AI-suggested message, sufficiency check) can't be usefully built until Phase 3 wires in live AI anyway | PRD amendment done; U21/U23 descriptions corrected in §6; U21a's actual harness-os spec creation open until Phase 3 |
+| B9 | `app.services.kpi_engine.compute_and_snapshot_kpis` (Unit 14) has no caller anywhere in the running system — `app.domain.scheduler._run_tick` (Unit 13) advances the clock and runs `run_scheduled_tick` only; it never calls the KPI engine. So `kpi_snapshot`/`days_of_supply_snapshot` are never populated by normal operation today, only by tests calling the function directly. Found while scoping U15 (the exception engine needs days-of-supply values); advisor-consulted decision was **not** to fix this as a drive-by inside U15 — see U15's own row in §5 for why (querying `sql/kpi/days_of_supply.sql` directly, the same way `kpi_engine._run_days_of_supply` does, is what U15 actually needs, and doesn't require the snapshot table to be populated at all) | **Closed 2026-09-02 at U16** (see DD-20 point 1) — both `compute_and_snapshot_kpis` (this row) and `app.services.exception_engine.evaluate_exceptions` (U15's own identical gap, discovered to be part of the same problem when U16's advisor consult widened the scope) are now called from `_run_tick`, right after `run_scheduled_tick`, inside the same try/except | **Closed** |
+| B10 | Discovered while live-verifying U16's dashboard: no world-state reset/clean-baseline utility exists yet (PRD S1-FR-7 — snapshot/reset/injected-state operations), so live-verifying any scheduler-touching behavior against the shared dev database (not `ZZTEST-`-prefixed, isolated API-test fixtures) leaves the **singleton** `simulation_clock` row advanced and every operational table populated — state several *other* units' tests assert starts empty. See DD-20 point 7 for the full incident (36 tests broke, manually reset, re-verified green) | Not yet decided whether this needs its own unit ahead of S1-FR-7's natural place in the plan, or whether "reset it by hand afterward, as documented in DD-20" stays the standing procedure until S1-FR-7 is actually scoped — no user decision needed yet since nothing is currently blocked by it (this session's own incident was already fully resolved by manual cleanup) | Open — recorded as a standing caution for whoever next live-verifying scheduler-touching behavior; not blocking |
+| B11 | Discovered during U20a's final-review pass, before committing Phase 2: PRD §10's Phase 2 checklist item 8 (`prd/MeadowOps_PRD_FINAL.md` line 512) read "Scenario builder controls working (select/inject/preview/approve), **including the persona composer and AI sufficiency check** (6.4/6.13, added 2026-09-02)" — the added clause directly contradicted B8/DD-19's own written decision ("U18 (Phase 2, 'no AI yet') is explicitly unaffected — the AI-dependent pieces of this feature... can't be usefully built until Phase 3 wires in live AI anyway") and duplicated Phase 3's own checklist item 1, which already separately owns "composer/thread monitor." Root cause: the B8/DD-19 PRD amendment's §6.4 sentence ("Amended 2026-09-02: also includes the live persona composer and the on-demand AI sufficiency check") appears to have been mechanically echoed into the unrelated §10 checklist line for Phase 2's exit item, never caught until this final review asked "is everything discussed, including messaging, actually tested" and the answer required checking the checklist text against the amendment's own decision record | **Decided 2026-09-03 (AskUserQuestion).** Confirmed as a drafting artifact, not a deliberate re-scope — corrected `prd/MeadowOps_PRD_FINAL.md` line 512 back to "Scenario builder controls working (select/inject/preview/approve)", matching the original Phase 2 scope and B8/DD-19's explicit intent. The persona composer and AI sufficiency check remain Phase 3 scope only (U21/U21a/U23), blocked on live AI wiring (Blocker B3) same as always | **Closed** — PRD line fixed; Phase 2's own §5 checklist already matched the corrected wording, no further doc changes needed there |
 
 **Critical-risk units awaiting human-ack:**
 | Unit | Spec ID | Decision ID | Notes |
@@ -154,6 +157,10 @@ and security explicitly, before a step counts as done. "It runs" is not "done."
 | U9 | MEADOWOPS-DOM-003 | 1534 (pending_approval) | Auto-classified critical by keyword match on "order" from "purchase_order" (DD-5) — a plain domain noun, not financial/trading logic. Fully implemented, tested, and security-reviewed (2 CRITICAL found in the query classifier and fixed — a data-modifying CTE hidden under a plain outer `SELECT`, and `EXPLAIN ANALYSE`'s British spelling bypassing the American-only regex) — awaiting `harness approve` for the human-ack formality. |
 | U10 | MEADOWOPS-DOM-004 | 1536 (pending_approval) | Auto-classified critical by keyword match on "order" (DD-5), same as U6/U9. Fully implemented, tested, and security-reviewed (2 correctness issues found and fixed — a missing upper bound on `days_of_supply.sql`'s date window, and a wall-clock-anchored test that couldn't discriminate a `simulation_date`-based query from a buggy `CURRENT_DATE`-based one) — awaiting `harness approve` for the human-ack formality. |
 | U12b | MEADOWOPS-PROD-002 | 1546 (pending_approval) | Auto-classified critical by keyword match on "order" from "Order Cycle Time" (DD-5) — a KPI name, not financial/trading logic. Fully implemented, tested, and security-reviewed (4 LOW found and fixed — none blocking) — awaiting `harness approve` for the human-ack formality. |
+| U13 | MEADOWOPS-DOM-006 | 1550 (pending_approval) | Auto-classified critical by keyword match on "order" from "procure-to-stock/order-to-ship" (DD-5) — plain supply-chain terminology, not financial/trading logic (eighth occurrence of this false positive). Fully implemented, tested, and security-reviewed (**APPROVE**, 1 MEDIUM found and fixed — a DB-level exception could mask itself and lose the failure-path's own audit row, fixed with `session.rollback()` before the recovery write — plus 3 LOW, 1 addressed via comment, 2 left as documented and non-blocking) — awaiting `harness approve` for the human-ack formality. |
+| U14 | MEADOWOPS-DOM-007 | 1552 (pending_approval) | Auto-classified critical by keyword match on "order" (DD-5) — ninth occurrence of this false positive. Fully implemented, tested, and security-reviewed (**APPROVE**, 1 MEDIUM found and fixed — the starter KPI SQL's all-time-aggregate nature made an out-of-order recompute silently corrupt historical data, fixed with a new `KpiComputationOutOfOrderError` guard — plus 1 LOW addressed, N+1 query pattern replaced with a single `GROUP BY`) — awaiting `harness approve` for the human-ack formality. |
+| U15 | MEADOWOPS-DOM-008 | 1555 (pending_approval; supersedes 1554) | Auto-classified critical by keyword match on "order" (DD-5) — tenth occurrence of this false positive. Fully implemented, tested, and security-reviewed (**APPROVE after fixes**, 1 HIGH found and fixed — low-stock auto-resolve conflated "condition cleared" with "days-of-supply unmeasurable this tick," fixed with a tri-state evaluation verdict — plus 2 MEDIUM fixed — `threshold_value`/first-detected date were being overwritten on every re-sync, fixed by freezing them at detection with a new `first_detected_simulation_date` column; no concurrency guard around the read-decide-write reconciliation, fixed with a Postgres advisory transaction lock — plus 2 LOW fixed, int-truncation of fractional grace-day thresholds and a late-shipment reference-date mismatch) — awaiting `harness approve` for the human-ack formality. |
+| U16 | MEADOWOPS-API-003 | 1557 (pending_approval) | Auto-classified critical by keyword match on "order" (DD-5) — eleventh occurrence of this false positive. Fully implemented full-stack (backend + orbynadmin frontend, per B7), tested (38 tests, reconciliation-based), and security-reviewed (**APPROVE after fixes**, 1 MEDIUM found and fixed — six endpoints returned unbounded result sets plus one filtered in Python instead of SQL, fixed with `limit`/`offset` params and query-pushed filters — plus 2 LOW, one fixed (auth-test coverage expanded from 8 to all 13 routes), one documented as no action needed (scheduler's widened commit-on-failure surface, already covered by its own module docstring)) — awaiting `harness approve` for the human-ack formality. |
 
 ---
 
@@ -163,11 +170,15 @@ Records implementation-detail choices the PRD deliberately left open (§14), plu
 process decisions. Newest last.
 
 - **DD-1 — Repo layout:** monorepo. `/backend` (Python/FastAPI, single deployable
-  process). `/templates/subsystem_1/orbynadmin` (Subsystem 1 frontend, in place).
-  `/templates/subsystem_2/shadcn-dashboard/nextjs-version` (Subsystem 2 frontend —
+  process). `/frontend/subsystem_1/orbynadmin` (Subsystem 1 frontend, in place).
+  `/frontend/subsystem_2/shadcn-dashboard/nextjs-version` (Subsystem 2 frontend —
   the `vite-version` sibling is deleted early since PRD Appendix D.2 specifies
   Next.js only and an unused copy would keep mock data alive in the tree for no
-  reason).
+  reason). **Renamed 2026-09-02:** the top-level directory was `/templates` through
+  Unit 17; renamed to `/frontend` at the user's request, all references updated
+  (`scripts/ci.sh`, `tests/frontend/*.py`'s `REPO_ROOT`-relative paths,
+  `.claude/settings.local.json`'s cached permission grant) — no functional change,
+  file contents/git history untouched.
 - **DD-2 — Subsystem API boundary enforcement:** one FastAPI process (cost target,
   PRD 8.3), but Subsystem 2's service layer never imports Subsystem 1's DB
   session/ORM models. It talks to Subsystem 1 exclusively through an internal
@@ -857,8 +868,766 @@ process decisions. Newest last.
      U16/U18/U19/U28 — not scoped ahead of Phase 2, per the user's own
      sequencing (discuss the chat feature, *then* Phase 2).
 
+- **DD-20 (Unit 16 — dashboard API + drill-down, closing B9, 2026-09-02):**
+  1. **B9 closed, not deferred further.** The advisor consult at kickoff
+     flagged that B9 (recorded at U15) was actually bigger than its own
+     text stated: it's not just that `compute_and_snapshot_kpis` has no
+     caller, `evaluate_exceptions` (U15) has the identical problem, and
+     S1-FR-5's own text — "drill-down from any KPI/**exception**" — has
+     nothing real to drill into without it. Both are now wired into
+     `app.domain.scheduler._run_tick`, right after the existing
+     `run_scheduled_tick` call, inside the same try/except (a failure in
+     the flow itself skips both new calls for that tick — evaluating
+     exceptions or snapshotting KPIs against a half-run tick would be
+     evaluating a still-moving target; the next successful tick catches up
+     regardless, since exception evaluation is idempotent and a KPI
+     snapshot is "recorded-on," not "as-of," per U14's own docstring).
+  2. **KPIs stay compute-on-read for the *dashboard*, but the scheduler now
+     snapshots them anyway.** Early framing considered sidestepping
+     `kpi_snapshot` entirely (querying `sql/kpi/*.sql` live, the way U15's
+     exception engine queries `days_of_supply.sql` directly) — defensible
+     since S1-FR-5 says drill down to *underlying records*, not to a time
+     series. Reconsidered once `app.domain.scheduler` was already being
+     touched to close B9's exception half: wiring `compute_and_snapshot_kpis`
+     in too is the same seam, closes B9 completely rather than half of it,
+     and gives `GET /api/v1/dashboard/executive/trend` (Appendix D's
+     "Analytics dashboard -> KPI trend drill-down") real multi-day history
+     for free instead of nothing to chart. Landed on: `/executive` and
+     `/executive/trend` read `kpi_snapshot` (now genuinely populated);
+     `/inventory` reads `days_of_supply_snapshot` the same way.
+  3. **Supplier view built net-new, no PRD Appendix D mapping exists for
+     it.** S1-FR-5 names five required views (Executive, Inventory,
+     Supplier, Order, Data-Quality); Appendix D's page-mapping table has no
+     row for "Supplier" — only "Customers pattern duplicated -> Supplier
+     master-data pages" (Unit 8's admin CRUD, a different concern
+     entirely). Missing template mapping is not permission to ship four
+     views: built from S1-FR-5 itself — per-supplier open/total
+     `PurchaseOrder` counts plus at-risk-PO `ExceptionFlag` exposure,
+     served at `/api/v1/dashboard/suppliers` (+ `/{supplier_id}/purchase-orders`
+     drill-down) and a new top-level `/suppliers` orbynadmin route (added
+     to `src/config/nav.ts`), distinct from `/settings/suppliers` (Unit 8's
+     CRUD form).
+  4. **`GET /api/v1/dashboard/shipments` added mid-implementation, spec id
+     207 (`MEADOWOPS-API-003`) superseded to v2 to record it.** Appendix
+     D's page-mapping table has a `Shipping` row ("Shipment tracking / OTIF
+     drill-down") the original 11-endpoint spec draft had no direct
+     endpoint for — shipments were only reachable nested inside a sales
+     order's own drill-down. Added a flat, filterable list endpoint (reuses
+     the same `is_late` derivation as the nested version) and wired
+     orbynadmin's existing `shipping/page.tsx` stub to it.
+  5. **Drill-down is verified by reconciliation, not just response shape**
+     (per the advisor's explicit framing of the failure mode: shipping five
+     pages of KPI cards and calling it done). `tests/api/test_dashboard.py`
+     builds one deterministic fixture (two sales orders, one on-time
+     delivered, one three-days-late) and, in
+     `test_otif_reconciles_against_the_underlying_sales_order_drilldown`,
+     recomputes OTIF from nothing but the `/orders/sales` list + per-order
+     drill-down responses — independent of the stored `KpiSnapshot` row —
+     and asserts it matches what `/executive` reports. Equivalent
+     reconciliation checks exist for the Supplier view's PO counts, the
+     Inventory view's transaction ledger netting to the on-hand quantity,
+     and the exception queue's open-count matching `/executive`'s own
+     per-category counts.
+  6. **Frontend read paths need no `/api/admin/dashboard/*` proxy route,
+     unlike Unit 8's write paths.** Every dashboard page is an async Server
+     Component calling a new `src/lib/dashboard-api.ts` helper directly
+     (same `cookies()` + server-only `MEADOWOPS_API_BASE_URL` pattern as
+     the existing `admin-api.ts`) — a browser-facing proxy route only
+     exists for `admin-api.ts`'s write paths because *client* components
+     (the create/edit dialogs) can't call `next/headers` `cookies()`
+     themselves; nothing here writes, and nothing here is a client
+     component that needs one.
+  7. **Live-verification against the shared dev database mutated global
+     singleton state and had to be explicitly reset — worth recording as a
+     standing caution, not just a one-off cleanup.** To Playwright-verify
+     the dashboard with real (not `ZZTEST-`) data, `seed_master_data` +
+     `seed_exception_rule_thresholds` were called once, then
+     `advance_simulation`/`run_scheduled_tick`/`evaluate_exceptions`/
+     `compute_and_snapshot_kpis` were invoked directly, 20 times, against
+     the real dev database — unlike every prior unit's `ZZTEST-`-prefixed
+     API-test fixtures (isolated by construction, cleaned up by an autouse
+     fixture), this mutated the **singleton** `simulation_clock` row (from
+     `2026-01-01` to `2026-01-21`) and populated `purchase_order`/
+     `sales_order`/`shipment`/`inventory_transaction`/`inventory_snapshot`/
+     `exception_flag`/`kpi_snapshot`/`days_of_supply_snapshot`/
+     `scheduled_tick` — tables several *other* units' tests assert start
+     empty (e.g. `test_kpi_engine.py`'s own "no data yields all-None"
+     test). 36 previously-passing tests failed immediately afterward for
+     exactly that reason. Fixed by deleting every row those 20 ticks wrote
+     (children before parents) and resetting `simulation_clock` back to
+     `CLEAN_BASELINE_SIMULATION_DATE`/`last_advanced_at=NULL` — full
+     backend suite re-verified green (402/402) afterward. Recorded as
+     **B10**, below: no world-state reset utility exists yet (S1-FR-7,
+     not yet a scoped unit) to do this automatically.
+
 *(Further entries — exact field-level schema, prompt wording, exception-threshold
 defaults, KPI SQL specifics — are appended here as each unit lands.)*
+
+- **DD-22 (role-based login, PRD amendment ahead of Unit 17a, 2026-09-02):**
+  1. **Trigger.** While scoping U18 (scenario builder controls), the user's
+     answer to a narrow "where does the frontend for this live" question
+     expanded into two much bigger asks: (a) admin panel controls should
+     also cover subsystem 1's Customers/Warehouses/etc. lists, gated by
+     role, and (b) a real email+password login should declare that role.
+     Followed the same discipline as B8/DD-19: paused, asked clarifying
+     questions rather than guessing, consulted the advisor before
+     committing to a design, then amended the PRD before writing any code.
+  2. **Two clarifying questions asked and answered.** "Clients" in the
+     user's message is the existing Customer entity, not a new one — no
+     schema change needed there. The existing single shared
+     `MEADOWOPS_BUILDER_TOKEN` bearer token is **replaced entirely** by
+     per-user email+password login (the user's explicit choice over
+     keeping it as a parallel admin-equivalent path). "Addresses," raised
+     in the earlier scoping round, was not repeated in the user's RBAC
+     message — treated as dropped for now, not silently designed around;
+     revisit if it resurfaces.
+  3. **Why this is its own unit, not folded into U18.** `require_builder`
+     today gates *both* `app/api/master_data.py` (writes) and all 13 of
+     `app/api/dashboard.py`'s GET endpoints (reads) — there is no Analyst
+     read path in the running system at all yet. Introducing real
+     view-only access means splitting one dependency into two
+     (`require_admin` for writes, `require_authenticated` for reads) and
+     re-annotating every existing admin/dashboard/customers route. U18's
+     own Builder-only scenario controls will depend on `require_admin`
+     existing, so this has to land first — inserted as **U17a**.
+  4. **PRD amended in place** (not a bolt-on appendix, same as B8): 5.1's
+     out-of-scope line, 8.4's admin-restriction line and the persona-chat
+     credential-model amendment (375), 6.13's identity line (346), and a
+     new S1-FR-16. Two users, still no self-registration/password-reset/
+     email-verification/third role — 5.1's scope boundary is otherwise
+     unchanged, only the credential model becomes real per-user
+     accounts instead of one shared secret. Appendix D's existing "Auth
+     (Login only) — Simple auth, drop Register/OTP/Lock-screen variants"
+     line needed no change — it already described exactly this.
+  5. **Design, deliberately minimal per the advisor's steer:** two seeded
+     accounts (Admin/Analyst) from env-configured credentials, no
+     self-service signup. Passwords hashed with a vetted library, never
+     hand-rolled. Role carried in a signed session token issued at
+     login, checked server-side on every request — client-side hiding of
+     admin-only controls is UX polish only, never the enforcement
+     boundary. This is real credential-and-authorization code (password
+     handling, session tokens) — expected to be the first unit where
+     `assess_risk`'s "critical" classification is a true positive, not
+     another DD-5 keyword false positive, so `security-reviewer` is the
+     expected gate, not `code-reviewer`.
+- **DD-23 (Unit 17a — role-based login implementation, 2026-09-02):** actual
+  build against DD-22's scoping decision. risk **high** (`assess_risk`
+  auto-high on "auth/authentication/authorization/password/token/session"
+  keywords — DD-22 point 5's predicted true positive, the first unit where
+  the keyword match was correct rather than DD-5's usual false positive).
+  Spec id 210 (MEADOWOPS-DOM-010). Ran the `security-change` workflow (run
+  131) start to finish: pre-implementation design review
+  (conditional go, 6 required additions — rate limiting keyed per-email,
+  short JWT exp with documented revocation caveats, `algorithms=["HS256"]`
+  pinned with `require_admin` wrapping `require_authenticated`, argon2-cffi
+  over passlib, hash-over-plaintext seed precedence, full removal of
+  `require_builder`/`builder_token`) before any code, then a separate
+  post-implementation review of the actual diff.
+  1. **Delivered.** `live.user` (migration 0014); `app/core/password.py`
+     (argon2id via library defaults); `app/core/security.py` (JWT/HS256,
+     `algorithms=["HS256"]` pinned, single decode path); `app/core/
+     rate_limit.py` (per-email `LoginRateLimiter`, thread-lock-guarded,
+     probabilistic stale-key sweep — see point 3); `app/api/auth.py`
+     (`POST /api/v1/auth/login`, generic 401 for unknown-email/wrong-
+     password/inactive-user alike, timing-parity dummy-hash verify so a
+     missing account isn't distinguishable by response time either);
+     `app/services/auth_seed.py` (idempotent two-account seed, a
+     `*_password_hash` setting takes precedence over the plaintext
+     variant). `require_builder` removed outright (not kept as a parallel
+     path — explicit user decision, DD-22 point 2) and replaced by
+     `require_authenticated` (read)/`require_admin` (write, implemented as
+     a thin wrapper around `require_authenticated`, not a second verifier)
+     across `master_data.py`, `dashboard.py` (all 13 routes), `customers.py`,
+     and `/me`. Frontend: `/api/login` now posts email+password to the
+     backend instead of comparing a static token (`token-compare.ts`
+     deleted, nothing left in the app that verifies the token itself);
+     `login-form.tsx` collects email+password; `getCurrentRole()` (new
+     `src/lib/current-user.ts`) gates the Admin-only Add/Edit/Deactivate
+     controls in `master-data-crud.tsx` via a `canWrite` prop — UI hint
+     only, real enforcement stays server-side.
+  2. **"Clients" confirmed synonymous with the existing Customer entity**
+     (user's answer to the clarifying question) — no new entity, no
+     schema change; `customers.py`'s existing read-only-for-everyone GET
+     route (S1-FR-12 already excluded Customer from CRUD) needed only the
+     `require_authenticated` swap, already satisfying "Analyst can view,
+     never edit" for that entity with zero new work. "Addresses" stayed
+     unaddressed this unit (dropped from the user's own follow-up, per
+     DD-22 point 2) — still open if it resurfaces.
+  3. **Post-implementation security review (separate from the
+     pre-implementation design review above) found 2 MEDIUM issues in the
+     rate limiter, both fixed before APPROVE:** a read-modify-write race
+     under concurrent requests (`login` is a sync route, dispatched via
+     FastAPI's anyio threadpool — a burst of parallel attempts for one
+     email could each read the same pre-append state and all pass the
+     limit check), fixed with a `threading.Lock`, proven by a 50-concurrent
+     -thread regression test; and unbounded memory growth from
+     attacker-controlled dict keys (`check_and_record` runs before any DB
+     lookup validates the email, so a distinct fabricated address per
+     request grows the dict forever), fixed with a probabilistic stale-key
+     sweep plus `Field(max_length=...)` bounds on the login request body.
+     **1 MEDIUM reported but deliberately not fixed:** `seed_initial_users`
+     has no reachable invocation path (no lifespan wiring, no CLI) — same
+     already-accepted gap as `seed_exception_rule_thresholds`, but sharper
+     here since it blocks all login on a fresh environment, not just
+     missing defaults. Recorded as a standing gap (like B10), not blocking
+     — the shared dev DB is already seeded for real (see point 5). **1 LOW
+     noted, not actioned:** the migration's `is_active NOT NULL` carries no
+     `server_default` (the ORM's Python-side `default=True` and
+     `auth_seed`'s explicit value are the only two insertion paths today,
+     both already set it).
+  4. Also fixed as part of the same review: two remnants of the
+     `require_builder`/`MEADOWOPS_BUILDER_TOKEN` removal that were
+     misleading rather than purely historical — a stale `.gitignore`
+     comment in `orbynadmin` still naming the removed token, and the
+     repo-root `.env.example` still carrying a live
+     `MEADOWOPS_BUILDER_TOKEN=` line with no documentation of the new
+     required auth settings.
+  5. **Live-verified end-to-end**, not just unit-tested: both real
+     accounts seeded for real against the shared dev DB
+     (`admin@meadowops.local`/`analyst@meadowops.local`); a real FastAPI +
+     Next.js dev-server pair exercised via curl — wrong password 401,
+     correct password 200 + httpOnly cookie carrying the real signed
+     token, 6 rapid bad attempts trips the rate limiter at exactly
+     attempt 6; the Next.js RSC payload confirmed `canWrite:true` for an
+     admin session and `canWrite:false` for an analyst session on the
+     same settings page. Both dev servers stopped cleanly afterward — no
+     leaked process, no scheduler/simulation-clock state touched (only
+     the new `live.user` table was written, which is this unit's own
+     intended seed data, not test leakage — no B10-style cleanup needed).
+     Playwright itself was unavailable in this sandbox (30s navigation
+     timeout, twice) — curl/RSC-payload inspection substituted, judged
+     sufficient given the mechanism (a plain boolean prop threading
+     through a server-computed value) is simple enough not to need visual
+     confirmation.
+  6. TDD throughout — RED confirmed before every GREEN across all layers
+     (password/token/rate-limit units, seed service, login endpoint, the
+     require_authenticated/require_admin route-matrix across every
+     existing protected route). 57 new backend tests (445 → 502).
+     `orbynadmin npm run build`/`npm run lint` clean (the lint pass's 5
+     pre-existing findings are all in vendored template files untouched by
+     this unit, per `scripts/ci.sh`'s own documented non-blocking
+     convention).
+- **DD-24 (Unit 18 scoping — scenario builder controls, 2026-09-02):** U18
+  was unblocked by U17a (`require_admin` now exists) — scoped by direct
+  discussion, not a PRD amendment (unlike DD-22's RBAC/login work, none of
+  this contradicts an existing PRD line; it's implementation detail within
+  6.4's already-specified "Builder scenario controls").
+  1. **Real `Scenario` table now**, not deferred to U22 (user's explicit
+     choice, overriding `prompt_templates.py`'s own docstring, which
+     described that promotion as happening "at U22, not here" — that
+     docstring is now stale and should be corrected when U18 actually
+     lands). Lives in the `engine` schema (provisioned since Unit 1
+     specifically for "scenario, evaluation, portfolio," never used yet).
+  2. **Seeded-imperfection source = real open `ExceptionFlag` rows**, not a
+     new authored storyline catalog — the user's recommended choice, and
+     it matches 6.2's own scenario-type examples almost exactly ("Reporting
+     layer and WMS disagree on a SKU's stock level" is literally a
+     `reporting_conflict_qty_variance` flag from U17). The alternative
+     (free text) requires the Builder to enter the full ground-truth
+     package by hand — no AI-assisted extraction in this unit.
+  3. **"Activate" is status-only, no delivery** — U18 stops at
+     `status=active`; nothing sends anything to the Analyst, since no chat
+     inbox exists yet (U21/U21a, Phase 3). Draft → Approved → Active,
+     Cancelled reachable from any non-terminal state. "Approve" performs
+     6.4's own validation checklist (ground-truth package complete,
+     referenced ids real, difficulty valid) — the failure path is 6.4's
+     own required test case, not optional.
+  4. **Every scenario endpoint is Builder/Admin-only — no Analyst read
+     access at all**, not even view-only (unlike U17a's master-data
+     endpoints). Rationale: since nothing delivers to her yet, Analyst
+     visibility into not-yet-sent scenarios would spoil them before they
+     arrive — a real reason, not just "narrower is safer."
+  5. **Frontend: Subsystem 2's existing "Tasks" page repurposed** into the
+     Scenario Builder (closest existing template fit; "Mail" stays
+     reserved for U21's chat composer per DD-19).
+  6. **`ground_truth` modeled as structured JSON**, not a single text
+     blob, with 6.4's exact seven named fields (Known Cause, Evidence,
+     Supporting Signals, Distractors, Expected Considerations,
+     Acceptable/Unacceptable Conclusions, Uncertainty) — the same shape
+     `GENERATION_TEMPLATE` (prompt_templates.py) will eventually populate
+     automatically at U22, so this unit's hand-entry path and that unit's
+     AI-entry path write the same structure.
+- **DD-25 (U21/U21a chat interface design captured ahead of scoping,
+  2026-09-02):** the user confirmed and elaborated the Builder-roleplays-
+  multiple-personas / Analyst-replies-as-herself model while discussing
+  U18 — captured here as forward design notes since U21a isn't formally
+  scoped yet (Phase 3, per B8/DD-19), not built now. One `ChatThread` per
+  (Scenario, persona) pair, locked to that persona for its whole life —
+  the Builder picks *which thread* to open, not a persona per message.
+  Subsystem 2 side: a thread-monitor view across all active scenarios
+  (unread badges, deadline banners, last-message preview, same bones as
+  6.1's notification list). Subsystem 1 side: one unified inbox across
+  every persona's thread, Analyst always replies as herself with no
+  identity-switching, threads labeled by persona rather than by scenario
+  (she isn't told "this is scenario #4" — keeps it realistic rather than
+  quiz-like). The AI sufficiency check (6.13) hangs off an open thread
+  later, at U23, not part of this design note.
+- **DD-26 (Unit 18 — scenario builder controls implementation, 2026-09-02):**
+  1. **Delivered per DD-24's scope**, spec `MEADOWOPS-DOM-011` (harness
+     namespace; business id `MEADOWOPS-DOMAIN-009`). `engine.scenario`
+     table (migration 0015) + 4 new `engine`-schema enum types
+     (`app/db/base.py`'s `pg_enum` gained an optional `schema` kwarg,
+     default unchanged for every existing `live`-schema caller).
+     `app/domain/scenario.py` (pure: draft/approved/active/cancelled state
+     machine, approve-time validation against the mechanically-checkable
+     slice of 6.4's checklist, deterministic ground-truth snapshot builder
+     from a real open `ExceptionFlag`). `app/services/scenario_service.py`
+     (create/regenerate/approve/activate/cancel/update_ground_truth,
+     caller-owns-the-transaction). `app/api/admin_scenarios.py` (7
+     `require_admin`-only routes under `/api/v1/admin/scenarios`, no
+     Analyst read path at all per DD-24 point 4). Fixed
+     `prompt_templates.py`'s stale "Scenario promotion happens at U22, not
+     here" docstring in the same unit, as DD-24 point 1 flagged.
+  2. **code-reviewer and security-reviewer dispatched in parallel**
+     post-implementation; both independently found the same **HIGH**:
+     `PATCH /{id}/ground-truth` had no scenario-status guard, letting an
+     Approved/Active scenario's `ground_truth` be silently mutated after
+     `approve_scenario`'s validation had already passed (no re-validation,
+     no status reversion) — fixed by moving the mutation into a new
+     `update_ground_truth` service function enforcing draft-only, mirroring
+     `regenerate_scenario`'s existing guard. Also fixed: code review's 2
+     MEDIUM (`create_scenario_route` had no `IntegrityError` handling
+     around `created_by`'s hard FK to `live.user.id`, unlike
+     `master_data.py`'s established convention; `regenerate_scenario`
+     overwrote `ground_truth` wholesale, silently destroying any
+     Builder-edited narrative fields — now merges, only
+     `known_cause`/`evidence` are re-derived) and 1 LOW (dead
+     `ScenarioValidationErrorResponse` schema, removed); security review's
+     2 LOW (`status_filter`'s unguarded `ValueError`→500, already
+     self-caught before either review landed; `uuid.UUID(identity
+     ['user_id'])`'s unguarded `ValueError`→500 on a malformed token
+     subject, now a clean 401) and 1 informational (`GroundTruthUpdate`'s
+     `evidence` field could let a client overwrite the mechanically-derived
+     provenance block — removed that field from the schema entirely;
+     Builder edits are scoped to the narrative fields only). Security
+     review independently verified `engine`'s `REVOKE ALL`/`ALTER DEFAULT
+     PRIVILEGES` covers `engine.scenario` at the database layer, not just
+     the API layer — DD-24 point 4's "no Analyst read path" claim holds
+     even against the Query Playground sandbox role.
+  3. **Frontend: backend-only, by explicit user decision** (AskUserQuestion
+     — recommended option chosen). Discovered mid-unit: Subsystem 2 has
+     zero backend/auth wiring of any kind (no login flow, no API client,
+     still the raw Unit 7 template stub) and U20 (Subsystem1↔Subsystem2 API
+     boundary contract) — the unit meant to establish those conventions —
+     hasn't started. Building ad hoc auth/API-client wiring inside U18
+     would likely be redone by U20; the Tasks page stub was instead updated
+     to name what it's waiting on ("...until Unit 20 establishes how
+     Subsystem 2 authenticates and talks to the API at all") rather than
+     left with its old generic "not wired to the real API layer" text.
+  4. **Full backend suite: 561 passed** (up from 502 pre-unit — 59 new
+     tests across domain/service/API layers, including every review-driven
+     regression test). Zero leaked test rows verified via direct query
+     (DD-9/DD-10 discipline). Workflow run 132 parked at the `tests` stage
+     — same B6 bookkeeping gap as every prior Python unit (decision 1564),
+     not a quality gap.
+- **DD-27 (Unit 19 — Query Playground full functionality implementation,
+  2026-09-03):**
+  1. **Delivered full-stack per PRD 5.9/S1-FR-13/14**, spec `MEADOWOPS-DOM-012`
+     (business id `MEADOWOPS-DOMAIN-010`), 2 state machines
+     (`query_submission_status`, `sandbox_refresh_status`), 65 mechanically-
+     generated domain tests. `app/services/sandbox_refresh.py` — staging-
+     schema-then-atomic-rename swap (never a live `DROP SCHEMA CASCADE`),
+     mirroring an explicit `SANDBOX_MIRRORED_TABLES` allowlist (not a
+     denylist — matches migration 0001's own deny-by-default philosophy).
+     `app/services/query_execution.py` — executes against `meadowops_sandbox`
+     with an app-enforced, out-of-band `conn.cancel()` timeout (empirically
+     confirmed the role can freely override its own `statement_timeout`
+     GUC, so that path was never viable), row-limited via `fetchmany`, one
+     `QueryLog` row per terminal outcome (S1-FR-14). New migrations 0016
+     (`live.query_log` + its 2 enum types) and 0017 (`meadowops_sandbox`
+     `search_path` fix — see point 3), both round-trip verified. Full
+     orbynadmin UI: CodeMirror SQL editor, results grid, confirm-before-write
+     dialog, sandbox-refresh button, query history tab.
+  2. **assess_risk returned "high"** (auth/authentication keyword match) —
+     judged a genuine true positive here, not a DD-5 false positive, since
+     this unit adds real arbitrary-SQL execution capability, unlike U18's
+     keyword-only false-positive precedent.
+  3. **Live browser (Playwright) verification found a real bug no automated
+     test caught**: `meadowops_sandbox`'s default `search_path` didn't
+     include `sandbox`, so the default placeholder statement
+     (`select * from product limit 50`) failed on a fresh session. Fixed via
+     migration 0017 (`ALTER ROLE meadowops_sandbox SET search_path =
+     sandbox`), verified empirically safe first (the role already has zero
+     privileges anywhere else regardless of search_path) and effective
+     after, full downgrade/upgrade round trip confirmed against the real dev
+     DB. A live-environment disruption during this verification pass ("the
+     screen is refreshing non-stop") was investigated rather than dismissed
+     — root cause was a stale Turbopack `.next` build cache after installing
+     the new CodeMirror dependency, not a Query Playground bug; fixed via
+     `rm -rf .next` + restart, confirmed not to recur, and the interrupted
+     smoke test was re-run in full per the user's explicit choice.
+  4. **code-reviewer and security-reviewer dispatched in parallel**
+     post-implementation. Security review's **HIGH-1** claimed a submission
+     wrapping itself in a PL/pgSQL exception handler
+     (`DO $$ BEGIN LOOP BEGIN PERFORM pg_sleep(1000); EXCEPTION WHEN OTHERS
+     THEN END; END LOOP; END $$;`) could swallow `conn.cancel()`'s error and
+     survive indefinitely, exhausting `meadowops_sandbox`'s connection pool.
+     **Investigated empirically rather than implemented as specified** — two
+     independent verifications against the real dev Postgres instance
+     (calling `execute_submission()` directly, and a raw `psycopg`
+     cancel-and-check bypassing all app code) both showed the trapping loop
+     is cancelled cleanly and promptly. Root cause of the disagreement:
+     Postgres documents `QUERY_CANCELED` (57014) as one of exactly two error
+     codes a PL/pgSQL `WHEN OTHERS` handler cannot trap, by design,
+     specifically so an admin can always cancel a runaway procedure. Fixed
+     by correcting `query_execution.py`'s own module docstring and renaming/
+     rewriting the regression test
+     (`test_trapping_exception_handler_is_still_cancelled_cleanly`) to state
+     the verified truth, rather than "fixing" a bypass that doesn't exist;
+     the existing `pg_terminate_backend` escalation was kept as legitimate
+     (now understood to be a near-always-no-op) defense in depth rather than
+     removed. The test itself had a real bug during this fix, caught by
+     actually running it: its own verification query's text contained the
+     literal substring `pg_sleep(1000)` inside its `ILIKE` pattern, so it
+     matched its own backend in `pg_stat_activity` and could never pass —
+     fixed by excluding the check's own `pg_backend_pid()`. **HIGH-2**
+     (a multi-statement submission wasn't protected against a sandbox
+     refresh committing mid-submission, under READ COMMITTED's per-statement
+     name resolution) was a real gap, fixed for real via a shared/exclusive
+     Postgres advisory lock (`SANDBOX_ADVISORY_LOCK_KEY`) — every query
+     execution holds it shared for the submission's whole duration, every
+     refresh holds it exclusive for the refresh's whole run — proven via a
+     new test exercising the production `execute_submission()`/
+     `refresh_sandbox()` code paths concurrently, not a hand-rolled analog.
+     The same lock incidentally subsumed two narrower MEDIUM findings: the
+     old in-process `threading.Lock` around refreshes (removed — the
+     advisory lock serializes correctly across worker processes, which the
+     old lock never did) and a refresh-cleanup/reader collision. Also fixed:
+     `query_log.error_message` truncated to 2000 chars before assignment
+     (matches the column width — an unbounded value would raise and drop
+     the whole audit row); sandbox-refresh API failure response genericized
+     (no longer echoes the raw exception to the client, now logged
+     server-side via `logging.getLogger(__name__)`); `.env.example` cleaned
+     up (dead `MEADOWOPS_SANDBOX_DATABASE_URL` removed,
+     `MEADOWOPS_QUERY_TIMEOUT_SECONDS` added); `config.py`'s `owner_dsn()`/
+     `sandbox_dsn()` switched from raw f-string DSN interpolation to
+     `psycopg.conninfo.make_conninfo()` (a password containing a space or
+     backslash would otherwise silently split into extra DSN keywords);
+     frontend `catch`/`toast.error` added to all 4 Query Playground call
+     sites (`runQuery`, `declineConfirmation`, `doRefreshSandbox`,
+     `loadHistory`), none of which had any error handling before.
+  5. **Full backend suite: 658 passed** (up from 561 pre-unit). orbynadmin
+     `tsc --noEmit` clean. Zero leaked automated-test rows verified via
+     direct query after the full suite run (DD-9/DD-10 discipline); 4
+     `live.query_log` rows remained from this unit's own manual Playwright
+     verification session under the real seeded `analyst@meadowops.local`
+     account — left in place as legitimate audit-trail activity, not test
+     pollution. Per the standing convention (this session's own
+     instruction, mirroring Phase 1), **not committed to git individually**
+     — Phase 2 commits as one whole once the phase is done.
+- **DD-28 (Unit 20 — Subsystem1<->Subsystem2 API boundary implementation,
+  2026-09-03):**
+  1. **Scope narrowed at the user's explicit direction before implementation
+     started (AskUserQuestion).** U20's own row and DD-2 define it as the
+     boundary contract + enforcement test; a separate, conflicting note from
+     U18/DD-26 had called U20 "the unit that establishes how Subsystem 2
+     authenticates and talks to the API at all" and deferred U18's whole
+     scenario-builder UI to it. Recommended and the user confirmed the
+     narrower scope: boundary + backend service-identity auth + integration
+     tests only, matching Phase 2's actual exit criterion
+     (`prd/MeadowOps_progress.md:1461-1463`, which names no scenario-builder
+     UI) — U18's Analyst/Builder-facing UI becomes its own follow-on unit,
+     not yet scoped, once U20's auth convention exists to build it on.
+  2. **Delivered**, spec `MEADOWOPS-API-004` (id 213). `app.core.config`:
+     new required `internal_service_token` Settings field (`min_length=32`,
+     no default — same convention as `session_secret_key`). `app.core.auth`:
+     `require_authenticated` extended to accept the token as an alternate
+     Bearer credential (checked via `hmac.compare_digest` on UTF-8-encoded
+     bytes on *both* sides — deliberately not `str`, avoiding Unit 6's own
+     already-found `TypeError`-on-non-ASCII bug), returning identity
+     `{user_id: "subsystem2-internal", role: "service"}`; new
+     `reject_service_role` dependency. `app.core.internal_client`: an
+     `httpx.AsyncClient`/`httpx.ASGITransport` built once in `app.main`'s
+     lifespan against the *running* app instance (never a second
+     `create_app()`), stashed on `app.state.subsystem2_client`, closed on
+     shutdown. `app.services.subsystem2/` — an empty scaffold package, the
+     concrete namespace Subsystem 2's real (Phase 3) service layer will live
+     in. `app.domain.subsystem_boundary` — a pure AST-based import-boundary
+     checker. Two new test files: `tests/architecture/test_subsystem_boundary.py`
+     (checker unit tests proven against synthetic source first, a real-tree
+     test, and a route-inventory allowlist test that introspects the actual
+     FastAPI dependency graph rather than assuming what `require_authenticated`
+     covers) and `tests/integration/test_subsystem2_boundary.py` (genuine
+     `ASGITransport` round trips via `app.router.lifespan_context`, asserting
+     real Pydantic-serialized response content, not just status codes — the
+     Phase 2 checklist's own "integration tests covering the Subsystem 1 <->
+     Subsystem 2 API boundary passing" item). This closes the last two open
+     Phase 2 checklist items (§5).
+  3. **Pre-implementation security review (design gate, decision 1569,
+     required by the `security-change` workflow before this unit's own
+     `assess_risk` call) found the original design's core safety claim false
+     against code that already exists**, not a hypothetical future risk: it
+     had claimed the internal-service credential would be "read-only for
+     every `require_authenticated` route" because any route needing a real
+     user UUID would fail cleanly — but Query Playground's
+     `require_authenticated`-gated `execute`/`refresh-sandbox` routes do real
+     work (commit confirmed SQL against the sandbox; refresh the sandbox
+     schema as the Postgres *owner* role) **before** a route body ever
+     touches the identity to notice it isn't a real UUID. Whether the
+     credential caused a side effect turned out to depend on each route's own
+     incidental argument-evaluation order, not any actual authorization
+     boundary. Required and implemented before any route shipped: (1) a new
+     `reject_service_role` dependency wired onto all 4 Query Playground
+     routes, closing the ordering hole structurally (FastAPI dependencies run
+     before the route body, unconditionally); (2) the route-inventory
+     allowlist test, so a future route doesn't silently inherit the grant
+     without a conscious decision; (3) the documented invariant corrected to
+     "no writes through `require_admin`-gated routes" — not blanket
+     read-only, since `require_authenticated` was never synonymous with
+     read-only in this codebase.
+  4. **Post-implementation review: code-reviewer APPROVE** (1 LOW, fixed —
+     the AST checker's exact-string import match silently passed relative
+     imports like `from ...db.session import make_engine`, since
+     `ast.ImportFrom.module` never carries the leading `app.` prefix for
+     those; fixed by resolving `node.level` against the file's real package
+     path the same way Python's own import system does, sabotage-and-restore
+     proven against the real tree both before and after the fix).
+     **security-reviewer APPROVE WITH CHANGES**, both required fixes applied:
+     (1) the route-allowlist test had only pinned the `service_allowed` and
+     Query Playground buckets, not the `public` one — a route registered
+     with no auth dependency at all would land there unenforced and
+     unnoticed, reachable by literally anyone, exactly the "route nobody
+     enumerated" failure this unit exists to prevent, just in the one bucket
+     the first pass left open; added
+     `test_public_routes_match_the_explicit_allowlist_exactly`. (2) no
+     regression test pinned the bytes-based `hmac.compare_digest` fix itself
+     — added `test_a_non_ascii_bearer_token_401s_and_does_not_500`, passed as
+     raw `bytes` deliberately (httpx's own client-side header encoder rejects
+     a non-ASCII `str` header before the request is even sent, which would
+     only prove the test client is strict, not that the server handles it —
+     the same reasoning Unit 6's original regression test used). Both fixes
+     verified, sabotage-and-restore proven for the import-boundary fix, full
+     suite re-run green.
+  5. **Full backend suite: 689 passed** (up from 658 pre-unit). Zero leaked
+     test rows verified via direct query (DD-9/DD-10 discipline). No new
+     frontend work in this unit — Subsystem 2 (`shadcn-dashboard`) auth/UI
+     wiring, and U18's scenario-builder UI, remain a separate, not-yet-scoped
+     follow-on unit per point 1. Per the standing convention, **not committed
+     to git individually** — Phase 2 commits as one whole once the phase is
+     done.
+- **DD-29 (Unit 20a — Scenario Builder UI implementation, 2026-09-03):**
+  1. **Scoped via 9 clarifying `AskUserQuestion`s across 3 rounds**, at the
+     user's explicit request ("ask me all questions to make sure you
+     understand all of the requirements") since they could not see this doc
+     at the time. Every answer selected the "(Recommended)" option: frontend
+     is `frontend/subsystem_2/shadcn-dashboard` (not orbynadmin); all 7 of
+     U18's backend operations get UI; Builder/Admin-only access, no new
+     Analyst-facing read path; own independent login/session (mirroring
+     orbynadmin's Unit 8/17a pattern, no SSO/cookie-sharing); Admin-only
+     login for this unit; a real browsable/filterable exception picker, not
+     an ID input; a formatted narrative+provenance preview, not raw JSON;
+     match orbynadmin's existing visual conventions; proceed straight to
+     implementation. Numbered **U20a**, following the U17a/U21a
+     lettered-suffix precedent for a unit discovered mid-phase outside the
+     original 33-unit plan.
+  2. **Delivered**, spec `MEADOWOPS-UI-002` (id 214, content id
+     `MEADOWOPS-DOM-013` — `type: domain`'s own schema requires a `-DOM-`
+     content id regardless of the business-id prefix used for tracking).
+     **Zero backend changes** — reuses U18's existing `/api/v1/admin/
+     scenarios/*` (7 routes: list/get/create/patch-ground-truth/regenerate/
+     approve/activate/cancel) and U16's `/api/v1/dashboard/exceptions`
+     exactly as shipped, `require_admin`/`require_authenticated` unchanged.
+     This unit is entirely new TypeScript/React under
+     `frontend/subsystem_2/shadcn-dashboard/nextjs-version`: `src/lib/
+     session.ts` (distinct cookie name, see point 3), `src/lib/current-
+     user.ts` (`getCurrentRole()`, calls the backend's real `/api/v1/me`),
+     `src/app/api/login/route.ts` / `logout/route.ts`, `src/middleware.ts`
+     (extended — this app is still on Next 16.1.1, which uses the
+     `middleware.ts` convention, unlike orbynadmin's 16.2.10 `proxy.ts`
+     rename — a version difference discovered while reading the template,
+     not something to "fix" by porting the rename across), `src/lib/
+     scenario-api.ts` (7 wrapper functions + the exceptions picker call,
+     same server-side-cookie-forwarding-as-Bearer-header pattern as
+     orbynadmin's `admin-api.ts`), `src/app/api/scenarios/**` (6 proxy
+     route handlers), `src/app/(dashboard)/scenarios/**` (list page with
+     status filter, `new/` create flow with the exception picker + scenario
+     metadata form, `[id]/` detail page with the narrative/provenance
+     preview split, ground-truth edit form, and status-action buttons).
+     `(dashboard)/layout.tsx` converted from a Client to a Server Component
+     (its prior body moved into a new `dashboard-shell.tsx` Client
+     Component) so it could `await getCurrentRole()` and reject non-admin
+     sessions — see point 3.
+  3. **Pre-implementation security review (required by the `security-
+     change` workflow, decision 1573) found the original design's admin-
+     only login gate was not a real boundary.** The plan was: set the
+     session cookie on any successful login, then a separate client-side
+     `GET /api/v1/me` call checks the role and clears the cookie afterward
+     if it isn't `admin`. Checked against the actual backend
+     (`app/api/auth.py`'s `LoginResponse` already returns `role` directly,
+     no `/me` round-trip needed), this was a deterministic bypass, not a
+     narrow race — anything that reached `/api/login` without also running
+     the exact follow-up JS (a direct POST, a second tab, a network blip)
+     walked away with a valid cookie the role check never ran on. Fixed
+     before any code was written: `/api/login`'s route handler checks
+     `role === "admin"` synchronously against the login response body,
+     before `cookies.set` is ever called — no cookie is issued for a
+     non-admin at all. **Second finding, HIGH:** the design's claim of "a
+     fully separate session from orbynadmin's" was false for the stated dev
+     topology — browsers scope cookies by host+path, not port, so
+     orbynadmin's `meadowops_session` cookie would be visible to this app
+     too on `localhost`, and its presence-only middleware gate would let an
+     Analyst who's merely logged into orbynadmin sail straight past this
+     app's login page without ever hitting the fixed check above. Fixed
+     with a distinct cookie name, `meadowops_scenarios_session`. Also
+     required: a real *rejecting* role check on every page load (not just
+     UI-hiding), since neither fix above helps a stray/forged/stale cookie
+     already in the browser — delivered as `(dashboard)/layout.tsx`'s
+     Server Component `redirect` (see point 2).
+  4. **Live-verified end-to-end in a real browser** against the real
+     FastAPI backend and Postgres (one open `low_stock_days_of_supply`
+     exception flag seeded directly for testing, cleaned up afterward):
+     admin login reaches `/dashboard`; an Analyst account login is rejected
+     with the exact designed message and no session is established
+     (confirmed by a subsequent `/dashboard` navigation bouncing back to
+     `/sign-in`); the full scenario lifecycle — create from the real seeded
+     exception via the picker, edit all 7 ground-truth narrative fields,
+     approve (validation-gated, confirmed it 422s until all fields are
+     filled), activate — and a second, separate scenario exercising
+     regenerate (confirm dialog shown and accepted) then cancel (confirm
+     dialog shown and accepted); logout correctly clears the session and
+     blocks re-entry. `tsc --noEmit` clean. Backend's own 689 tests
+     unaffected (no backend files touched).
+  5. **Post-implementation reviews: code-reviewer WARNING (1 HIGH + 2
+     MEDIUM + 2 LOW, all fixed and re-verified), security-reviewer
+     APPROVE** (independently confirmed all 5 fixes from points 3-4 against
+     the actual code, not the summary; 1 LOW informational note, no action
+     needed). **The HIGH, verified real and fixed:** a Server Component
+     cannot delete a cookie during its own render (a genuine Next.js
+     constraint, not an oversight) — so `(dashboard)/layout.tsx`'s
+     `redirect("/sign-in")` on a stale/expired/forged session left that
+     cookie attached, and `middleware.ts`'s presence-only gate then saw it
+     on `/sign-in` and bounced straight back to `/dashboard`. Since the
+     cookie was set with no `maxAge` while the backend JWT itself expires
+     after `MEADOWOPS_SESSION_TOKEN_EXP_HOURS` (8), this was a guaranteed
+     eventual lockout for every session, not a contrived edge case — and
+     the one recovery affordance (`nav-user.tsx`'s "Log out") lived inside
+     the very shell that would never render past the loop. Fixed with a new
+     `src/app/api/session-expired/route.ts` (the one place that can both
+     clear the cookie and redirect in the same response), which the layout
+     now redirects to instead of `/sign-in` directly — live-verified by
+     forging an invalid `meadowops_scenarios_session` cookie via
+     `document.cookie`, confirming a single clean redirect to `/sign-in`,
+     and confirming a second `/dashboard` navigation redirected cleanly
+     with no loop (the cookie was genuinely cleared, not just tolerated
+     once). **2 MEDIUM, both fixed:** `nav-user.tsx`'s `handleLogOut` had no
+     error handling — a failed `/api/logout` request left the one in-app
+     recovery path from a bad-cookie state silently doing nothing; fixed
+     with `try`/`finally` so navigation to `/sign-in` always happens.
+     Nothing under `(dashboard)` had an `error.tsx` boundary despite this
+     unit adding its first real data-fetching pages that can throw (a
+     non-404 backend error on `[id]/page.tsx`, or a network failure inside
+     `getCurrentRole()`); added `(dashboard)/error.tsx` and wrapped
+     `current-user.ts`'s fetch in a `try`/`catch` (an unreachable backend
+     now reads as an invalid session, same as the existing "expired/
+     invalid/missing all collapse to null" convention, rather than
+     crashing a Server Component render). **2 LOW, both fixed:** two of the
+     new proxy route handlers (`scenarios/route.ts`,
+     `scenarios/[id]/ground-truth/route.ts`) called `request.json()`
+     unguarded, unlike `api/login/route.ts`'s own established
+     try/catch-then-400 convention — now consistent. Also found and fixed
+     along the way, not part of either review: `src/components/ui/
+     sonner.tsx` was missing `"use client"` (a pre-existing gap in the
+     template, unused until this unit's `<Toaster />` first rendered it —
+     crashed with "Attempted to call useTheme() from the server"), and
+     `nav-user.tsx`'s "Log out" was a dead `<Link href="/sign-in">` that
+     never called `/api/logout` at all — harmless before this unit (there
+     was no cookie-based gate to get stuck behind), but would have
+     immediately infinite-redirect-looped once this unit's auth gate went
+     live, since the stale cookie would never be cleared.
+  6. **Full regression re-verified live after all fixes** — normal login/
+     dashboard/scenarios navigation still clean, no console errors,
+     `tsc --noEmit` clean. Two checklist items in Phase 2's own §5 update as
+     a direct result: item 4/8 (scenario builder controls UI) and item 5
+     (API layer exposed for Subsystem 2, since this is the first real
+     frontend consumer of it) both flip to closed — see §5, closing Phase 2
+     10/10. Per the standing convention, **not committed to git
+     individually** — Phase 2 commits as one whole once the user indicates
+     the phase is done.
+- **DD-21 (Unit 17 — Reporting-layer lag + SR-4 conflict, 2026-09-02):**
+  1. **Scope narrowed from "SR-1/2/3/4" to SR-2 (mandatory) + SR-4 (the
+     chosen "at least one"), with SR-1/SR-3 explicitly deferred, not
+     silently dropped.** §5's own Phase 2 checklist only requires
+     "Reporting-layer lag implemented (SR-2)" plus "at least one seeded
+     conflicting-source **or** bad-data case (SR-3/SR-4)" — an OR, not
+     both. SR-1 (inconsistent formatting) has no checklist hook in either
+     Phase 2 or Phase 3. SR-3's own edge cases — orphaned FK, duplicate
+     records — turn out to already have a home: they're explicit rows
+     under §9.2, and "Full edge case catalog (9.2) implemented and
+     passing" is itself a Phase 3 checklist item, not this unit's. Same
+     B7-pattern correction as prior units: state the narrower scope
+     explicitly rather than let the unit's own title ("SR-1/2/3/4")
+     imply more than what actually got built.
+  2. **The dashboard stays on live data — Unit 16's endpoints are
+     untouched.** PRD 4.1 reads ambiguously ("creates realistic 'the
+     dashboard hasn't caught up' situations") — it could mean U16's
+     dashboard *reads from* the lagged layer, or that the lagged layer is
+     a separate surface whose *discrepancies* a Data-Quality view exposes.
+     Took the second reading: preserves U16's reconciliation tests
+     (OTIF/fill-rate/etc. computed from live, matching `/executive`'s own
+     figure) rather than invalidating them, and still satisfies S1-FR-9
+     ("distinct from live"). No new endpoint was built to surface this
+     data on `/reports` in this unit — the Reporting layer and its SR-4
+     conflict are backend-only (tables + exception flags) for now; wiring
+     a Data-Quality view onto them is follow-on API/frontend work, not
+     scoped here.
+  3. **SR-4's conflict entity is a *frozen* row, not a recurring
+     transform.** First design considered re-applying a fixed offset on
+     every sync (`reporting_value = live_value + 25`, forever) — rejected
+     on its own reasoning trail as too easily dismissed as "just an
+     invertible formula bug," not a genuine data-quality conflict.
+     Settled on the opposite: the designated entity's reporting row is
+     written *once*, corrupted, and then the entity is simply never
+     synced again while every other entity keeps advancing normally. The
+     discriminating test recomputes live's own historical value at the
+     exact date the frozen row claims to represent (not "today's" live
+     value, and not live rewound to the current lag horizon) and asserts
+     the discrepancy still holds — proving it can't be explained away by
+     waiting, which is the actual SR-4 requirement ("not resolvable by
+     timing alone"), not just a stale number.
+  4. **Both new exception categories reuse the existing three-category
+     machinery unchanged.** `reporting_lag_stale` (PRD 9.2's "lag
+     exceeding its expected window" edge case, e.g. simulated scheduler
+     downtime) and `reporting_conflict_qty_variance` (SR-4) are threshold
+     rows in `exception_rule_threshold`, same Analyst-tunable convention
+     as U15's three (`reporting_conflict_qty_variance`'s threshold is a
+     tolerance in *units*, not *days* — the first non-day-unit threshold
+     row). Both feed `app.services.exception_engine`'s existing private
+     `_sync_flags` reconciliation helper, left untouched — the new
+     `app.services.reporting_sync` module stays independent of
+     `exception_engine`'s internals (no import either direction),
+     returning its own small check types that `evaluate_exceptions`
+     translates into `EntityKey`/`Evaluation` itself. The
+     `reporting_lag_stale` flag is global (no product/warehouse
+     discriminator) — every entity column is NULL, and migration 0012's
+     COALESCE-based partial unique index already treats that as a natural
+     singleton per category, so no index/schema change was needed to
+     support a global-scope category alongside the three per-entity ones.
+  5. **`sync_reporting_layer` runs in the scheduler tick before
+     `evaluate_exceptions`, not after** — so a staleness/conflict
+     condition it produces is visible to the same tick's exception
+     evaluation rather than one tick late. Discovered while wiring this
+     in: the existing outer `except Exception: ... session.commit()`
+     block in `app.domain.scheduler._run_tick` had no guard for a genuine
+     DB-level failure leaving the session in a "pending rollback" state
+     (`session.is_active == False`) before that fallback commit — would
+     have raised `PendingRollbackError`, masking the original failure and
+     escaping the handler entirely. Pre-existing gap (from U16, which
+     added the two calls this except-block already wrapped), extended
+     into by this unit's third call site; fixed here with a
+     `session.is_active` guard mirroring
+     `app.services.scheduled_flow.run_scheduled_tick`'s own
+     rollback-before-recovery-write pattern (code review, MEDIUM — see
+     §5's U17 row).
+  6. **The `reporting` schema needed no new migration-level access
+     control.** Unlike `live`, which every earlier migration touches
+     freshly, `reporting` was already created *and* locked down (REVOKE
+     ALL from PUBLIC/`meadowops_sandbox`) in migration 0001 — this unit's
+     migration 0013 only adds tables to an already-provisioned,
+     already-access-controlled schema. code-reviewer independently ran
+     `alembic revision --autogenerate` against a DB at head 0013 and
+     confirmed zero diff for either new table against the ORM models —
+     column types, the unique constraint, and both cross-schema FKs all
+     match.
 
 ---
 
@@ -907,16 +1676,16 @@ exist and are testable.
 
 Mirrors PRD §10 Phase 2 checklist (10 items) + Exit Criterion.
 
-- [ ] End-to-end data flow working on schedule (procure-to-stock, order-to-ship)
-- [ ] Core KPIs calculating correctly (OTIF, fill rate, days of supply, order cycle time, perfect order rate)
-- [ ] Exception engine flags at-risk POs / low stock / late shipments
-- [ ] Dashboard live with drill-down across all five views (5.4)
-- [ ] API layer exposed for Subsystem 2
-- [ ] Reporting-layer lag implemented (SR-2)
-- [ ] At least one seeded conflicting-source or bad-data case working (SR-3/SR-4)
-- [ ] Scenario builder controls working (select/inject/preview/approve)
-- [ ] SQL Query Playground fully functional: editor, results table, confirmation dialog for DML/DDL, query logging, statement timeout, row limits (5.9, S1-FR-13/14)
-- [ ] Integration tests covering the Subsystem 1 ↔ Subsystem 2 API boundary passing
+- [x] End-to-end data flow working on schedule (procure-to-stock, order-to-ship) — U13, done (see §5). Backend-only by explicit scope decision — see U13's row for why the Inventory/Orders/Shipping page-wiring this unblocks belongs to U16 (S1-FR-5's drill-down responsibility), not this item
+- [x] Core KPIs calculating correctly (OTIF, fill rate, days of supply, order cycle time, perfect order rate) — U14, done (see §5). "Correctly" per U10's stated simplifying assumptions (pending Analyst review, PRD line 207) — display/drill-down is U16's job, not this item's
+- [x] Exception engine flags at-risk POs / low stock / late shipments — U15, done (see §5). Backend-only by explicit scope decision, same reasoning as U13/U14 — the Analyst-facing exception queue UI is U16's job (S1-FR-5), not this item
+- [x] Dashboard live with drill-down across all five views (5.4) — U16, done (see §5). Full-stack per B7's standing correction: real endpoints reading genuinely populated `kpi_snapshot`/`days_of_supply_snapshot`/`exception_flag` (B9 closed as part of this unit) wired into orbynadmin's Executive/Analytics/Inventory/Suppliers/Orders(+Sales)/Shipping/Reports pages, Playwright-verified live against the real backend with 20 real scheduler ticks of seeded data
+- [x] API layer exposed for Subsystem 2 — U20 built the boundary/service-identity mechanism (DD-28); U20a is the first real consumer, shadcn-dashboard's own login/session calling the admin scenario API end-to-end (DD-29), closing what was a zero-backend-wiring gap through U19
+- [x] Reporting-layer lag implemented (SR-2) — U17, done (see §5, DD-21). Scope narrowed to SR-2 + SR-4; SR-1/SR-3 explicitly deferred to Phase 3's own edge-case-catalog item
+- [x] At least one seeded conflicting-source or bad-data case working (SR-3/SR-4) — U17, done (see §5, DD-21). One deterministic SR-4 conflict seeded on the Reporting layer's first sync
+- [x] Scenario builder controls working (select/inject/preview/approve) — U18 shipped the Builder-side backend controls (see §5, DD-24/DD-26); U20a closed the remaining UI half (see §5, DD-29) — a real picker over open exceptions, a formatted narrative/provenance preview, and all 7 lifecycle operations wired into shadcn-dashboard's own new login/session, live-verified end-to-end
+- [x] SQL Query Playground fully functional: editor, results table, confirmation dialog for DML/DDL, query logging, statement timeout, row limits (5.9, S1-FR-13/14) — U19, done, full-stack (see §5, DD-27)
+- [x] Integration tests covering the Subsystem 1 ↔ Subsystem 2 API boundary passing — U20, done (see §5, DD-28)
 
 **Exit criterion:** the dashboard is demoable with real KPIs and drill-down; a
 data-quality issue can be injected and observed; a QA test run has exercised the
@@ -925,14 +1694,16 @@ Query Playground including its confirmation flow.
 ### Phase 2 units
 | Unit | Spec ID (planned) | Description | Status |
 |---|---|---|---|
-| U13 | MEADOWOPS-DOMAIN-005 | Scheduled procure-to-stock / order-to-ship flow (APScheduler) | Not started |
-| U14 | MEADOWOPS-DOMAIN-006 | KPI engine — OTIF, fill rate, days of supply, order cycle time, perfect order rate (Appendix A) | Not started |
-| U15 | MEADOWOPS-DOMAIN-007 | Exception engine (at-risk PO / low stock / late shipment) | Not started |
-| U16 | MEADOWOPS-API-003 | Dashboard API + drill-down endpoints, all 5 views | Not started |
-| U17 | MEADOWOPS-DOMAIN-008 | Reporting-layer lag + conflicting-source/bad-data seeded cases (SR-1/2/3/4) | Not started |
-| U18 | MEADOWOPS-DOMAIN-009 | Scenario builder controls (Builder-side: select/inject/preview/approve) — no AI yet | Not started |
-| U19 | MEADOWOPS-DOMAIN-010 | Query Playground full functionality (editor, results, confirm dialog, logging, timeout, row limits) | Not started |
-| U20 | MEADOWOPS-API-004 | Subsystem1 ↔ Subsystem2 API boundary contract + enforcement test (DD-2) | Not started |
+| U13 | MEADOWOPS-DOMAIN-005 (spec id `MEADOWOPS-DOM-006` per U3's `-DOM-` note — `DOM-005` was already taken by U12a) | Scheduled procure-to-stock / order-to-ship flow (APScheduler) | **Done.** Spec active (id 204). Decision 1550 (pending_approval — human-ack formality, see B5). Risk **critical** (keyword match on "order" from "procure-to-stock/order-to-ship" — DD-5 policy, eighth occurrence of the same false positive). Workflow run 126 parked at `tests` stage — same B6 bookkeeping gap as every prior unit, not a quality gap; full backend suite genuinely re-run and green (329 passed, up from 323 pre-unit) after every change. **Scope decision, stated explicitly per the advisor's Phase-2 kickoff note (avoiding a repeat of the B7 mistake in the opposite direction):** this unit stays backend-only on purpose — the Inventory/Orders/Shipping list pages it makes non-empty are S1-FR-5's drill-down responsibility, assigned to U16, not this unit; Activity/Ledger view wiring is U24's (Phase 3). **Delivered:** migration `0010` (three new `live` tables — `scheduled_tick`, `purchase_order_lifecycle_event`, `sales_order_lifecycle_event` — reusing the existing `purchase_order_status`/`sales_order_status` Postgres enum types via `postgresql.ENUM(create_type=False)`, downgrade/upgrade round-trip verified); `app/domain/scheduled_flow.py` (pure logic: deterministic product→supplier assignment via category-focus keyword matching since no product_supplier table exists, seeded-random demand/jitter generation keyed on `simulation_date`+purpose for reproducibility); `app/services/scheduled_flow.py` (the transactional layer — progresses open POs `SUBMITTED→CONFIRMED→RECEIVED` writing `RECEIPT` inventory transactions, creates new POs when a product/warehouse falls below a reorder point derived from recent shipped-demand history, progresses SOs `SUBMITTED→ALLOCATED→SHIPPED`/`PARTIALLY_SHIPPED` writing `SHIPMENT` transactions and creating `Shipment` rows, progresses shipments `PENDING→IN_TRANSIT→DELIVERED`, generates new SOs from seeded-random simulated customer demand); `app/domain/scheduler.py` (APScheduler `BackgroundScheduler`, gated by new `settings.scheduler_enabled`/`scheduler_interval_seconds`, default off so tests/CI never get an unrequested background thread); wired into `main.py`'s lifespan. 46 new tests (20 pure-logic, 17 service-layer against real seeded baseline data via the established session-fixture/rollback discipline, 5 scheduler-wiring via mocking rather than the real DB, so nothing here can ever mutate the shared dev database's real clock). **Two real bugs self-caught before review, both via the project's own sabotage-and-restore discipline:** (1) `_progress_purchase_orders`/`_progress_sales_orders_and_shipments` never called `session.flush()` before the caller's `session.refresh()`, unlike `simulation_clock_ops.advance_simulation`'s own established pattern — status mutations silently reverted on refresh; fixed by adding the flush. (2) `_progress_shipments` was called at the END of the same pass that creates new `Shipment` rows, so a shipment just created (status `PENDING`) got immediately swept up and advanced to `IN_TRANSIT` within the same tick it was created — fixed by moving the shipment-progression call to the START of the pass, before any new shipments exist for that tick. **Found and fixed along the way, not this unit's own scope:** `app/db/__init__.py` was missing `exception_rules` from its metadata-registration import list (a pre-existing gap from Unit 10 — Alembic autogenerate would never have seen that table's own schema drift), fixed as a one-line drive-by while touching this exact file to register the new `scheduling` module. security-reviewer verdict **APPROVE**, 0 CRITICAL/HIGH; 1 MEDIUM found and fixed (a genuine DB-level exception, e.g. a constraint violation, leaves the SQLAlchemy session in "pending rollback" state — the failure-path's own recovery write of the `FAILED` `ScheduledTick` audit row would itself raise `PendingRollbackError` into that state, masking the original exception and silently losing the very audit row the design exists to preserve; fixed with `session.rollback()` before the recovery write, and — since a mocked Python exception doesn't actually dirty the session's transactional state the way a real failed flush does — verified with a new test reproducing a genuine FK violation via raw SQL, confirmed discriminating by temporarily removing the fix, watching the *exact* predicted `InFailedSqlTransaction`/`PendingRollbackError` failure mode reproduce, then restoring); 3 LOW (one addressed with a documentation comment — `max_instances=1` only prevents overlapping ticks within one process, not across multiple future app workers/replicas, no such deployment config exists yet since B1/8.2 is still an open blocker; two left as documented and non-blocking — `_current_inventory_position`'s unbounded historical aggregate is fine at the current ~20 product × 3 warehouse scale, and the UUID-derived `po_number`/`so_number` collision space is already covered by the MEDIUM fix's error-handling path). Also confirmed clean by the reviewer: no SQL injection surface (SQLAlchemy Core `select()`/bound params throughout, no string interpolation), no new auth boundary (no new API endpoints), the seeded PRNG is never used for anything security-sensitive (`po_number`/`so_number` use `uuid.uuid4()`, not the seeded RNG). Live-smoke-tested: `create_app()` with `scheduler_enabled=True` starts and shuts down cleanly; directly queried the shared dev database's `simulation_clock`/`scheduled_tick` state before and after to confirm the smoke test itself never mutated anything (the interval never elapsed within the brief `TestClient` context). |
+| U14 | MEADOWOPS-DOMAIN-006 (spec id `MEADOWOPS-DOM-007` per U3's `-DOM-` note — `DOM-006` was already taken by U13) | KPI engine — OTIF, fill rate, days of supply, order cycle time, perfect order rate (Appendix A) | **Done.** Spec active (id 205). Decision 1552 (pending_approval — human-ack formality, see B5). Risk **critical** (keyword match on "order" — DD-5 policy, ninth occurrence). Workflow run 127 parked at `tests` stage — same B6 bookkeeping gap, not a quality gap; full backend suite genuinely re-run and green (345 passed, up from 333 pre-unit) after every change. **Delivered:** migration `0011` (`kpi_snapshot` — one row per `simulation_date` holding the four global-scalar starter KPIs; `days_of_supply_snapshot` — one row per product/warehouse/`simulation_date`, since that KPI isn't a single scalar; both upsert-per-day via a unique constraint, round-trip verified); `app/services/kpi_engine.py` (`compute_and_snapshot_kpis` — executes U10's five pre-reviewed starter KPI SQL files unchanged, upserts the results). **A genuine cross-unit gap found and fixed along the way**, in Unit 13's own module rather than this one: `sql/kpi/days_of_supply.sql` reads `live.inventory_snapshot`, but U13's scheduled flow only ever wrote to `inventory_transaction` — nothing populated `inventory_snapshot`, so that KPI was permanently NULL. Fixed by adding `_snapshot_inventory_positions` to `app/services/scheduled_flow.py` (a daily on-hand/allocated rollup per product/warehouse, upserted per day) — a daily inventory-position snapshot is that unit's natural responsibility, not KPI computation's, so the fix lives there; covered by 4 new tests in U13's own test file. security-reviewer verdict **APPROVE**, 0 CRITICAL/HIGH; 1 MEDIUM found and fixed — U10's starter KPI SQL (already reviewed, unmodified here) are all-time aggregates with no date bound, so recomputing an *earlier* `simulation_date` after later data already existed would have silently overwritten a correct historical row with a wrong, too-recent one — exactly the retry scenario this module's own docstring originally (and incorrectly) claimed was safe; fixed with a new `KpiComputationOutOfOrderError` guard rejecting any out-of-order call, corrected the module's and the ORM models' docstrings to describe "recorded-on" rather than "as-of" semantics, and added a test proving an out-of-order call is rejected without mutating the existing later row — confirmed discriminating by sabotage-and-restore (temporarily disabled the guard, watched the exact predicted failure reproduce, restored). 1 LOW addressed as a drive-by on the same `_snapshot_inventory_positions` fix — replaced a ~60-query-per-tick N+1 pattern (one query per product×warehouse pair) with a single `GROUP BY`, and added a warning log for the previously-silent negative-inventory-position clamp (unreachable today, but Unit 17's realistic-imperfections work could change that). Also confirmed clean by the reviewer: no SQL injection surface (every `load_kpi_sql()` call site passes a hardcoded literal name, never external input, and the loader itself allowlist-validates against a fixed tuple before touching the filesystem — pre-existing from U10, unchanged here), no new auth boundary (no new API endpoints), the `ON CONFLICT DO UPDATE` upsert pattern is race-safe under Postgres's row-level locking even if ever called concurrently (it currently isn't). |
+| U15 | MEADOWOPS-DOMAIN-007 (spec id `MEADOWOPS-DOM-008` per U3's `-DOM-` note — `DOM-006`/`DOM-007` were already taken by U13/U14) | Exception engine (at-risk PO / low stock / late shipment) | **Done.** Spec active (id 206). Decisions 1554 (superseded) / 1555 (pending_approval — human-ack formality, see B5). Risk **critical** (keyword match on "order" — DD-5 policy, tenth occurrence of the same false positive). Workflow run 128 parked at `risk` stage — same B6 bookkeeping gap as every prior unit, not a quality gap; full backend suite genuinely re-run and green (375 passed, up from 345 pre-unit) after every change. **Delivered:** migration `0012` (new `live.exception_flag` table — one row per detected exception across the three categories U10's `exception_rule_threshold` already seeds; a hand-written functional partial unique index, `ux_exception_flag_open_entity`, using `COALESCE(..., '')` on the nullable per-category discriminator columns, since Postgres treats NULL as distinct from NULL in a plain unique index and a naive index would silently allow duplicate open low-stock flags for the same product/warehouse — verified by sabotage-and-restore, temporarily dropped the index, confirmed the duplicate-insert test then failed as predicted, restored); `app/domain/exception_engine.py` (pure logic: `evaluate_low_stock`/`evaluate_at_risk_purchase_order`/`evaluate_late_shipment`, 16 tests); `app/services/exception_engine.py` (`evaluate_exceptions` — the transactional layer, reads thresholds fresh from `exception_rule_threshold` every call since S1-FR-10 makes them Analyst-adjustable at runtime, reads live days-of-supply by running `sql/kpi/days_of_supply.sql` directly rather than from the not-yet-populated `days_of_supply_snapshot` table — see B9 — reconciles against existing open flags via `_sync_flags`, auto-resolving ones whose condition no longer holds). **Scope note:** stays backend-only on purpose, same reasoning as U13/U14 — the Analyst-facing exception queue UI is S1-FR-5's drill-down responsibility, assigned to U16, not this unit. **Found and recorded along the way, not this unit's own scope:** while scoping this unit's days-of-supply dependency, discovered `app.services.kpi_engine.compute_and_snapshot_kpis` (U14) has no caller anywhere in the running system — advisor-consulted decision was to record this as new **B9**, not fix it as a drive-by inside U15 (see B9's own row for the reasoning: this unit doesn't actually need the snapshot table populated, since it queries the KPI SQL directly). security-reviewer verdict **APPROVE after fixes** (first pass: 1 HIGH, 2 MEDIUM, 2 LOW; all fixed, then re-verified). **1 HIGH** — the low-stock auto-resolve path collapsed `evaluate_low_stock`'s `None` return (an undefined days-of-supply ratio — e.g. no shipment activity in the trailing 30-day window, or an unseeded simulation clock) into the same `False` used for a confident "not flagged" verdict, so a genuinely still-open flag could be silently auto-resolved just because the metric became momentarily unmeasurable, not because the underlying stock risk actually cleared — exactly the "silently mis-attribute an exception" failure mode that matters for an Analyst-facing queue (S1-FR-4/S1-FR-5); fixed by making the evaluation verdict a tri-state (`True`/`False`/`None`), where `None` (inconclusive) neither opens nor resolves a flag; confirmed discriminating by sabotage-and-restore (removed the tri-state guard, watched a new test fail with the exact predicted `resolved=1`, restored). **2 MEDIUM**, both fixed: (1) `threshold_value` and `simulation_date` were being overwritten on every re-sync of an already-open flag, contradicting the module's own stated "frozen at detection" audit-trail guarantee, and no column recorded the simulation day a condition was first detected at all — fixed by freezing `threshold_value` on UPDATE (only ever written on INSERT) and adding a new write-once `first_detected_simulation_date` column (migration `0012` amended in place before this unit was ever approved/shipped, downgrade→upgrade round-trip re-verified), with `simulation_date` now documented explicitly as "last observed," not "detection time." (2) No concurrency guard around `_sync_flags`'s read-then-decide-then-write reconciliation — not exploitable today (nothing calls `evaluate_exceptions` concurrently yet, and it isn't wired into the scheduler per B9) but worth closing before a later unit wires it in; fixed with a Postgres advisory transaction lock (`pg_advisory_xact_lock`, auto-releases at transaction end) acquired at the top of `evaluate_exceptions`, verified by checking `pg_locks` from a second connection mid-transaction. **2 LOW**, both fixed: `int()` truncation of fractional grace-day thresholds (a `Numeric(10,2)` column, so an Analyst could set e.g. 2.7 days via the future Settings UI) replaced with explicit rounding; late-shipment `measured_value`'s reference date now mirrors `evaluate_late_shipment`'s own `DELIVERED`-status check exactly, rather than trusting `actual_delivery_date`'s mere presence (nothing in the schema prevents that field being set on a non-`DELIVERED` row). Also confirmed clean by the reviewer: no SQL injection surface (the one `text()`-wrapped SQL call passes a hardcoded literal through U10's pre-existing allowlist loader, no interpolation), no new API endpoints/auth boundary, full-table scans over `purchase_order`/`shipment` consistent with the established bounded-simulation-dataset pattern (same as the KPI engine). 30 new tests total (16 domain + 14 service-layer: 11 original plus 3 added for the HIGH/MEDIUM fixes — inconclusive-evaluation-doesn't-resolve, threshold/first-detected-date frozen across a threshold change, advisory lock genuinely held). |
+| U16 | MEADOWOPS-API-003 | Dashboard API + drill-down endpoints, all 5 views | **Done.** Spec id 207, superseded v1→v2 mid-implementation to add `GET /shipments` (12→13 endpoints; see DD-20 point 4). Decision 1557 (pending_approval — human-ack formality, see B5). Risk **critical** (keyword match on "order" — DD-5 policy, eleventh occurrence of the same false positive). Workflow run 129 parked at `risk` stage — same B6 bookkeeping gap as every prior unit, not a quality gap; full backend suite genuinely re-run and green (414 passed, up from 402 pre-remediation) after every change. **Full-stack per B7's standing correction** (backend read endpoints AND the orbynadmin frontend actually wired to them, not backend-only) — this unit also closed **B9** as a discovered prerequisite: S1-FR-5 requires drilling down to real KPI/exception data that didn't exist without the scheduler ever calling `evaluate_exceptions`/`compute_and_snapshot_kpis` (see DD-20 point 1). **Delivered:** `app/api/dashboard.py` — 13 `Depends(require_builder)` GET endpoints across the five S1-FR-5 views (Executive summary + trend; Inventory positions + per-position transaction drill-down; Supplier performance + per-supplier PO drill-down, built net-new since Appendix D has no page mapping for it — see DD-20 point 3; Purchase/Sales order lists + detail drill-downs with lines/lifecycle events/shipments; a flat filterable Shipments list per Appendix D's Shipping page; Exception listing + per-flag drill-down resolving to whichever of PO/shipment/inventory position the flag's category points at); `app/schemas/dashboard.py` (16 response-only Pydantic schemas, `is_at_risk`/`is_late` computed via the `model_validate(orm_obj).model_copy(update={...})` pattern since these fields don't exist on the ORM object itself). Frontend: `src/lib/dashboard-api.ts` (13 server-side fetch helpers, same httpOnly-cookie→`Authorization: Bearer` forwarding pattern as `admin-api.ts` — no browser-facing proxy route needed since every dashboard page is a read-only async Server Component, unlike Unit 8's write-path Client Component dialogs; see DD-20 point 6), `src/types/dashboard.ts`, `src/lib/dashboard-format.ts`, and 7 rewritten/new page routes (`dashboard/logistics` as the Executive view, `dashboard/analytics`, `inventory` + `inventory/[productId]/[warehouseId]`, `suppliers` + `suppliers/[id]`, `orders` + `orders/[id]` + `orders/sales` + `orders/sales/[id]`, `shipping`, `reports` + `reports/[id]`) plus 7 new table/chart components and a new top-level Suppliers nav item. **Drill-down verified by reconciliation, not just response shape** (the advisor's explicit framing of the failure mode this unit had to avoid — shipping five pages of KPI cards and calling it done): `tests/api/test_dashboard.py` independently recomputes OTIF from the `/orders/sales` list + per-order drill-down responses and asserts it matches `/executive`'s own reported figure, with equivalent reconciliation checks for the Supplier view's PO counts, the Inventory view's transaction ledger netting to on-hand quantity, and the exception queue's open-count matching `/executive`'s per-category counts — see DD-20 point 5. Playwright-verified live against the real backend with 20 real scheduler ticks of seeded data, which mutated the shared dev database's singleton `simulation_clock` and several operational tables other units' tests assert start empty — recorded as new blocker **B10** (not this unit's own defect; a standing operational caution for future live-verification work), fully manually reset and the full suite re-verified green afterward (see DD-20 point 7). security-reviewer verdict **APPROVE after fixes**, 0 CRITICAL/HIGH; **1 MEDIUM** found and fixed — six endpoints (`executive/trend`, `orders/purchase`, `orders/sales`, `shipments`, `exceptions`, `suppliers/{id}/purchase-orders`) returned every matching row unbounded, growing indefinitely as the simulation runs indefinitely, plus `list_inventory_positions` filtered `warehouse_id`/`product_id` in a Python list comprehension after loading every `DaysOfSupplySnapshot`/`InventorySnapshot` row into memory instead of pushing the filter into the query; fixed by adding `limit`/`offset` `Query(...)` params (`ge`/`le`-bounded) to all six endpoints (`executive/trend` fetches descending by `simulation_date` with the limit, then reverses to chronological order so the existing ascending-order trend chart keeps working unchanged) and pushing `warehouse_id`/`product_id` into `_latest_days_of_supply`/`_latest_inventory_positions`'s own `select().where()` clauses, reused as-is by `get_exception_drilldown`'s low-stock branch. Confirmed via new RED→GREEN tests per endpoint — `test_trend_respects_limit_and_returns_the_most_recent_rows`, `test_drilldown_respects_limit_and_offset` (Supplier), `test_purchase_orders_list_respects_limit_and_offset`, `test_sales_orders_list_respects_limit`, `test_shipments_list_respects_limit`, `test_listing_respects_limit` (Exceptions) — the two endpoints with fixture rows on distinct dates (`orders/purchase`, the supplier drill-down) assert exact row identity across pages; the three with tied fixture dates (sales orders, shipments, exceptions) assert count only, since exact tie-break ordering isn't a contract these endpoints make. **2 LOW**: `TestAuthRequired` covered only 8 of 13 routes (all 13 already had `Depends(require_builder)`, confirmed by direct grep — a coverage gap, not a live vulnerability), fixed by expanding the parametrized list to all 13, confirmed 401 on every one; the scheduler's widened commit-on-failure surface from closing B9 (a failure in `evaluate_exceptions`/`compute_and_snapshot_kpis` still commits whatever `run_scheduled_tick` already flushed) — no action taken, reviewer confirmed this is already documented in `app/domain/scheduler.py`'s own module docstring and no further action is required. Also confirmed clean by the reviewer: no SQL injection surface (SQLAlchemy Core `select()`/bound params throughout), no new unauthenticated surface (every endpoint gated by `require_builder`, verified by the now-complete `TestAuthRequired` coverage), no PII/secret leakage in any response schema. |
+| U17 | MEADOWOPS-DOM-009 | Reporting-layer lag + conflicting-source/bad-data seeded cases (SR-1/2/3/4) | **Done — scope narrowed to SR-2 + SR-4, SR-1/SR-3 explicitly deferred (see DD-21 point 1).** Spec id 209 (v1). Decision 1559 (pending_approval — but see below, this unit is the first **not** auto-classified critical: risk **medium**, keyword-match false positive (DD-5) did not trigger — no "order"/"ledger"/"payment" hit in the risk description, so it does not belong in §2's B5 critical-risk table). Workflow run 130 parked at `risk` stage — same B6 bookkeeping gap as every prior unit, not a quality gap. **Delivered:** migration `0013_reporting_layer` adds `reporting.inventory_snapshot`/`reporting.sync_state` to the `reporting` schema Migration 0001 already created and access-locked-down (no new CREATE SCHEMA/REVOKE needed — DD-21 point 6); `app/db/reporting.py` (ORM models, schema override on the shared `Base`); `app/domain/reporting_sync.py` (pure logic — `target_sync_date`, `is_lag_stale`, `pick_conflict_entity`, `KNOWN_CONFLICT_QTY_OFFSET`); `app/services/reporting_sync.py` (`sync_reporting_layer` — copies `live.inventory_snapshot` into the Reporting layer at a configurable steady-state lag (`settings.reporting_lag_days`, default 2 days), catching up every missed day in one call to satisfy §9.2's simulated-scheduler-downtime edge case, and on the layer's first-ever sync, deterministically freezes one (product_id, warehouse_id) pair's row forever at a corrupted value — DD-21 point 3; plus `check_lag_staleness`/`check_reporting_conflict`, both read-only). Two new exception categories (`reporting_lag_stale`, `reporting_conflict_qty_variance`) wired into `app.services.exception_engine.evaluate_exceptions`, reusing its existing private `_sync_flags` reconciliation helper unchanged (DD-21 point 4); default thresholds seeded in `exception_rule_defaults.py` (re-seeded into the real dev DB directly, since no CLI seed script exists yet — same gap noted for prior units). Scheduler wiring: `sync_reporting_layer` now runs in `_run_tick` before `evaluate_exceptions` (DD-21 point 5), `reporting_lag_days` threaded through `build_scheduler`/`Settings`. TDD throughout — RED confirmed before every GREEN across all four layers (domain, service, exception-engine wiring, scheduler wiring); 31 new tests (414→445). Full backend suite: 445 passed (up from 402 pre-U13). No leaked test data (verified via direct DB query on `reporting.inventory_snapshot`/`reporting.sync_state`/`live.exception_flag`). code-reviewer verdict **APPROVE**, 0 CRITICAL/HIGH; **2 MEDIUM** found and fixed as one — `app.domain.scheduler._run_tick`'s outer exception handler had no guard for a genuine DB-level failure leaving the session in "pending rollback" state before its fallback `session.commit()` (a pre-existing gap from U16, extended into by this unit's third call site), plus the new scheduler test for that path used a `MagicMock` session that couldn't actually exercise the failure mode it claimed to cover; fixed with a `session.is_active` guard (mirroring `run_scheduled_tick`'s own rollback-before-recovery-write pattern) and a new test that sets `mock_session.is_active = False` to genuinely exercise the branch. Also confirmed clean by the reviewer, not just assumed: SR-4's non-resolvability holds against the actual code (`_snapshot_inventory_positions` never rewrites a past `snapshot_date` row, so the frozen entity's discrepancy against live's own historical record can't self-resolve), the multi-day catch-up loop only advances `last_synced_simulation_date` after the full loop completes (no partial-progress-marked-complete risk), and the cross-schema FKs (`reporting.*` → `live.product`/`live.warehouse`) don't touch the sandbox role's access boundary. One LOW noted, not blocking: `_lock_sync_state`'s lazy first-insert of the singleton `sync_state` row isn't race-proof under a hypothetical future multi-worker deployment (same already-documented caveat as `build_scheduler`'s own `max_instances=1` comment) — no concurrent-caller path exists today. **Explicitly out of scope, not silently dropped (DD-21 point 1):** SR-1 (inconsistent formatting — no checklist hook anywhere) and SR-3's orphaned-FK/duplicate-record edge cases (§9.2 rows that are themselves Phase 3's own "full edge case catalog" checklist item); no Data-Quality view was added to `/reports` to surface this unit's new tables — that's follow-on API/frontend work (DD-21 point 2). |
+| U17a | MEADOWOPS-DOM-010 | **Added 2026-09-02 (see DD-22).** Role-based login (email+password) replacing the single shared Builder bearer token — Admin/Analyst roles, `require_admin`/`require_authenticated` split across every existing admin/dashboard/customers route (5.1, 8.4, S1-FR-16) | **Done — see DD-23.** Spec id 210. Risk **high** (true-positive auth keyword match). `security-change` workflow run 131 completed (pre- and post-implementation security review, both APPROVE). 57 new tests (445→502), live-verified end-to-end. 1 MEDIUM operational gap (seed script has no reachable invocation path) recorded, not blocking. |
+| U18 | MEADOWOPS-DOMAIN-009 (spec id `MEADOWOPS-DOM-011`) | Scenario builder controls (Builder-side: select/inject/preview/approve) — no AI yet. | **Done — backend-only, see DD-24/DD-26 (frontend deferred to U20, backend-only by explicit user decision).** Decision 1566 (pending_approval — human-ack formality, see B5). Risk **high** (keyword false positive, DD-5 — request description referenced Unit 17a's existing `require_admin`, not new auth code). `engine.scenario` (migration 0015) + domain/service/API layers, 561/561 backend tests passing (502 pre-unit + 59 new). code-reviewer + security-reviewer both APPROVE-after-fixes (1 shared HIGH, 3 MEDIUM/LOW total, all fixed — see DD-26 point 2). |
+| U19 | MEADOWOPS-DOMAIN-010 (spec id `MEADOWOPS-DOM-012`) | Query Playground full functionality (editor, results, confirm dialog, logging, timeout, row limits) | **Done, full-stack — see DD-27.** Decision 1568 (approved). Risk **high** (genuine — real arbitrary-SQL execution capability, not a DD-5 keyword false positive). code-reviewer + security-reviewer both dispatched post-implementation (2 HIGH — 1 empirically disproven and corrected rather than "fixed", 1 real and fixed via a Postgres advisory lock — plus several MEDIUM/LOW, all fixed — see DD-27 point 4). 658/658 backend tests passing (561 pre-unit + 65 domain + 32 new). Live-verified end-to-end in a real browser. |
+| U20 | MEADOWOPS-API-004 (spec id `MEADOWOPS-API-004`) | Subsystem1 ↔ Subsystem2 API boundary contract + enforcement test (DD-2) | **Done, backend/boundary only by explicit user decision — see DD-28.** Decisions 1569 (pre-implementation security review, approved)/1570 (implementation, approved). Risk **high** (genuine — a real new authentication surface, not a DD-5 keyword false positive). code-reviewer APPROVE (1 LOW, fixed) + security-reviewer APPROVE WITH CHANGES (2 required fixes, both applied) — see DD-28 points 3-4. 689/689 backend tests passing (658 pre-unit + 31 new). Scenario-builder UI (U18's own deferred frontend) is a separate, not-yet-scoped follow-on unit, not part of this one. |
+| U20a | MEADOWOPS-UI-002 (spec id `MEADOWOPS-UI-002`, content id `MEADOWOPS-DOM-013`) | **Added 2026-09-03, following the U17a/U21a lettered-suffix precedent for a unit discovered mid-phase outside the original 33-unit plan.** Scenario Builder UI (Subsystem 2 / shadcn-dashboard) — closes U18's deferred frontend half: login/session, exception picker, narrative/provenance preview, all 7 scenario lifecycle operations | **Done, full-stack — see DD-29.** Decisions 1573 (pre-implementation security review, approved) / 1574 (implementation, approved) / 1575 (finalize, approved). Risk **high** (genuine — a new independent auth surface for shadcn-dashboard, not a DD-5 false positive). No backend changes — reuses U18's `/api/v1/admin/scenarios/*` and U16's `/api/v1/dashboard/exceptions` exactly as-is; backend's 689 tests unaffected. code-reviewer WARNING (1 HIGH + 2 MEDIUM + 2 LOW, all fixed and re-verified) + security-reviewer APPROVE (all 5 pre-implementation fixes independently confirmed, 1 LOW informational, no action needed) — see DD-29 points 3-5. `tsc --noEmit` clean. Live-verified end-to-end in a real browser against the real backend and Postgres: admin login, Analyst-login rejection with no session established, full scenario lifecycle (create → edit ground truth → approve → activate, and a separate regenerate → cancel run), logout, and the fixed session-expiry redirect (forged/stale cookie → clean single redirect to sign-in, cookie actually cleared, no loop). |
 
 ---
 
@@ -959,7 +1730,7 @@ evaluation, ledger recording. A simulated callback scenario has actually run.
 | Unit | Spec ID (planned) | Description | Status |
 |---|---|---|---|
 | U21 | MEADOWOPS-UI-001 | **Corrected 2026-09-02 (see B8/DD-19):** Analyst's persona-chat inbox (Subsystem 1, Appendix D.1's Chat page, S1-FR-15) + Builder's composer/thread monitor (Subsystem 2, Mail page repurposed) — was "Mail-style, Subsystem 2 only," now full-stack across both apps per 6.1/6.13's chat redesign | Not started |
-| U21a | *(not yet scoped — placeholder)* | **Added 2026-09-02 (see B8/DD-19):** Chat delivery infrastructure — Chat Thread/Chat Message data model (Appendix B), websocket real-time layer, the §7 named cross-subsystem exception (shared message store, each side still API-only). U21 depends on this existing first. To be formally scoped via harness-os when Phase 3 begins, not scoped ahead of Phase 2 | Not scoped |
+| U21a | *(not yet scoped — placeholder)* | **Added 2026-09-02 (see B8/DD-19):** Chat delivery infrastructure — Chat Thread/Chat Message data model (Appendix B), websocket real-time layer, the §7 named cross-subsystem exception (shared message store, each side still API-only). U21 depends on this existing first. To be formally scoped via harness-os when Phase 3 begins, not scoped ahead of Phase 2. **Interface design captured 2026-09-02, not yet built (see DD-25):** one `ChatThread` per (Scenario, persona) pair, locked to that persona for its whole life; Builder's Subsystem 2 side opens a thread to act as that persona (no per-message identity switching); Analyst's Subsystem 1 side is one unified inbox across every persona's thread, replying only ever as herself, threads labeled by persona not by scenario. | Not scoped |
 | U22 | MEADOWOPS-DOMAIN-011 | Claude scenario generation + validation pipeline (6.4) | Not started |
 | U23 | MEADOWOPS-DOMAIN-012 | Stakeholder persona roleplay + multi-round pushback loop (6.5, 6.6). **Amended 2026-09-02 (see B8/DD-19):** also covers the Builder-invoked AI sufficiency check (6.13) — same AI-wiring moment, same conversational mechanics | Not started |
 | U24 | MEADOWOPS-DOMAIN-013 | Ledger full lifecycle wiring + callback mechanism (4.4) | Not started |
@@ -1007,9 +1778,9 @@ proceeds. Nothing here is optional polish.
 |---|---|---|---|
 | 1 | Orphaned FK (e.g. Shipment referencing a deleted Sales Order) | Caught by validation, surfaced as a data-quality exception, not a silent null or crash | Not started |
 | 2 | Duplicate records injected (SR-3) | Detected and flagged, not silently deduplicated or accepted | Not started |
-| 3 | Negative or zero inventory quantities | Rejected at write boundary or flagged as exception, never shown as valid stock | **Partially passing** — negative rejected at the write boundary via CHECK constraint (`test_inventory_snapshot_rejects_negative_quantity_on_hand`, Unit 2). "Zero flagged as exception" is the exception-engine's job (Unit 15, U15/MEADOWOPS-DOMAIN-007) — not yet implemented. |
+| 3 | Negative or zero inventory quantities | Rejected at write boundary or flagged as exception, never shown as valid stock | **Passing** — negative rejected at the write boundary via CHECK constraint (`test_inventory_snapshot_rejects_negative_quantity_on_hand`, Unit 2). Zero (or any below-threshold) days-of-supply is now flagged by the exception engine's low-stock rule (Unit 15) whenever it's measurable — an *undefined* ratio (no shipment activity in the trailing 30-day window) is deliberately never flagged nor mistaken for "resolved," per Unit 15's own HIGH security-review fix. |
 | 4 | Partial PO receipt (received ≠ ordered) | Correctly reflected in inventory and OTIF/fill-rate, not "complete" or "missing" | Not started |
-| 5 | Simulation clock crossing a month/year boundary mid-scenario | KPI period calculations remain correct; no off-by-one-period errors | **Date arithmetic passing** (`test_advance_date_crosses_a_month_boundary`, `..._year_boundary`, `..._leap_year_february`, Unit 4). "KPI period calculations remain correct" is the KPI engine's job (Unit 14) — not yet built. |
+| 5 | Simulation clock crossing a month/year boundary mid-scenario | KPI period calculations remain correct; no off-by-one-period errors | **Date arithmetic passing** (`test_advance_date_crosses_a_month_boundary`, `..._year_boundary`, `..._leap_year_february`, Unit 4). KPI engine (Unit 14) is built but its SQL is all-time-aggregate, not period-bounded (see Unit 14's own MEDIUM fix) — "period calculations" in the period-of-time sense this row means aren't applicable to the current starter KPI design. |
 | 6 | Concurrent snapshot/reset operations | Serialized safely; no corrupted/partial world state | **Not started** — schema supports it (world_state rows are independent inserts, no shared mutable state there), but the locking `advance_simulation()` operation + its concurrency test for the `simulation_clock` singleton row (the one real contended resource) is still open (Unit 4 schema/FSM is done and reviewed; this service-layer operation was deferred out of that unit's scope, not blocked on anything now). |
 | 7 | Reset triggered while a scenario is active | In-flight scenario's own `world_state_id` unaffected | **Schema proxy passing** — `test_world_state_rows_are_never_mutated_by_reset` (Unit 4): world_state rows are append-only, a reset always inserts a new row rather than mutating existing ones. Full test (an actual scenario holding a `world_state_id` across a reset) needs the Scenario table, Phase 3. |
 | 8 | Reporting-layer lag exceeding expected window (simulated scheduler downtime) | Detected and surfaced, not silently masked as normal latency | Not started |

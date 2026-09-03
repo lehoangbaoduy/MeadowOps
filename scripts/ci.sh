@@ -35,17 +35,17 @@ echo "== repo root: pytest (tests/frontend, template-layout structural checks) =
 backend/.venv/bin/pytest tests/frontend/ -q
 
 echo "== orbynadmin: lint (non-blocking, see header) =="
-( cd templates/subsystem_1/orbynadmin && npm run lint ) \
+( cd frontend/subsystem_1/orbynadmin && npm run lint ) \
   || echo "[ci.sh] orbynadmin lint reported issues (non-blocking, see progress doc)"
 
 echo "== orbynadmin: build =="
-( cd templates/subsystem_1/orbynadmin && npm run build )
+( cd frontend/subsystem_1/orbynadmin && npm run build )
 
 echo "== subsystem_2: lint (non-blocking, see header) =="
-( cd templates/subsystem_2/shadcn-dashboard/nextjs-version && npm run lint ) \
+( cd frontend/subsystem_2/shadcn-dashboard/nextjs-version && npm run lint ) \
   || echo "[ci.sh] subsystem_2 lint reported issues (non-blocking, see progress doc)"
 
 echo "== subsystem_2: build =="
-( cd templates/subsystem_2/shadcn-dashboard/nextjs-version && npm run build )
+( cd frontend/subsystem_2/shadcn-dashboard/nextjs-version && npm run build )
 
 echo "== all blocking checks passed =="

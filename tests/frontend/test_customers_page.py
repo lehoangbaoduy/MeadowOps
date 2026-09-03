@@ -13,7 +13,7 @@ unit test runner in this repo — DD-17).
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-SUBSYSTEM_1 = REPO_ROOT / "templates/subsystem_1/orbynadmin"
+SUBSYSTEM_1 = REPO_ROOT / "frontend/subsystem_1/orbynadmin"
 CUSTOMERS_PAGE = SUBSYSTEM_1 / "src/app/(app)/customers/page.tsx"
 CUSTOMERS_TABLE = SUBSYSTEM_1 / "src/components/customers-table.tsx"
 

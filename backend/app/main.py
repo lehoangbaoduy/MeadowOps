@@ -3,11 +3,18 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
 
+from app.api.admin_scenarios import router as admin_scenarios_router
+from app.api.auth import router as auth_router
 from app.api.customers import router as customers_router
+from app.api.dashboard import router as dashboard_router
 from app.api.master_data import router as master_data_router
-from app.core.auth import require_builder
+from app.api.query_playground import router as query_playground_router
+from app.core.auth import require_authenticated
 from app.core.config import Settings
+from app.core.internal_client import build_subsystem2_client
+from app.core.rate_limit import LoginRateLimiter
 from app.db.session import make_engine
+from app.domain.scheduler import build_scheduler
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -27,7 +34,28 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # this even when lifespan doesn't run (a bare `TestClient(app)` used
         # without `with` skips startup/shutdown entirely).
         app.state.engine = make_engine(settings.database_url)
+        # Unit 20 (MEADOWOPS-API-004, DD-2): built against this same running
+        # `app` instance, not a second create_app() - see
+        # app.core.internal_client's own docstring for why.
+        app.state.subsystem2_client = build_subsystem2_client(
+            app, service_token=settings.internal_service_token
+        )
+        # Unit 13: opt-in background scheduler (settings.scheduler_enabled,
+        # default False) — off for tests/CI, and for any create_app() call
+        # that doesn't explicitly ask for it, so no test unexpectedly gets
+        # a background thread advancing the shared dev database's clock.
+        scheduler = None
+        if settings.scheduler_enabled:
+            scheduler = build_scheduler(
+                app.state.engine,
+                interval_seconds=settings.scheduler_interval_seconds,
+                reporting_lag_days=settings.reporting_lag_days,
+            )
+            scheduler.start()
         yield
+        if scheduler is not None:
+            scheduler.shutdown(wait=False)
+        await app.state.subsystem2_client.aclose()
         app.state.engine.dispose()
 
     # docs/redoc/openapi disabled: unauthenticated by default, an
@@ -41,15 +69,26 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = settings
+    # Unit 17a (MEADOWOPS-DOM-010): one instance per app, not a module-level
+    # global, so tests constructing independent create_app() calls don't
+    # share rate-limit state with each other.
+    app.state.login_rate_limiter = LoginRateLimiter(
+        max_attempts=settings.login_rate_limit_max_attempts,
+        window_seconds=settings.login_rate_limit_window_seconds,
+    )
+    app.include_router(auth_router)
     app.include_router(master_data_router)
     app.include_router(customers_router)
+    app.include_router(dashboard_router)
+    app.include_router(admin_scenarios_router)
+    app.include_router(query_playground_router)
 
     @app.get("/health")
     def health() -> dict[str, str]:
         return {"status": "ok"}
 
     @app.get("/api/v1/me")
-    def me(identity: dict[str, str] = Depends(require_builder)) -> dict[str, str]:
+    def me(identity: dict[str, str] = Depends(require_authenticated)) -> dict[str, str]:
         return identity
 
     return app

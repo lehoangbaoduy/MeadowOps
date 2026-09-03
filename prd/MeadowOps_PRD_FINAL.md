@@ -155,6 +155,8 @@ One consolidated mechanism. Every record is either an **operational event** or a
 
 **Out of scope:** multi-currency/region, batch/lot or serial tracking, returns/reverse logistics, GL/invoicing beyond basic PO cost, real supplier/carrier API integrations, route optimization, live carrier integrations, auth/multi-tenant complexity beyond two users.
 
+**Amended 2026-09-02 — role-based login:** "beyond two users" still means exactly two users — no self-registration, no password reset flow, no email verification, no third role — but those two users are no longer a single shared bearer token. Each has a real account (email + password) that declares which of the two roles they hold, so the system can tell Admin (Builder) apart from Analyst by identity rather than by which secret was pasted in. See 8.4 for the resulting write/view split.
+
 ### 5.2 Data model (summary — field-level schema finalized during implementation)
 
 **Dimensions:** Product, Warehouse, Supplier, Customer, Carrier, Date.
@@ -180,6 +182,7 @@ See Appendix A. Exact inclusion/exclusion rules are defined by the Builder durin
 | S1-FR-13 | A "Query" page provides a SQL playground: free-form SQL execution against a sandboxed replica of the operational schema, with a syntax-highlighted editor and tabular results (5.9) |
 | S1-FR-14 | Every query submitted through the Query page — read or write, executed or cancelled — is logged (timestamp, user, query text, statement type, result status) for the admin history view (6.12) |
 | S1-FR-15 | *(Added 2026-09-02)* A real-time, persona-threaded chat inbox delivers and receives persona-chat messages (6.13) with unread-thread badges and Analyst-side file attachments |
+| S1-FR-16 | *(Added 2026-09-02)* Email+password login declares which of the two roles (Admin/Analyst) the session holds (5.1, 8.4); Admin can write master data and use every admin panel control, Analyst can view all of Subsystem 1 but cannot write anywhere — enforced server-side on every request, not just hidden in the UI |
 
 ### 5.5 Realistic data imperfections
 
@@ -343,7 +346,7 @@ Reusable/templated prompts; versioned prompts that never silently rewrite histor
 
 **File attachments (Analyst-side, tightly scoped):** allowlisted types only (images, PDF, CSV); a hard per-file size cap; stored in object storage, never in the operational Postgres database; never executed or interpreted server-side; served back only to the two authenticated roles on the thread. See 8.4.
 
-**Identity:** the Builder and Analyst are distinguished by separate static per-role credentials (still just two users, not a full identity system — 5.1's scope boundary is unchanged) so the real-time delivery layer knows which inbox a given connection belongs to. See 8.4.
+**Identity:** the Builder and Analyst are distinguished by their own account (email + password, role-tagged — still just two users, not a full identity system — 5.1's scope boundary is unchanged, amended 2026-09-02) so the real-time delivery layer knows which inbox a given connection belongs to. See 8.4.
 
 ---
 
@@ -370,9 +373,11 @@ The system must be reachable independently, not run only on the Builder's laptop
 Low-volume LLM calls, evidence-only retrieval, free-tier hosting where practical, inexpensive Postgres, no GPU, no unnecessary paid SaaS. QA test runs during Build & Test should also stay within this budget — evidence-only retrieval and minimal prompt sizes apply to test traffic too, not just eventual real usage.
 
 ### 8.4 Security & safety
-Isolate LLM access from direct database write access; **Subsystem 2 reads Subsystem 1's data only through the API layer (S1-FR-6), never via direct SQL** — one boundary, not two overlapping paths; parameterized queries only in application code; secrets (Claude API key, DB credentials) live in environment variables — `.env` locally, the hosting platform's secret store in the deployed environment, never committed to source control; restrict admin operations to the Builder; validate all AI-generated scenario references before activation. **The SQL Query Playground (5.9) is the one deliberate exception to "no raw SQL"** — it connects through a Postgres role scoped only to the sandbox replica schema, unable to reach the live operational schema or Subsystem 2's ledger/evaluation tables under any query — a boundary that must be verified with an actual permission test (9.2), not just asserted.
+Isolate LLM access from direct database write access; **Subsystem 2 reads Subsystem 1's data only through the API layer (S1-FR-6), never via direct SQL** — one boundary, not two overlapping paths; parameterized queries only in application code; secrets (Claude API key, DB credentials) live in environment variables — `.env` locally, the hosting platform's secret store in the deployed environment, never committed to source control; restrict write operations on master data and all admin panel controls to the Admin (Builder) role, enforced server-side by role, not by which UI hides a button; validate all AI-generated scenario references before activation. **The SQL Query Playground (5.9) is the one deliberate exception to "no raw SQL"** — it connects through a Postgres role scoped only to the sandbox replica schema, unable to reach the live operational schema or Subsystem 2's ledger/evaluation tables under any query — a boundary that must be verified with an actual permission test (9.2), not just asserted.
 
-**Amended 2026-09-02 — persona chat (6.13):** the Builder and Analyst are distinguished by two separate static bearer credentials (one per role), still just a shared-secret model for two known users, not a full identity/session system — consistent with 5.1's "auth/multi-tenant complexity beyond two users" being explicitly out of scope. **File attachments** are the largest new attack surface this feature introduces and are scoped narrowly: an allowlist of file types (images, PDF, CSV), a hard per-file size cap, storage in object storage rather than the operational Postgres database, no server-side execution or interpretation of uploaded content, and files served back only to the two authenticated roles on the owning thread — this boundary must be tested directly (9.2), not just asserted, same as the Query Playground's.
+**Amended 2026-09-02 — role-based login:** the single shared Builder bearer token is replaced by real per-user accounts — email + password, hashed (a vetted library, e.g. `passlib`/`argon2`, never hand-rolled), one account each for the Admin (Builder) and Analyst roles. Still just two known users, no self-registration, no password-reset flow, no email verification — 5.1's scope boundary is unchanged, only the credential model is real now instead of a shared secret. Role is carried in a signed session token issued at login and checked server-side on every request; **Admin** can write master data (Product/Warehouse/Supplier/Carrier/Customer) and use every admin panel control, **Analyst** can view everything Subsystem 1 exposes (dashboards, master data lists, reports, query playground results) but cannot write anywhere — enforced by the same dependency-injection pattern `require_builder` already used, split into a write-gating and a read-gating dependency. This is the credential mechanism 6.13's chat identity (346) and the persona-chat bearer amendment below both now use — a single login, not a separate chat-specific credential.
+
+**Amended 2026-09-02 — persona chat (6.13):** the Builder and Analyst are distinguished by their real per-role login (above), still just two known users, not a full identity/session system — consistent with 5.1's "auth/multi-tenant complexity beyond two users" being explicitly out of scope. **File attachments** are the largest new attack surface this feature introduces and are scoped narrowly: an allowlist of file types (images, PDF, CSV), a hard per-file size cap, storage in object storage rather than the operational Postgres database, no server-side execution or interpretation of uploaded content, and files served back only to the two authenticated roles on the owning thread — this boundary must be tested directly (9.2), not just asserted, same as the Query Playground's.
 
 ### 8.5 Non-functional requirements
 Reliability (drafts/submissions never lost — verified by the test suite in Section 9, not just asserted); maintainability (one Builder can understand the system); observability (can answer "what did the Analyst see/submit/when" for any completed scenario); documentation kept current.
@@ -504,7 +509,7 @@ No calendar targets — phases are sequential and dependency-based. Each has a c
 - [ ] API layer exposed for Subsystem 2
 - [ ] Reporting-layer lag implemented (SR-2)
 - [ ] At least one seeded conflicting-source or bad-data case working (SR-3/SR-4)
-- [ ] Scenario builder controls working (select/inject/preview/approve), including the persona composer and AI sufficiency check (6.4/6.13, added 2026-09-02)
+- [ ] Scenario builder controls working (select/inject/preview/approve)
 - [ ] SQL Query Playground fully functional: editor, results table, confirmation dialog for DML/DDL, query logging, statement timeout, row limits (5.9, S1-FR-13/14)
 - [ ] Integration tests covering the Subsystem 1 ↔ Subsystem 2 API boundary passing
 

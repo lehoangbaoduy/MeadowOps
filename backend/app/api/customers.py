@@ -7,7 +7,8 @@ Inventory/Orders/Shipping/Activity stay EmptyState stubs until their own
 data-populating units (U13, U24) land, per the Phase 1 checklist scoping
 in the progress doc (B7/DD-17).
 
-Builder-only (require_builder), same convention as app/api/master_data.py.
+`require_authenticated` (Unit 17a, MEADOWOPS-DOM-010, DD-22) — read-only for
+both Admin and Analyst, same as app/api/master_data.py's list routes.
 `def`, not `async def` — same sync-SQLAlchemy-under-the-event-loop
 rationale as that module.
 """
@@ -16,7 +17,7 @@ from fastapi import APIRouter, Depends
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.auth import require_builder
+from app.core.auth import require_authenticated
 from app.db.dimensions import Customer
 from app.db.session import get_session
 from app.schemas.customers import CustomerRead
@@ -27,6 +28,6 @@ router = APIRouter(prefix="/api/v1/admin", tags=["admin-customers"])
 @router.get("/customers", response_model=list[CustomerRead])
 def list_customers(
     session: Session = Depends(get_session),
-    _identity: dict[str, str] = Depends(require_builder),
+    _identity: dict[str, str] = Depends(require_authenticated),
 ) -> list[Customer]:
     return list(session.scalars(select(Customer).order_by(Customer.id)))

@@ -15,8 +15,18 @@ Builder-authored and version-controlled via git, the same "who mutates it
 and when" reasoning as DD-14/DD-15's KPI SQL. The later,
 admin-editable/append-only concerns in PRD 6.9/6.11 (ER-6: prompts/
 templates versioned; a `Scenario.prompt_version` foreign-key referrer) need
-a `Scenario` row and an `Evaluation` table to attach to, neither of which
-exists yet - that promotion to a table happens at U22, not here.
+an `Evaluation` table to attach to, which does not exist yet - that
+promotion happens at U25, not here.
+
+Updated at Unit 18 (MEADOWOPS-DOM-011, DD-24 point 1): a real `Scenario`
+row (app.db.scenario) now exists, earlier than this docstring originally
+said ("at U22, not here") - the user's explicit choice, since U18 needed
+a real table for its own Draft/Approved/Active/Cancelled lifecycle rather
+than waiting for U22's AI-generation pipeline. GENERATION_TEMPLATE below
+still isn't called by anything yet (still U22's job); Unit 18's own
+ground-truth builder (app.domain.scenario.build_ground_truth_from_
+exception_flag) is a separate, deterministic, non-AI path that populates
+the same seven-field shape by hand/from a real ExceptionFlag instead.
 """
 
 from __future__ import annotations

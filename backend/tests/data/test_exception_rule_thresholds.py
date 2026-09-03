@@ -19,6 +19,10 @@ EXPECTED_IDS = {
     "low_stock_days_of_supply",
     "at_risk_po_grace_days",
     "late_shipment_grace_days",
+    # Unit 17 (MEADOWOPS-DOM-009, SR-2/SR-4): the Reporting layer's own
+    # two threshold-driven categories.
+    "reporting_lag_stale",
+    "reporting_conflict_qty_variance",
 }
 
 
@@ -32,10 +36,11 @@ def test_exception_rule_threshold_table_exists(owner_dsn: str) -> None:
     assert {"id", "name", "description", "threshold_value", "unit", "is_active"} <= columns
 
 
-def test_default_definitions_cover_the_three_named_exception_types() -> None:
-    # Matches Unit 15's own title (MEADOWOPS-DOMAIN-007: "at-risk PO / low
-    # stock / late shipment") exactly - U10 defines defaults for precisely
-    # the categories U15's engine will evaluate, no more and no less.
+def test_default_definitions_cover_the_five_named_exception_types() -> None:
+    # Matches Unit 15's engine (at-risk PO / low stock / late shipment)
+    # plus Unit 17's Reporting-layer categories (lag-stale / conflict-qty-
+    # variance) exactly - the defaults seeder defines precisely the
+    # categories those two engines' calls evaluate, no more and no less.
     ids = {row["id"] for row in EXCEPTION_RULE_THRESHOLDS}
     assert ids == EXPECTED_IDS
 
@@ -50,7 +55,7 @@ def test_default_threshold_values_are_seeded_and_non_negative(owner_dsn: str) ->
     assert set(rows) == EXPECTED_IDS
     for threshold_value, unit, is_active in rows.values():
         assert threshold_value >= 0
-        assert unit == "days"
+        assert unit in ("days", "units")
         assert is_active is True
 
 

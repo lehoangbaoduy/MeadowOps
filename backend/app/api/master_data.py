@@ -1,9 +1,15 @@
 """Unit 8 (MEADOWOPS-API-002): admin panel master-data CRUD for
-Product/Warehouse/Supplier/Carrier (PRD 5.6 / S1-FR-12) — Builder-only
-(`require_builder`), list/create/edit/deactivate. No DELETE route: S1-FR-12
-says "create, edit, deactivate", and every fact table (facts.py) holds a
-non-deferrable FK to all four of these tables, so "deactivate" (PATCH
-is_active=false) is the only removal semantics that exists.
+Product/Warehouse/Supplier/Carrier (PRD 5.6 / S1-FR-12) —
+list/create/edit/deactivate. No DELETE route: S1-FR-12 says "create, edit,
+deactivate", and every fact table (facts.py) holds a non-deferrable FK to
+all four of these tables, so "deactivate" (PATCH is_active=false) is the
+only removal semantics that exists.
+
+Unit 17a (MEADOWOPS-DOM-010, PRD 5.1/8.4 amendment, DD-22): listing is
+`require_authenticated` (Admin and Analyst can both view master data) —
+writes (create/update) are `require_admin` (Analyst is view-only
+everywhere). This is the split that closes the actual gap `require_builder`
+left: today every one of these three routes shared one gate.
 
 Routes stay `def`, not `async def` — the whole stack underneath is sync
 SQLAlchemy/psycopg (`Session`, not `AsyncSession`); an `async def` route
@@ -30,7 +36,7 @@ from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
-from app.core.auth import require_builder
+from app.core.auth import require_admin, require_authenticated
 from app.db.dimensions import Carrier, Product, Supplier, Warehouse
 from app.db.session import get_session
 from app.schemas.master_data import (
@@ -63,14 +69,14 @@ def _register_crud_routes(
 ) -> None:
     def list_records(
         session: Session = Depends(get_session),
-        _identity: dict[str, str] = Depends(require_builder),
+        _identity: dict[str, str] = Depends(require_authenticated),
     ) -> list[Any]:
         return list(session.scalars(select(model).order_by(model.id)))
 
     def create_record(
         payload: create_schema,  # type: ignore[valid-type]
         session: Session = Depends(get_session),
-        _identity: dict[str, str] = Depends(require_builder),
+        _identity: dict[str, str] = Depends(require_admin),
     ) -> Any:
         record = model(**payload.model_dump())
         if validate_merged is not None:
@@ -95,7 +101,7 @@ def _register_crud_routes(
         record_id: str,
         payload: update_schema,  # type: ignore[valid-type]
         session: Session = Depends(get_session),
-        _identity: dict[str, str] = Depends(require_builder),
+        _identity: dict[str, str] = Depends(require_admin),
     ) -> Any:
         record = session.get(model, record_id)
         if record is None:

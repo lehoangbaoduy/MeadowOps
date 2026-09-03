@@ -72,3 +72,96 @@ class InventoryTransactionType(str, enum.Enum):
     TRANSFER_IN = "transfer_in"
     TRANSFER_OUT = "transfer_out"
     CYCLE_COUNT = "cycle_count"
+
+
+class UserRole(str, enum.Enum):
+    """Unit 17a (MEADOWOPS-DOM-010) — Admin (Builder) can write master data
+    and use every admin panel control; Analyst can view everything
+    Subsystem 1 exposes but cannot write anywhere (PRD 5.1/8.4 amendment)."""
+
+    ADMIN = "admin"
+    ANALYST = "analyst"
+
+
+class ScheduledTickStatus(str, enum.Enum):
+    """Unit 13 (MEADOWOPS-DOM-006) — outcome of one scheduled procure-to-stock
+    / order-to-ship tick, not the simulation clock's own running/paused
+    status (app.domain.simulation_clock.ClockStatus)."""
+
+    SUCCESS = "success"
+    FAILED = "failed"
+
+
+class ScenarioType(str, enum.Enum):
+    """Unit 18 (MEADOWOPS-DOM-011) — PRD 6.2's six scenario types."""
+
+    STAKEHOLDER_REQUEST = "stakeholder_request"
+    DATA_QUALITY_ISSUE = "data_quality_issue"
+    ROOT_CAUSE_INVESTIGATION = "root_cause_investigation"
+    SUPPLIER_VENDOR_DECISION = "supplier_vendor_decision"
+    PROCESS_BREAKDOWN = "process_breakdown"
+    EXECUTIVE_REPORTING = "executive_reporting"
+
+
+class CompetencyCluster(str, enum.Enum):
+    """Unit 18 (MEADOWOPS-DOM-011) — PRD 6.7's three competency clusters.
+    Distinct from the Analyst's own hidden-until-monthly-review competency
+    assessment; this is Builder-set scenario metadata."""
+
+    ANALYSIS_DIAGNOSIS = "analysis_diagnosis"
+    JUDGMENT_DELIVERY = "judgment_delivery"
+    COMMUNICATION = "communication"
+
+
+class DifficultyTier(str, enum.Enum):
+    """Unit 18 (MEADOWOPS-DOM-011) — PRD 6.7's three difficulty tiers."""
+
+    FOUNDATIONAL = "foundational"
+    STANDARD = "standard"
+    STRETCH = "stretch"
+
+
+class ScenarioSource(str, enum.Enum):
+    """Unit 18 (MEADOWOPS-DOM-011) — provenance of a scenario's seeded
+    imperfection. exception_flag (DD-24 point 2) is the only source this
+    unit implements; manual is reserved for a future free-text authoring
+    path, not built here."""
+
+    EXCEPTION_FLAG = "exception_flag"
+    MANUAL = "manual"
+
+
+class ScenarioStatus(str, enum.Enum):
+    """Unit 18 (MEADOWOPS-DOM-011) — draft/approved/active/cancelled state
+    machine (app.domain.scenario.VALID_TRANSITIONS is the single source of
+    truth for which transitions are legal)."""
+
+    DRAFT = "draft"
+    APPROVED = "approved"
+    ACTIVE = "active"
+    CANCELLED = "cancelled"
+
+
+class QueryStatementType(str, enum.Enum):
+    """Unit 19 (MEADOWOPS-DOM-012) — QueryLog.statement_type, the whole
+    submission's overall classification (app.domain.query_playground.
+    overall_statement_type), reusing app.domain.query_classifier's own
+    three-way read/write/unknown split rather than inventing a new one."""
+
+    READ = "read"
+    WRITE = "write"
+    UNKNOWN = "unknown"
+
+
+class QueryResultStatus(str, enum.Enum):
+    """Unit 19 (MEADOWOPS-DOM-012) — QueryLog.result_status. Mirrors
+    app.domain.query_playground.QuerySubmissionStatus's three terminal
+    states plus CANCELLED (an explicit decline at the confirmation dialog,
+    S1-FR-14's "executed or cancelled"). received/confirmation_required/
+    executing are in-flight-only states with nothing to log yet, so they
+    have no QueryLog counterpart here."""
+
+    SUCCESS = "success"
+    ERROR = "error"
+    TIMED_OUT = "timed_out"
+    CANCELLED = "cancelled"

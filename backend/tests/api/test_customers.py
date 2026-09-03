@@ -4,6 +4,10 @@ match"). GET only — S1-FR-12 names only Warehouse/Supplier/Carrier for
 admin CRUD, so unlike tests/api/test_master_data.py there is no create/
 update path to exercise here, and nothing for an autouse cleanup fixture to
 delete: this endpoint never writes.
+
+Unit 17a (MEADOWOPS-DOM-010, DD-22): auth migrated to signed session
+tokens (tests/support/auth.py) — this list route is require_authenticated,
+reachable by either role.
 """
 
 import os
@@ -14,9 +18,11 @@ from fastapi.testclient import TestClient
 
 from app.core.config import Settings
 from app.main import create_app
+from tests.support.auth import TEST_SESSION_SECRET, make_token
 
-_TOKEN = "test-builder-token-value"
+_TOKEN = make_token("admin")
 _AUTH = {"Authorization": f"Bearer {_TOKEN}"}
+_ANALYST_AUTH = {"Authorization": f"Bearer {make_token('analyst')}"}
 
 # Unit 5's baseline_data.py seeds these 9 customers for real — containment
 # check against real seeded data, same convention as
@@ -36,13 +42,18 @@ _SEEDED_CUSTOMER_IDS = {
 
 @pytest.fixture
 def client() -> Generator[TestClient, None, None]:
-    with TestClient(create_app(settings=Settings(builder_token=_TOKEN))) as c:
+    with TestClient(create_app(settings=Settings(session_secret_key=TEST_SESSION_SECRET))) as c:
         yield c
 
 
-def test_list_requires_builder_auth(client: TestClient) -> None:
+def test_list_requires_auth(client: TestClient) -> None:
     response = client.get("/api/v1/admin/customers")
     assert response.status_code == 401
+
+
+def test_list_is_reachable_by_the_analyst_role(client: TestClient) -> None:
+    response = client.get("/api/v1/admin/customers", headers=_ANALYST_AUTH)
+    assert response.status_code == 200
 
 
 def test_list_returns_the_seeded_baseline_customers(client: TestClient) -> None:

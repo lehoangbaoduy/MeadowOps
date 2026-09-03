@@ -61,6 +61,30 @@ EXCEPTION_RULE_THRESHOLDS = [
         "unit": "days",
         "is_active": True,
     },
+    {
+        "id": "reporting_lag_stale",
+        "name": "Reporting layer stale",
+        "description": (
+            "Flag the Reporting layer as stale once it has gone this many "
+            "days without syncing (PRD 9.2: a lag exceeding its expected "
+            "window, e.g. simulated scheduler downtime)."
+        ),
+        "threshold_value": 5,
+        "unit": "days",
+        "is_active": True,
+    },
+    {
+        "id": "reporting_conflict_qty_variance",
+        "name": "Reporting/live quantity conflict",
+        "description": (
+            "Flag a product/warehouse whose Reporting-layer quantity-on-hand "
+            "disagrees with live's own historical record for that same date "
+            "by more than this many units (SR-4)."
+        ),
+        "threshold_value": 0,
+        "unit": "units",
+        "is_active": True,
+    },
 ]
 
 
