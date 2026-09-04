@@ -22,11 +22,17 @@ Updated at Unit 18 (MEADOWOPS-DOM-011, DD-24 point 1): a real `Scenario`
 row (app.db.scenario) now exists, earlier than this docstring originally
 said ("at U22, not here") - the user's explicit choice, since U18 needed
 a real table for its own Draft/Approved/Active/Cancelled lifecycle rather
-than waiting for U22's AI-generation pipeline. GENERATION_TEMPLATE below
-still isn't called by anything yet (still U22's job); Unit 18's own
-ground-truth builder (app.domain.scenario.build_ground_truth_from_
-exception_flag) is a separate, deterministic, non-AI path that populates
-the same seven-field shape by hand/from a real ExceptionFlag instead.
+than waiting for U22's AI-generation pipeline. Unit 18's own ground-truth
+builder (app.domain.scenario.build_ground_truth_from_exception_flag) stayed
+a separate, deterministic, non-AI path that populates the same seven-field
+shape by hand/from a real ExceptionFlag instead.
+
+Updated at Unit 22 (MEADOWOPS-DOM-016): GENERATION_TEMPLATE is now called,
+by app.domain.scenario_generation.build_generation_prompt - rendered as-is
+(this file stays untouched per PRD 6.11 ER-6's "versioned, never silently
+rewritten"), with that module's own JSON-response-format instructions
+appended as an unversioned suffix rather than folded into the template text
+here.
 """
 
 from __future__ import annotations

@@ -21,15 +21,35 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.db.dimensions import Product, Supplier, Warehouse
 from app.db.enums import CompetencyCluster, DifficultyTier, ScenarioSource, ScenarioStatus, ScenarioType
 from app.db.exception_flags import ExceptionFlag
+from app.db.facts import PurchaseOrder, Shipment
 from app.db.scenario import Scenario
+from app.domain.claude_client import ClaudeClient
 from app.domain.scenario import (
     ExceptionFlagSnapshot,
     build_ground_truth_from_exception_flag,
     can_transition,
     validate_for_approval,
 )
+from app.domain.scenario_generation import generate_scenario_narrative
+
+# Keyed by the app.domain.scenario_generation.ScenarioNarrative.
+# referenced_entity_ids field a Claude response carries. String-PK entity
+# types (Product/Warehouse/Supplier) are checked by session.get() directly;
+# UUID-PK types (PurchaseOrder/Shipment) need uuid.UUID() parsing first -
+# split into two maps below so a malformed id string is a validation error,
+# not an unhandled ValueError.
+_STRING_ID_ENTITY_TYPES: dict[str, tuple[type, str]] = {
+    "product_ids": (Product, "product"),
+    "warehouse_ids": (Warehouse, "warehouse"),
+    "supplier_ids": (Supplier, "supplier"),
+}
+_UUID_ID_ENTITY_TYPES: dict[str, tuple[type, str]] = {
+    "purchase_order_ids": (PurchaseOrder, "purchase order"),
+    "shipment_ids": (Shipment, "shipment"),
+}
 
 
 class ScenarioNotFoundError(ValueError):
@@ -51,6 +71,21 @@ class ScenarioValidationError(ValueError):
     list on `.errors` so the API layer can return it verbatim (PRD 9.2's
     required rejection-path test case) rather than a single flattened
     message."""
+
+    def __init__(self, errors: list[str]) -> None:
+        self.errors = errors
+        super().__init__("; ".join(errors))
+
+
+class ScenarioGenerationValidationError(ValueError):
+    """Raised by regenerate_scenario when the AI-generated narrative
+    references an entity id that doesn't exist in the live database (PRD
+    9.2: "Caught by scenario validation... rejected before reaching any
+    user, Builder notified"). Unlike a ClaudeAPIError/schema failure inside
+    app.domain.scenario_generation, this is never automatically retried -
+    the Builder decides whether to regenerate again or edit manually.
+    Carries the error list on `.errors`, same convention as
+    ScenarioValidationError above."""
 
     def __init__(self, errors: list[str]) -> None:
         self.errors = errors
@@ -119,7 +154,63 @@ def create_scenario_from_exception_flag(
     return scenario
 
 
-def regenerate_scenario(session: Session, scenario_id: uuid.UUID) -> Scenario:
+def validate_referenced_entity_ids(
+    session: Session, referenced_entity_ids: dict[str, list[str]]
+) -> list[str]:
+    """Mechanically checks every id an AI-generated narrative *declares* in
+    its own referenced_entity_ids manifest actually exists in the live
+    database (PRD 9.2's "AI generates a scenario referencing non-existent or
+    stale IDs" edge case). Returns the list of validation errors (empty
+    means valid) rather than raising, same non-raising convention
+    app.domain.scenario.validate_for_approval already uses - the caller
+    (regenerate_scenario) decides what to do.
+
+    Security review (2026-09-04): this is existence-only and manifest-only -
+    two gaps deliberately left to Phase 3's U30 "full edge case catalog"
+    unit, the same precedent that put SR-1/SR-3 out of U17's own scope (see
+    app.domain.reporting_sync's docstring). (1) An id only used inside the
+    narrative's free-text fields (supporting_signals, distractors, etc.)
+    rather than declared in referenced_entity_ids is never checked at all.
+    (2) A declared id that is real but unrelated to this scenario's own
+    evidence package (GENERATION_TEMPLATE's "reference only ... identifiers
+    that exist in the evidence package" instruction) passes this check
+    anyway - it is global-existence, not evidence-package-membership."""
+    errors: list[str] = []
+    for key, ids in referenced_entity_ids.items():
+        if key in _STRING_ID_ENTITY_TYPES:
+            model, label = _STRING_ID_ENTITY_TYPES[key]
+            for entity_id in ids:
+                if session.get(model, entity_id) is None:
+                    errors.append(f"referenced_entity_ids.{key}: unknown {label} id {entity_id!r}")
+        elif key in _UUID_ID_ENTITY_TYPES:
+            model, label = _UUID_ID_ENTITY_TYPES[key]
+            for raw_id in ids:
+                try:
+                    parsed_id = uuid.UUID(raw_id)
+                except ValueError:
+                    errors.append(f"referenced_entity_ids.{key}: {raw_id!r} is not a valid id")
+                    continue
+                if session.get(model, parsed_id) is None:
+                    errors.append(f"referenced_entity_ids.{key}: unknown {label} id {raw_id}")
+    return errors
+
+
+def regenerate_scenario(
+    session: Session, scenario_id: uuid.UUID, claude_client: ClaudeClient
+) -> Scenario:
+    """Unit 22 (MEADOWOPS-DOM-016): now a full overwrite of both the
+    mechanical facts (known_cause/evidence) and an AI-generated narrative -
+    the user's explicit "extend regenerate" scoping decision, superseding
+    U18's own merge-not-replace code-review fix (that fix predated any AI
+    call existing to run here at all; the Builder's edit path for a
+    narrative they want to keep is update_ground_truth, not skipping
+    regenerate).
+
+    scenario.ground_truth is only reassigned after generation AND
+    referenced-id validation both succeed - a failure at either step
+    (ScenarioGenerationFailedError, ScenarioGenerationValidationError)
+    leaves the scenario's existing ground_truth completely untouched.
+    """
     scenario = _get_scenario(session, scenario_id)
     if scenario.status != ScenarioStatus.DRAFT:
         raise ScenarioTransitionError(
@@ -137,16 +228,33 @@ def regenerate_scenario(session: Session, scenario_id: uuid.UUID) -> Scenario:
             f"exception flag {scenario.source_exception_flag_id} not found"
         )
 
-    # Merge, not replace (code review, MEDIUM): only known_cause/evidence are
-    # mechanically re-derivable from the flag's current data — the four
-    # narrative fields and uncertainty are the Builder's own hand-authored
-    # "edit" step (6.4), and a full overwrite would silently destroy that
-    # work with no warning every time the flag's underlying numbers move.
     fresh = build_ground_truth_from_exception_flag(_snapshot_from_flag(flag))
+
+    # Propagates ScenarioGenerationFailedError unwrapped on a Claude API/
+    # schema failure that survives the one automatic retry - ground_truth
+    # is not touched below in that case.
+    narrative = generate_scenario_narrative(
+        claude_client,
+        scenario_type=scenario.scenario_type.value,
+        difficulty_tier=scenario.difficulty_tier.value,
+        competency_cluster=scenario.competency_cluster.value,
+        evidence_package=fresh["evidence"],
+    )
+
+    errors = validate_referenced_entity_ids(session, narrative.referenced_entity_ids)
+    if errors:
+        raise ScenarioGenerationValidationError(errors)
+
     scenario.ground_truth = {
-        **scenario.ground_truth,
         "known_cause": fresh["known_cause"],
         "evidence": fresh["evidence"],
+        "supporting_signals": narrative.supporting_signals,
+        "distractors": narrative.distractors,
+        "expected_considerations": narrative.expected_considerations,
+        "acceptable_conclusions": narrative.acceptable_conclusions,
+        "unacceptable_conclusions": narrative.unacceptable_conclusions,
+        "uncertainty": narrative.uncertainty,
+        "referenced_entity_ids": narrative.referenced_entity_ids,
     }
     session.flush()
     return scenario

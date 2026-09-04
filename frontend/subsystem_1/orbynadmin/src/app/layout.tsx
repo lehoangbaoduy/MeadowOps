@@ -17,11 +17,10 @@ const geistMono = Geist_Mono({
 
 export const metadata: Metadata = {
   title: {
-    default: "OrbynAdmin",
-    template: "%s · OrbynAdmin",
+    default: "MeadowOps",
+    template: "%s · MeadowOps",
   },
-  description:
-    "A polished admin & SaaS dashboard template built with Next.js, Tailwind and shadcn/ui.",
+  description: "MeadowOps Control Tower — the operational admin dashboard.",
 };
 
 export default function RootLayout({

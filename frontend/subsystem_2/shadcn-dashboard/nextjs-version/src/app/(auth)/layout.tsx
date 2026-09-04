@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 
 export const metadata: Metadata = {
   title: "Sign in - MeadowOps",
-  description: "Analyst access to the MeadowOps work simulation engine.",
+  description: "Builder (admin) access to the MeadowOps scenario workspace.",
 };
 
 export default function AuthLayout({

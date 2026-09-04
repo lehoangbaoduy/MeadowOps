@@ -16,7 +16,7 @@ not a client-supplied value.
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from psycopg import errors as pg_errors
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -25,7 +25,9 @@ from app.core.auth import require_admin
 from app.db.enums import CompetencyCluster, DifficultyTier, ScenarioStatus, ScenarioType
 from app.db.scenario import Scenario
 from app.db.session import get_session
+from app.domain.claude_client import ClaudeClient
 from app.domain.scenario import ExceptionFlagNotOpenError
+from app.domain.scenario_generation import ScenarioGenerationFailedError
 from app.schemas.scenario import (
     GroundTruthUpdate,
     ScenarioCreate,
@@ -34,6 +36,7 @@ from app.schemas.scenario import (
 from app.schemas.scenario import ScenarioStatus as ScenarioStatusLiteral
 from app.services.scenario_service import (
     ExceptionFlagNotFoundError,
+    ScenarioGenerationValidationError,
     ScenarioNotFoundError,
     ScenarioTransitionError,
     ScenarioValidationError,
@@ -46,6 +49,14 @@ from app.services.scenario_service import (
     regenerate_scenario,
     update_ground_truth,
 )
+
+
+def get_claude_client(request: Request) -> ClaudeClient | None:
+    """`app.state.claude_client` is `None` until a real Anthropic SDK
+    adapter is wired in (Phase 4, blocker B3: no API key configured yet) -
+    regenerate_scenario_route below turns that into a clean 503 rather than
+    calling the service layer with nothing to call Claude through."""
+    return request.app.state.claude_client
 
 router = APIRouter(prefix="/api/v1/admin/scenarios", tags=["admin-scenarios"])
 
@@ -155,10 +166,16 @@ def update_ground_truth_route(
 def regenerate_scenario_route(
     scenario_id: uuid.UUID,
     session: Session = Depends(get_session),
+    claude_client: ClaudeClient | None = Depends(get_claude_client),
     _identity: dict[str, str] = Depends(require_admin),
 ) -> Scenario:
+    if claude_client is None:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Scenario narrative generation is not configured (no Claude client)",
+        )
     try:
-        scenario = regenerate_scenario(session, scenario_id)
+        scenario = regenerate_scenario(session, scenario_id, claude_client)
     except ScenarioNotFoundError as exc:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
     except ExceptionFlagNotFoundError as exc:
@@ -170,6 +187,14 @@ def regenerate_scenario_route(
     except ScenarioTransitionError as exc:
         session.rollback()
         raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ScenarioGenerationFailedError as exc:
+        session.rollback()
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    except ScenarioGenerationValidationError as exc:
+        session.rollback()
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, detail={"errors": exc.errors}
+        ) from exc
     session.commit()
     session.refresh(scenario)
     return scenario

@@ -8,6 +8,7 @@ commit — caller-owns-the-transaction, same convention as every other
 service module in this project).
 """
 
+import json
 import os
 import uuid
 from datetime import date, timedelta
@@ -27,11 +28,14 @@ from app.db.enums import (
 )
 from app.db.exception_flags import ExceptionFlag
 from app.db.scenario import Scenario
+from app.domain.claude_client import ClaudeAPIError, ClaudeResponse, MockClaudeClient
 from app.domain.scenario import ExceptionFlagNotOpenError
+from app.domain.scenario_generation import ScenarioGenerationFailedError
 from app.services.baseline_data import seed_master_data
 from app.services.exception_rule_defaults import seed_exception_rule_thresholds
 from app.services.scenario_service import (
     ExceptionFlagNotFoundError,
+    ScenarioGenerationValidationError,
     ScenarioNotFoundError,
     ScenarioTransitionError,
     ScenarioValidationError,
@@ -41,6 +45,7 @@ from app.services.scenario_service import (
     create_scenario_from_exception_flag,
     regenerate_scenario,
     update_ground_truth,
+    validate_referenced_entity_ids,
 )
 
 _PRODUCT_ID = "SKU-COR-001"
@@ -161,8 +166,22 @@ class TestCreateScenarioFromExceptionFlag:
             )
 
 
+def _narrative_payload(**overrides) -> dict:
+    payload = {
+        "supporting_signals": ["signal"],
+        "distractors": ["distractor"],
+        "expected_considerations": ["consideration"],
+        "acceptable_conclusions": ["ok"],
+        "unacceptable_conclusions": ["bad"],
+        "uncertainty": "moderate",
+        "referenced_entity_ids": {"product_ids": [_PRODUCT_ID], "warehouse_ids": [_WAREHOUSE_ID]},
+    }
+    payload.update(overrides)
+    return payload
+
+
 class TestRegenerateScenario:
-    def test_rebuilds_ground_truth_from_the_flags_current_data(
+    def test_produces_a_fresh_narrative_and_refreshed_mechanical_facts(
         self, session: Session, builder_id: uuid.UUID
     ) -> None:
         flag = _open_flag(session)
@@ -177,18 +196,22 @@ class TestRegenerateScenario:
         )
         flag.measured_value = Decimal("1.00")
         session.flush()
+        client = MockClaudeClient(script=[ClaudeResponse(content=json.dumps(_narrative_payload()))])
 
-        regenerated = regenerate_scenario(session, scenario.id)
+        regenerated = regenerate_scenario(session, scenario.id, client)
 
         assert regenerated.ground_truth["evidence"]["measured_value"] == "1.00"
+        assert regenerated.ground_truth["supporting_signals"] == ["signal"]
+        assert regenerated.ground_truth["uncertainty"] == "moderate"
 
-    def test_preserves_already_edited_narrative_fields(
+    def test_full_overwrite_replaces_a_previously_hand_edited_narrative(
         self, session: Session, builder_id: uuid.UUID
     ) -> None:
-        # Code review, MEDIUM: an earlier version overwrote ground_truth
-        # wholesale, silently destroying any narrative fields the Builder
-        # had already hand-edited (6.4's "edit" control). Regenerate should
-        # only refresh the mechanically-derived known_cause/evidence.
+        # U22 (the user's explicit "extend regenerate" scoping decision)
+        # supersedes U18's merge-not-replace code-review fix: regenerate now
+        # means "produce a fresh AI narrative", not just refresh the
+        # mechanical facts. The Builder's edit path for a narrative they
+        # want to keep is update_ground_truth, not skipping regenerate.
         flag = _open_flag(session)
         scenario = create_scenario_from_exception_flag(
             session,
@@ -200,13 +223,118 @@ class TestRegenerateScenario:
             created_by=builder_id,
         )
         update_ground_truth(session, scenario.id, {"uncertainty": "already edited by builder"})
-        flag.measured_value = Decimal("1.00")
-        session.flush()
+        client = MockClaudeClient(
+            script=[
+                ClaudeResponse(content=json.dumps(_narrative_payload(uncertainty="ai-generated")))
+            ]
+        )
 
-        regenerated = regenerate_scenario(session, scenario.id)
+        regenerated = regenerate_scenario(session, scenario.id, client)
 
-        assert regenerated.ground_truth["uncertainty"] == "already edited by builder"
-        assert regenerated.ground_truth["evidence"]["measured_value"] == "1.00"
+        assert regenerated.ground_truth["uncertainty"] == "ai-generated"
+
+    def test_retries_once_on_a_claude_failure_before_succeeding(
+        self, session: Session, builder_id: uuid.UUID
+    ) -> None:
+        flag = _open_flag(session)
+        scenario = create_scenario_from_exception_flag(
+            session,
+            exception_flag_id=flag.id,
+            scenario_type=ScenarioType.DATA_QUALITY_ISSUE,
+            competency_cluster=CompetencyCluster.ANALYSIS_DIAGNOSIS,
+            difficulty_tier=DifficultyTier.STANDARD,
+            title="x",
+            created_by=builder_id,
+        )
+        client = MockClaudeClient(
+            script=[ClaudeAPIError("boom"), ClaudeResponse(content=json.dumps(_narrative_payload()))]
+        )
+
+        regenerated = regenerate_scenario(session, scenario.id, client)
+
+        assert len(client.call_log) == 2
+        assert regenerated.ground_truth["uncertainty"] == "moderate"
+
+    def test_a_regenerated_scenario_passes_approval(
+        self, session: Session, builder_id: uuid.UUID
+    ) -> None:
+        # Code review, MEDIUM: regenerate_scenario now builds ground_truth
+        # from a 9-key literal instead of merging into the existing dict
+        # (scenario_service.py) - this must exactly satisfy
+        # REQUIRED_GROUND_TRUTH_FIELDS for approve_scenario to accept it, or
+        # every AI-regenerated scenario would be permanently unapprovable.
+        flag = _open_flag(session)
+        scenario = create_scenario_from_exception_flag(
+            session,
+            exception_flag_id=flag.id,
+            scenario_type=ScenarioType.DATA_QUALITY_ISSUE,
+            competency_cluster=CompetencyCluster.ANALYSIS_DIAGNOSIS,
+            difficulty_tier=DifficultyTier.STANDARD,
+            title="x",
+            created_by=builder_id,
+        )
+        client = MockClaudeClient(script=[ClaudeResponse(content=json.dumps(_narrative_payload()))])
+        regenerate_scenario(session, scenario.id, client)
+
+        approved = approve_scenario(session, scenario.id)
+
+        assert approved.status == ScenarioStatus.APPROVED
+
+    def test_raises_scenario_generation_failed_after_the_retry_is_exhausted_and_leaves_ground_truth_untouched(
+        self, session: Session, builder_id: uuid.UUID
+    ) -> None:
+        flag = _open_flag(session)
+        scenario = create_scenario_from_exception_flag(
+            session,
+            exception_flag_id=flag.id,
+            scenario_type=ScenarioType.DATA_QUALITY_ISSUE,
+            competency_cluster=CompetencyCluster.ANALYSIS_DIAGNOSIS,
+            difficulty_tier=DifficultyTier.STANDARD,
+            title="x",
+            created_by=builder_id,
+        )
+        original_ground_truth = dict(scenario.ground_truth)
+        client = MockClaudeClient(script=[ClaudeAPIError("boom"), ClaudeAPIError("boom again")])
+
+        with pytest.raises(ScenarioGenerationFailedError):
+            regenerate_scenario(session, scenario.id, client)
+        assert scenario.ground_truth == original_ground_truth
+
+    def test_raises_scenario_generation_validation_error_on_an_unknown_referenced_id_with_no_retry(
+        self, session: Session, builder_id: uuid.UUID
+    ) -> None:
+        # PRD 9.2: a bad referenced-id is caught by scenario validation and
+        # rejected before reaching any user — no automatic retry, unlike a
+        # Claude API/schema failure above (the Builder decides whether to
+        # regenerate or edit manually).
+        flag = _open_flag(session)
+        scenario = create_scenario_from_exception_flag(
+            session,
+            exception_flag_id=flag.id,
+            scenario_type=ScenarioType.DATA_QUALITY_ISSUE,
+            competency_cluster=CompetencyCluster.ANALYSIS_DIAGNOSIS,
+            difficulty_tier=DifficultyTier.STANDARD,
+            title="x",
+            created_by=builder_id,
+        )
+        original_ground_truth = dict(scenario.ground_truth)
+        client = MockClaudeClient(
+            script=[
+                ClaudeResponse(
+                    content=json.dumps(
+                        _narrative_payload(
+                            referenced_entity_ids={"product_ids": ["SKU-DOES-NOT-EXIST"]}
+                        )
+                    )
+                )
+            ]
+        )
+
+        with pytest.raises(ScenarioGenerationValidationError) as exc_info:
+            regenerate_scenario(session, scenario.id, client)
+        assert exc_info.value.errors != []
+        assert len(client.call_log) == 1
+        assert scenario.ground_truth == original_ground_truth
 
     def test_raises_when_scenario_is_not_in_draft(
         self, session: Session, builder_id: uuid.UUID
@@ -223,13 +351,49 @@ class TestRegenerateScenario:
         )
         _complete_ground_truth(scenario)
         approve_scenario(session, scenario.id)
+        client = MockClaudeClient(script=[])
 
         with pytest.raises(ScenarioTransitionError):
-            regenerate_scenario(session, scenario.id)
+            regenerate_scenario(session, scenario.id, client)
+        assert client.call_log == []
 
     def test_raises_when_scenario_does_not_exist(self, session: Session) -> None:
+        client = MockClaudeClient(script=[])
         with pytest.raises(ScenarioNotFoundError):
-            regenerate_scenario(session, uuid.uuid4())
+            regenerate_scenario(session, uuid.uuid4(), client)
+
+
+class TestValidateReferencedEntityIds:
+    def test_empty_dict_is_valid(self, session: Session) -> None:
+        assert validate_referenced_entity_ids(session, {}) == []
+
+    def test_known_product_and_warehouse_ids_are_valid(self, session: Session) -> None:
+        errors = validate_referenced_entity_ids(
+            session, {"product_ids": [_PRODUCT_ID], "warehouse_ids": [_WAREHOUSE_ID]}
+        )
+        assert errors == []
+
+    def test_unknown_product_id_is_an_error(self, session: Session) -> None:
+        errors = validate_referenced_entity_ids(session, {"product_ids": ["SKU-DOES-NOT-EXIST"]})
+        assert errors != []
+
+    def test_unknown_warehouse_id_is_an_error(self, session: Session) -> None:
+        errors = validate_referenced_entity_ids(session, {"warehouse_ids": ["WH-DOES-NOT-EXIST"]})
+        assert errors != []
+
+    def test_malformed_purchase_order_id_is_an_error_not_a_crash(self, session: Session) -> None:
+        errors = validate_referenced_entity_ids(session, {"purchase_order_ids": ["not-a-uuid"]})
+        assert errors != []
+
+    def test_unknown_purchase_order_id_is_an_error(self, session: Session) -> None:
+        errors = validate_referenced_entity_ids(
+            session, {"purchase_order_ids": [str(uuid.uuid4())]}
+        )
+        assert errors != []
+
+    def test_unknown_shipment_id_is_an_error(self, session: Session) -> None:
+        errors = validate_referenced_entity_ids(session, {"shipment_ids": [str(uuid.uuid4())]})
+        assert errors != []
 
 
 class TestApproveScenario:

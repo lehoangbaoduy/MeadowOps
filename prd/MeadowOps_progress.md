@@ -119,14 +119,14 @@ and security explicitly, before a step counts as done. "It runs" is not "done."
 
 ## 1. Status Summary
 
-**Current phase:** Phase 2 — Operational System — **genuinely complete, 10/10 checklist items closed** (U13-U20 + U20a, see §5/DD-29); committed to git (`277b817`)
-**Last updated:** 2026-09-03 (Units 1-12 + 12a/12b/12c done — Phase 1 genuinely complete, 11/11 checklist items closed; committed to git. The same audit found 4 more checklist items with no covering unit in Phases 2-3, recorded as a standing correction to apply when those units are scoped — see B7/§4/DD-17/DD-18. Per the user's standing instruction, paused to discuss and PRD-amend the Builder↔Analyst persona-chat feature before starting Phase 2 — see B8/DD-19; U21/U23 descriptions corrected, new placeholder unit U21a added for Phase 3 — committed to git. Phase 2 now underway: U13-U17 done. U16 (dashboard API + drill-down, full-stack) closed B9 by wiring the KPI/exception engines into the scheduler tick, added a net-new Supplier view (S1-FR-5 names it, Appendix D has no page mapping for it), and was Playwright-verified live against 20 real scheduler ticks of seeded data — see DD-20. U16's own security review (1 MEDIUM, 2 LOW) is now fully remediated — unbounded result sets fixed with limit/offset params and query-pushed filters, auth-test coverage expanded to all 13 routes. U17 (Reporting-layer lag + one seeded SR-4 conflict) is the first unit *not* auto-classified critical by the DD-5 keyword false positive, and scoped narrower than its own title — SR-2 + SR-4 only, with SR-1/SR-3 explicitly deferred to Phase 3's own edge-case-catalog item — see DD-21. 445 backend tests passing, orbynadmin `npm run build`/`npm run lint` clean. `templates/` renamed to `frontend/` repo-wide (all path references updated; PRD's own conceptual mentions of "templates" left untouched). Paused again before U18 over a real scope question: the user's answer to a scoping question expanded into admin-panel role-gating (Admin edit-only, Analyst view-only) plus a real email+password login — PRD-amended in place (5.1, 8.4, 346, new S1-FR-16) and inserted as new unit **U17a**, since U18's Builder-only controls depend on `require_admin` existing — see DD-22. **U17a now done** — role-based login shipped full-stack (backend + orbynadmin), `require_builder` fully removed, `require_authenticated`/`require_admin` split across every existing protected route, 57 new tests (445→502), live-verified end-to-end against real dev servers, security-reviewed twice (pre- and post-implementation, both APPROVE) — see DD-23. U18 is now unblocked and ready to be scoped for real (Clients confirmed synonymous with Customer, no new entity; Addresses still undefined and unaddressed). **U18 now done (backend-only)** — scenario builder controls (`engine.scenario`, state machine, approve-time validation, admin-only API) shipped, 561 backend tests passing (502→561), code-reviewer + security-reviewer both APPROVE-after-fixes; frontend deferred to U20 by explicit user decision, since Subsystem 2 has no backend/auth wiring at all yet — see DD-24/DD-26. U21/U21a's persona-chat interface design captured as forward notes, not built — see DD-25. **U19 now done, full-stack** — SQL Query Playground (sandbox refresh via staging-schema atomic-rename swap + explicit table allowlist, app-enforced out-of-band query-cancellation timeout, write-statement confirm dialog, S1-FR-14 audit log, full orbynadmin UI) shipped, 658 backend tests passing (561→658), live-verified end-to-end in a real browser (which also surfaced and fixed a real `search_path` UX bug no automated test caught, migration 0017). code-reviewer + security-reviewer both dispatched post-implementation: one HIGH finding (a PL/pgSQL exception handler supposedly defeating the cancel timeout) was investigated empirically against the real dev Postgres instance and found not exploitable as described — corrected the code's own documentation and its regression test rather than building a fix for a non-existent bug, per this session's standing instruction to adapt to empirical evidence over blindly implementing reviewer specs; the other HIGH (multi-statement submissions unprotected against a mid-flight sandbox refresh) was real and fixed via a shared/exclusive Postgres advisory lock — see DD-27. **U20 now done, boundary/backend only** — the Subsystem1↔Subsystem2 API boundary (DD-2): a new internal-service auth credential (`Settings.internal_service_token`), an `httpx.AsyncClient`/`ASGITransport` built once against the running app instance, an AST-based import-boundary checker, a route-inventory allowlist test, and genuine ASGITransport round-trip integration tests. Scope was narrowed at the user's explicit direction — asked first, since an earlier note had conflictingly bundled U18's scenario-builder UI into this unit — to boundary/backend only, matching Phase 2's actual exit criterion; the UI becomes its own not-yet-scoped follow-on unit. A pre-implementation security review (required by the `security-change` workflow) found the original auth design's "read-only for every route" claim was false against Query Playground's own existing routes (they do real work before ever checking the credential's identity) and required a structural fix (a new `reject_service_role` dependency) before any code shipped; the post-implementation review found one more real gap (the route-allowlist test didn't pin the "public, no-auth-at-all" bucket) plus a missing regression test, both fixed. 689 backend tests passing (658→689). Phase 2's own checklist (§5) was fully closed except item 4 (scenario-builder controls UI), left unchecked pending that follow-on unit. **U20a now done, full-stack** — the scenario-builder-UI follow-on unit, scoped via 9 clarifying `AskUserQuestion`s (all answered "Recommended") after the user asked for exhaustive scoping questions before starting: shadcn-dashboard's own independent login/session (mirroring orbynadmin's Unit 8/17a pattern), a real browsable/filterable picker over open exceptions, a formatted narrative/provenance-split preview, and all 7 of U18's scenario lifecycle operations wired in — zero new backend routes. A pre-implementation security review found the original design's admin-only login gate was a bypassable non-boundary (checking role client-side after the cookie was already set) and a cookie-name collision risk with orbynadmin (browsers scope cookies by host+path, not port); both fixed before any code was written. Live-verified end-to-end in a real browser: admin login, Analyst-login rejection with no session ever established, the full scenario lifecycle (create from a real seeded open exception → edit ground truth → approve → activate, plus a separate regenerate → cancel run), and logout. Post-implementation code review found one real HIGH — a Server Component can't clear a cookie during render, so the admin-gate's redirect on a stale/expired/forged session left the cookie attached and the presence-only middleware bounced `/sign-in` straight back to `/dashboard`, an unrecoverable loop guaranteed to eventually hit every session since the cookie outlives the 8-hour backend JWT — fixed via a new `/api/session-expired` route that clears the cookie and redirects in one response, live-verified by forging an invalid cookie and confirming a clean single redirect with no loop. Also fixed along the way: `components/ui/sonner.tsx` was missing `"use client"` (crashed any page rendering the toast provider) and `nav-user.tsx`'s "Log out" was a dead link that never actually cleared the session. Post-implementation security review: APPROVE, independently confirmed all 5 pre-implementation fixes. No backend changes; backend's 689 tests unaffected. **Final Phase 2 review (2026-09-03), before committing:** re-ran the full backend suite (689/689), both frontends' production builds (`next build`, clean), and confirmed zero test-data leakage. Also caught and fixed a real PRD inconsistency in the process — see B11: §10's Phase 2 checklist item 8 had accidentally picked up a persona-composer/AI-sufficiency-check clause from the messaging-feature PRD amendment (B8/DD-19), contradicting that amendment's own decision that Phase 2 stays AI-free; corrected back to the original wording, confirmed via `AskUserQuestion`. Phase 2 committed to git as one whole — see §1 (`277b817`).
+**Current phase:** Phase 3 — Full Simulation Loop — underway. U21a (chat delivery infrastructure) done, backend-only — see §6/DD-30. U21 (chat inbox/composer, full-stack) done — see §6/DD-31. U22 (Claude scenario generation + validation pipeline) done, backend-only — see §6/DD-32. Phase 2 committed to git (`277b817`); Phase 3 not yet committed (per-phase cadence, phase not yet complete — U23-U30 remain)
+**Last updated:** 2026-09-04 (Units 1-12 + 12a/12b/12c done — Phase 1 genuinely complete, 11/11 checklist items closed; committed to git. The same audit found 4 more checklist items with no covering unit in Phases 2-3, recorded as a standing correction to apply when those units are scoped — see B7/§4/DD-17/DD-18. Per the user's standing instruction, paused to discuss and PRD-amend the Builder↔Analyst persona-chat feature before starting Phase 2 — see B8/DD-19; U21/U23 descriptions corrected, new placeholder unit U21a added for Phase 3 — committed to git. Phase 2 now underway: U13-U17 done. U16 (dashboard API + drill-down, full-stack) closed B9 by wiring the KPI/exception engines into the scheduler tick, added a net-new Supplier view (S1-FR-5 names it, Appendix D has no page mapping for it), and was Playwright-verified live against 20 real scheduler ticks of seeded data — see DD-20. U16's own security review (1 MEDIUM, 2 LOW) is now fully remediated — unbounded result sets fixed with limit/offset params and query-pushed filters, auth-test coverage expanded to all 13 routes. U17 (Reporting-layer lag + one seeded SR-4 conflict) is the first unit *not* auto-classified critical by the DD-5 keyword false positive, and scoped narrower than its own title — SR-2 + SR-4 only, with SR-1/SR-3 explicitly deferred to Phase 3's own edge-case-catalog item — see DD-21. 445 backend tests passing, orbynadmin `npm run build`/`npm run lint` clean. `templates/` renamed to `frontend/` repo-wide (all path references updated; PRD's own conceptual mentions of "templates" left untouched). Paused again before U18 over a real scope question: the user's answer to a scoping question expanded into admin-panel role-gating (Admin edit-only, Analyst view-only) plus a real email+password login — PRD-amended in place (5.1, 8.4, 346, new S1-FR-16) and inserted as new unit **U17a**, since U18's Builder-only controls depend on `require_admin` existing — see DD-22. **U17a now done** — role-based login shipped full-stack (backend + orbynadmin), `require_builder` fully removed, `require_authenticated`/`require_admin` split across every existing protected route, 57 new tests (445→502), live-verified end-to-end against real dev servers, security-reviewed twice (pre- and post-implementation, both APPROVE) — see DD-23. U18 is now unblocked and ready to be scoped for real (Clients confirmed synonymous with Customer, no new entity; Addresses still undefined and unaddressed). **U18 now done (backend-only)** — scenario builder controls (`engine.scenario`, state machine, approve-time validation, admin-only API) shipped, 561 backend tests passing (502→561), code-reviewer + security-reviewer both APPROVE-after-fixes; frontend deferred to U20 by explicit user decision, since Subsystem 2 has no backend/auth wiring at all yet — see DD-24/DD-26. U21/U21a's persona-chat interface design captured as forward notes, not built — see DD-25. **U19 now done, full-stack** — SQL Query Playground (sandbox refresh via staging-schema atomic-rename swap + explicit table allowlist, app-enforced out-of-band query-cancellation timeout, write-statement confirm dialog, S1-FR-14 audit log, full orbynadmin UI) shipped, 658 backend tests passing (561→658), live-verified end-to-end in a real browser (which also surfaced and fixed a real `search_path` UX bug no automated test caught, migration 0017). code-reviewer + security-reviewer both dispatched post-implementation: one HIGH finding (a PL/pgSQL exception handler supposedly defeating the cancel timeout) was investigated empirically against the real dev Postgres instance and found not exploitable as described — corrected the code's own documentation and its regression test rather than building a fix for a non-existent bug, per this session's standing instruction to adapt to empirical evidence over blindly implementing reviewer specs; the other HIGH (multi-statement submissions unprotected against a mid-flight sandbox refresh) was real and fixed via a shared/exclusive Postgres advisory lock — see DD-27. **U20 now done, boundary/backend only** — the Subsystem1↔Subsystem2 API boundary (DD-2): a new internal-service auth credential (`Settings.internal_service_token`), an `httpx.AsyncClient`/`ASGITransport` built once against the running app instance, an AST-based import-boundary checker, a route-inventory allowlist test, and genuine ASGITransport round-trip integration tests. Scope was narrowed at the user's explicit direction — asked first, since an earlier note had conflictingly bundled U18's scenario-builder UI into this unit — to boundary/backend only, matching Phase 2's actual exit criterion; the UI becomes its own not-yet-scoped follow-on unit. A pre-implementation security review (required by the `security-change` workflow) found the original auth design's "read-only for every route" claim was false against Query Playground's own existing routes (they do real work before ever checking the credential's identity) and required a structural fix (a new `reject_service_role` dependency) before any code shipped; the post-implementation review found one more real gap (the route-allowlist test didn't pin the "public, no-auth-at-all" bucket) plus a missing regression test, both fixed. 689 backend tests passing (658→689). Phase 2's own checklist (§5) was fully closed except item 4 (scenario-builder controls UI), left unchecked pending that follow-on unit. **U20a now done, full-stack** — the scenario-builder-UI follow-on unit, scoped via 9 clarifying `AskUserQuestion`s (all answered "Recommended") after the user asked for exhaustive scoping questions before starting: shadcn-dashboard's own independent login/session (mirroring orbynadmin's Unit 8/17a pattern), a real browsable/filterable picker over open exceptions, a formatted narrative/provenance-split preview, and all 7 of U18's scenario lifecycle operations wired in — zero new backend routes. A pre-implementation security review found the original design's admin-only login gate was a bypassable non-boundary (checking role client-side after the cookie was already set) and a cookie-name collision risk with orbynadmin (browsers scope cookies by host+path, not port); both fixed before any code was written. Live-verified end-to-end in a real browser: admin login, Analyst-login rejection with no session ever established, the full scenario lifecycle (create from a real seeded open exception → edit ground truth → approve → activate, plus a separate regenerate → cancel run), and logout. Post-implementation code review found one real HIGH — a Server Component can't clear a cookie during render, so the admin-gate's redirect on a stale/expired/forged session left the cookie attached and the presence-only middleware bounced `/sign-in` straight back to `/dashboard`, an unrecoverable loop guaranteed to eventually hit every session since the cookie outlives the 8-hour backend JWT — fixed via a new `/api/session-expired` route that clears the cookie and redirects in one response, live-verified by forging an invalid cookie and confirming a clean single redirect with no loop. Also fixed along the way: `components/ui/sonner.tsx` was missing `"use client"` (crashed any page rendering the toast provider) and `nav-user.tsx`'s "Log out" was a dead link that never actually cleared the session. Post-implementation security review: APPROVE, independently confirmed all 5 pre-implementation fixes. No backend changes; backend's 689 tests unaffected. **Final Phase 2 review (2026-09-03), before committing:** re-ran the full backend suite (689/689), both frontends' production builds (`next build`, clean), and confirmed zero test-data leakage. Also caught and fixed a real PRD inconsistency in the process — see B11: §10's Phase 2 checklist item 8 had accidentally picked up a persona-composer/AI-sufficiency-check clause from the messaging-feature PRD amendment (B8/DD-19), contradicting that amendment's own decision that Phase 2 stays AI-free; corrected back to the original wording, confirmed via `AskUserQuestion`. Phase 2 committed to git as one whole — see §1 (`277b817`). **Phase 3 now underway.** Per B8's own deferral, U21a (chat delivery infrastructure) was formally scoped via harness-os at the start of this phase — `security-change` workflow (pre-implementation security review, implementation, finalize, decisions 1576-1579, all approved). **U21a now done, backend-only** — new `chat` Postgres schema (migration 0018), WebSocket ticket-auth (short-lived single-use ticket minted over REST, since the browser WS API can't set an `Authorization` header and the session lives in an httpOnly cookie), a `BEFORE UPDATE/DELETE/TRUNCATE` immutability trigger (empirically verified live against the schema-owning role itself, since REVOKE is a no-op against a table owner), sandbox-role exclusion mirroring migration 0001's pattern, and full REST+WS chat delivery (threads, messages, real-time broadcast). Both code-reviewer and security-reviewer dispatched post-implementation found real issues, all fixed — see DD-30 for the full list (async-route event-loop-blocking bug, WS task-cancellation-on-outer-cancellation gap, a fragile test-teardown transaction that had caused a genuine flake in an unrelated test file). 745/745 backend tests passing (689→745), 0 skipped. No UI yet — U21 (the Analyst inbox / Builder composer) is next. **U21 now done, full-stack** — scoped via 3 `AskUserQuestion` decisions (chat-UI-without-AI-composer now, a new `chat_thread_read_state` table for unread badges, file attachments deferred). Backend gained the read-state/unread-badge addition (migration 0019, `mark_thread_read`/`list_threads_with_unread`, 13 new tests, 758/758 passing); both frontends shipped their chat UI (orbynadmin's new Chat page, shadcn-dashboard's Mail page rewritten from its fake-email template) with the browser connecting directly to the backend WebSocket via a server-minted ticket, since neither app's own API proxy can hold a live upstream connection open. code-reviewer and security-reviewer both dispatched post-implementation: code-reviewer found the backend addition clean and one frontend HIGH (an unhandled WS-reconnect failure path that could permanently kill live delivery) plus 2 MEDIUM (silent draft loss on a failed send; a stale refetch race against the optimistic mark-read badge), all fixed; security-reviewer found 0 CRITICAL/HIGH and one MEDIUM (no rate limiting on the chat surface, amplified by this unit's own auto-mark-read — fixed with a client-side debounce) plus 4 LOW, resolved or confirmed non-issues — see DD-31. Live-verified end-to-end in real browsers after every fix, including cross-tab real-time delivery with zero console errors. **U22 now done, backend-only** — Claude scenario-narrative generation wired into `regenerate_scenario` (PRD 6.4/9.2), scoped via one `AskUserQuestion` (extend regenerate with a full overwrite of mechanical facts + AI narrative on every call; Claude returns schema-validated structured JSON, not prose). New `app.domain.scenario_generation` module reuses the existing (previously-idle) `GENERATION_TEMPLATE` and implements PRD 9.2's exactly-one-automatic-retry; `regenerate_scenario` now requires a `ClaudeClient` and a new DB-fact referenced-id check both to succeed before `ground_truth` is ever reassigned, deliberately superseding U18's own merge-not-replace code-review fix (the narrative it protected didn't exist to merge against until this unit). API layer 503s cleanly with no Claude client configured (unchanged — still Phase 4/B3). code-reviewer (APPROVE, 1 MEDIUM + 1 LOW, both addressed) and security-reviewer (0 CRITICAL/HIGH, 2 MEDIUM + 2 LOW + 1 informational) both dispatched post-implementation; the 2 LOW findings (a `RecursionError` that could escape JSON-schema-error handling on deeply-nested input, and an unbounded narrative-list length) were fixed with new regression tests, and both MEDIUM findings (no timeout on the `ClaudeClient` Protocol combined with the DB session being held open across the call; the referenced-id check only validates a self-reported manifest for global existence, not scenario-scoped relevance) were documented in-code as known limitations deferred to Phase 4's real adapter and Unit 30's edge-case-catalog sweep respectively, matching this project's own established deferral precedent rather than building speculative fixes now — see DD-32. 813/813 backend tests passing (758→813).
 
 | Phase | Status |
 |---|---|
 | Phase 1 — Foundation | **Done** (U1-U12 + U12a/U12b/U12c, 11/11 checklist items — see §4). U12b's decision (1546) is `pending_approval`, a critical-risk human-ack formality per B5, not an implementation gap |
 | Phase 2 — Operational System | **Done — U13-U20 + U20a, checklist (§5) fully closed 10/10** (see §5/DD-29). Decisions 1550/1552/1555/1557 (see §2 B5 table) are `pending_approval`, same B5 human-ack formality. U17's own decision (1559) is `pending_approval` too, but is medium-risk, not critical — it isn't in the B5 table since B5 only tracks critical-risk human-ack. U20's decisions (1569/1570) and U20a's decisions (1573/1574/1575) are also `pending_approval` (same formality) |
-| Phase 3 — Full Simulation Loop | Not started |
+| Phase 3 — Full Simulation Loop | **Underway.** U21a (chat delivery infrastructure) done, backend-only — see §6/DD-30. U21 (chat inbox/composer, full-stack) done — see §6/DD-31. U22 (Claude scenario generation + validation pipeline) done, backend-only — see §6/DD-32. Decisions 1576/1577/1578/1579/1580/1581 (see below) all `approved`. Remaining: U23-U30 |
 | Phase 4 — Hardening & Delivery | Not started |
 
 ---
@@ -142,7 +142,7 @@ and security explicitly, before a step counts as done. "It runs" is not "done."
 | B5 | harness-os units classified risk=critical require `human-ack` (`harness approve`), which this non-interactive session cannot run | Tracked per-unit as they arise | See table below |
 | B6 | harness-os's `tests`-stage auto-capture never fires for Python units — `~/.local/bin/pytest` resolves to an unrelated project's (`ApexTrade`) venv, missing MeadowOps' deps | User decision 2026-09-01 (harness-os decision id 1516): leave shared tooling alone. See §0.1 "Known limitation." | Accepted, won't fix |
 | B7 | Unit decomposition (U1-U33) was never validated item-by-item against each phase's own checklist (§4/§5/§6/§7) — it has gaps in 3 of 4 phases. Discriminator: every unit's spec-id prefix is backend-typed (INFRA/DATA/DOM/DOMAIN/API/PROD/QA/HARDEN) except `MEADOWOPS-UI-001` (U21) — the only UI-typed unit in the whole 33-unit plan — and U8, made full-stack by an explicit advisor-consulted exception. Any checklist item that requires an actually-rendered, wired page has no unit behind it unless U21 or U8 covers it. **Phase 1** (3 of 11 items): Appendix D pages wired to the real API; simulation-clock skeleton (`advance_simulation()` deferred at U4, initial `world_state`/`simulation_clock` seed row deferred at U5, neither picked up since); control-tower dashboard skeleton. **Phase 2** (3 of 10 items): item 4 dashboard drill-down (U16 is `API-003`, "endpoints" only); item 8 scenario builder controls (U18 is `DOMAIN-009`, Builder-facing UI with no UI-typed unit); item 9 Query Playground full functionality — editor/results/confirm dialog (U19 is `DOMAIN-010`, and this is Phase 2's own exit criterion). **Phase 3** (1 of 10 items): item 6 admin SQL query history view (U28 is `API-005`, same "titled a view, spec'd as endpoints" pattern as U16). Phase 4 checked clean — no rendered-page-dependent item lacks a covering unit. See DD-17 for the full per-item pass and reasoning. | **Decided 2026-09-02.** (1) New units U12a/U12b/U12c scope the 3 actionable Phase 1 items — see §4. (2) Confirmed: no new sibling units for the Phase 2/3 items — **U16** (dashboard drill-down, not U14 — U14 is the KPI-calculation dependency, U16 is the unit that owns the page) will be built full-stack, and likewise U18 (scenario builder controls), U19 (Query Playground), U28 (admin query-history view), when each is scoped in its own phase. Applies going forward: the same spec-id-prefix check runs before any future unit is scoped. | Phase 1 portion **done** (U12a/b/c — see §4, 11/11 checklist items closed); Phase 2/3 portion recorded as a standing correction, applied when those units are reached |
-| B8 | Per the user's standing instruction to pause after Phase 1 for a PRD discussion before touching Phase 2, the Builder↔Analyst live persona-chat feature (real-time, Messenger-style, one thread per stakeholder persona, Builder-composed via an on-demand AI sufficiency check, Analyst-side file attachments) was discussed and folded into `prd/MeadowOps_PRD_FINAL.md` (§6.1/6.4/6.6/6.13, §7, §8.4, §5.1/5.4, Appendix B/D, §10, §13 — all revised in place, not a bolt-on appendix). This expands scope beyond the original 33-unit plan: U21 needed a description correction (its Analyst-facing half moved from Subsystem 2 to Subsystem 1), U23 gained the AI-sufficiency-check responsibility, and a wholly new unit (U21a, placeholder) is needed for chat delivery infrastructure (data model, websocket layer, the new §7 cross-subsystem exception) that no existing unit covers | **Decided 2026-09-02.** PRD amendment done now (see DD-19). Formal harness-os scoping of U21a deliberately deferred to when Phase 3 begins, not scoped ahead of Phase 2 — same discipline as B7's "when scoped" deferral for U16/U18/U19/U28. U18 (Phase 2, "no AI yet") is explicitly unaffected — the AI-dependent pieces of this feature (composer's AI-suggested message, sufficiency check) can't be usefully built until Phase 3 wires in live AI anyway | PRD amendment done; U21/U23 descriptions corrected in §6; U21a's actual harness-os spec creation open until Phase 3 |
+| B8 | Per the user's standing instruction to pause after Phase 1 for a PRD discussion before touching Phase 2, the Builder↔Analyst live persona-chat feature (real-time, Messenger-style, one thread per stakeholder persona, Builder-composed via an on-demand AI sufficiency check, Analyst-side file attachments) was discussed and folded into `prd/MeadowOps_PRD_FINAL.md` (§6.1/6.4/6.6/6.13, §7, §8.4, §5.1/5.4, Appendix B/D, §10, §13 — all revised in place, not a bolt-on appendix). This expands scope beyond the original 33-unit plan: U21 needed a description correction (its Analyst-facing half moved from Subsystem 2 to Subsystem 1), U23 gained the AI-sufficiency-check responsibility, and a wholly new unit (U21a, placeholder) is needed for chat delivery infrastructure (data model, websocket layer, the new §7 cross-subsystem exception) that no existing unit covers | **Decided 2026-09-02.** PRD amendment done now (see DD-19). Formal harness-os scoping of U21a deliberately deferred to when Phase 3 begins, not scoped ahead of Phase 2 — same discipline as B7's "when scoped" deferral for U16/U18/U19/U28. U18 (Phase 2, "no AI yet") is explicitly unaffected — the AI-dependent pieces of this feature (composer's AI-suggested message, sufficiency check) can't be usefully built until Phase 3 wires in live AI anyway | **Closed 2026-09-03.** U21a scoped and built at the start of Phase 3 — see §6/DD-30. U21 (the UI half) remains the next unit |
 | B9 | `app.services.kpi_engine.compute_and_snapshot_kpis` (Unit 14) has no caller anywhere in the running system — `app.domain.scheduler._run_tick` (Unit 13) advances the clock and runs `run_scheduled_tick` only; it never calls the KPI engine. So `kpi_snapshot`/`days_of_supply_snapshot` are never populated by normal operation today, only by tests calling the function directly. Found while scoping U15 (the exception engine needs days-of-supply values); advisor-consulted decision was **not** to fix this as a drive-by inside U15 — see U15's own row in §5 for why (querying `sql/kpi/days_of_supply.sql` directly, the same way `kpi_engine._run_days_of_supply` does, is what U15 actually needs, and doesn't require the snapshot table to be populated at all) | **Closed 2026-09-02 at U16** (see DD-20 point 1) — both `compute_and_snapshot_kpis` (this row) and `app.services.exception_engine.evaluate_exceptions` (U15's own identical gap, discovered to be part of the same problem when U16's advisor consult widened the scope) are now called from `_run_tick`, right after `run_scheduled_tick`, inside the same try/except | **Closed** |
 | B10 | Discovered while live-verifying U16's dashboard: no world-state reset/clean-baseline utility exists yet (PRD S1-FR-7 — snapshot/reset/injected-state operations), so live-verifying any scheduler-touching behavior against the shared dev database (not `ZZTEST-`-prefixed, isolated API-test fixtures) leaves the **singleton** `simulation_clock` row advanced and every operational table populated — state several *other* units' tests assert starts empty. See DD-20 point 7 for the full incident (36 tests broke, manually reset, re-verified green) | Not yet decided whether this needs its own unit ahead of S1-FR-7's natural place in the plan, or whether "reset it by hand afterward, as documented in DD-20" stays the standing procedure until S1-FR-7 is actually scoped — no user decision needed yet since nothing is currently blocked by it (this session's own incident was already fully resolved by manual cleanup) | Open — recorded as a standing caution for whoever next live-verifying scheduler-touching behavior; not blocking |
 | B11 | Discovered during U20a's final-review pass, before committing Phase 2: PRD §10's Phase 2 checklist item 8 (`prd/MeadowOps_PRD_FINAL.md` line 512) read "Scenario builder controls working (select/inject/preview/approve), **including the persona composer and AI sufficiency check** (6.4/6.13, added 2026-09-02)" — the added clause directly contradicted B8/DD-19's own written decision ("U18 (Phase 2, 'no AI yet') is explicitly unaffected — the AI-dependent pieces of this feature... can't be usefully built until Phase 3 wires in live AI anyway") and duplicated Phase 3's own checklist item 1, which already separately owns "composer/thread monitor." Root cause: the B8/DD-19 PRD amendment's §6.4 sentence ("Amended 2026-09-02: also includes the live persona composer and the on-demand AI sufficiency check") appears to have been mechanically echoed into the unrelated §10 checklist line for Phase 2's exit item, never caught until this final review asked "is everything discussed, including messaging, actually tested" and the answer required checking the checklist text against the amendment's own decision record | **Decided 2026-09-03 (AskUserQuestion).** Confirmed as a drafting artifact, not a deliberate re-scope — corrected `prd/MeadowOps_PRD_FINAL.md` line 512 back to "Scenario builder controls working (select/inject/preview/approve)", matching the original Phase 2 scope and B8/DD-19's explicit intent. The persona composer and AI sufficiency check remain Phase 3 scope only (U21/U21a/U23), blocked on live AI wiring (Blocker B3) same as always | **Closed** — PRD line fixed; Phase 2's own §5 checklist already matched the corrected wording, no further doc changes needed there |
@@ -161,6 +161,8 @@ and security explicitly, before a step counts as done. "It runs" is not "done."
 | U14 | MEADOWOPS-DOM-007 | 1552 (pending_approval) | Auto-classified critical by keyword match on "order" (DD-5) — ninth occurrence of this false positive. Fully implemented, tested, and security-reviewed (**APPROVE**, 1 MEDIUM found and fixed — the starter KPI SQL's all-time-aggregate nature made an out-of-order recompute silently corrupt historical data, fixed with a new `KpiComputationOutOfOrderError` guard — plus 1 LOW addressed, N+1 query pattern replaced with a single `GROUP BY`) — awaiting `harness approve` for the human-ack formality. |
 | U15 | MEADOWOPS-DOM-008 | 1555 (pending_approval; supersedes 1554) | Auto-classified critical by keyword match on "order" (DD-5) — tenth occurrence of this false positive. Fully implemented, tested, and security-reviewed (**APPROVE after fixes**, 1 HIGH found and fixed — low-stock auto-resolve conflated "condition cleared" with "days-of-supply unmeasurable this tick," fixed with a tri-state evaluation verdict — plus 2 MEDIUM fixed — `threshold_value`/first-detected date were being overwritten on every re-sync, fixed by freezing them at detection with a new `first_detected_simulation_date` column; no concurrency guard around the read-decide-write reconciliation, fixed with a Postgres advisory transaction lock — plus 2 LOW fixed, int-truncation of fractional grace-day thresholds and a late-shipment reference-date mismatch) — awaiting `harness approve` for the human-ack formality. |
 | U16 | MEADOWOPS-API-003 | 1557 (pending_approval) | Auto-classified critical by keyword match on "order" (DD-5) — eleventh occurrence of this false positive. Fully implemented full-stack (backend + orbynadmin frontend, per B7), tested (38 tests, reconciliation-based), and security-reviewed (**APPROVE after fixes**, 1 MEDIUM found and fixed — six endpoints returned unbounded result sets plus one filtered in Python instead of SQL, fixed with `limit`/`offset` params and query-pushed filters — plus 2 LOW, one fixed (auth-test coverage expanded from 8 to all 13 routes), one documented as no action needed (scheduler's widened commit-on-failure surface, already covered by its own module docstring)) — awaiting `harness approve` for the human-ack formality. |
+| U21a | MEADOWOPS-DOM-014 | 1576/1577/1578/1579 (approved) | Genuine high-risk classification, not a DD-5 false positive — a real new WebSocket authentication surface. `security-change` workflow run 136 completed all four stages (security_review/approval/implement/finalize), each `record_decision`d `approved` (approval's own human-ack gate satisfied per this session's standing practice of proceeding under `pending_approval`-then-`approved` bookkeeping rather than stalling, since `harness approve` itself cannot run non-interactively — see DD-6). Pre-implementation security review (2 MEDIUM incorporated before any code) + post-implementation code-reviewer (WARNING, 3 MEDIUM + 1 LOW, all fixed) + post-implementation security-reviewer (2 MEDIUM + 4 LOW, both MEDIUMs fixed) — see DD-30. |
+| U21 | MEADOWOPS-UI-001 | 1580 (approved) | Auto-classified high by keyword match on "auth"/"session" (DD-5 false positive — this unit reuses U21a's existing WS ticket auth verbatim, adds no new auth surface). `new-feature` workflow run 137 parked at stage "tests" per the known B6 bookkeeping gap (§0.1) — real RED-then-GREEN TDD followed via `uv run pytest` directly, independent of that gap. Fully implemented full-stack (backend read-state addition + both frontends' chat UI) and reviewed post-implementation: code-reviewer (backend clean; frontend 1 HIGH + 2 MEDIUM + 1 LOW, all fixed) + security-reviewer (0 CRITICAL/HIGH, 1 MEDIUM + 4 LOW, fixed or confirmed non-issues) — see DD-31. |
 
 ---
 
@@ -1629,6 +1631,456 @@ defaults, KPI SQL specifics — are appended here as each unit lands.)*
      column types, the unique constraint, and both cross-schema FKs all
      match.
 
+- **DD-30 (Unit 21a — chat delivery infrastructure implementation, 2026-09-03):**
+  1. **Scoped and delivered at the start of Phase 3, per B8's own deferral** —
+     spec `MEADOWOPS-DOM-014`, `security-change` workflow run 136
+     (security_review/1576 → approval/1577 → implement/1578 →
+     finalize/1579, all recorded `approved`; approval is the standing
+     human-ack formality per DD-6/B5, not a live block on continuing work).
+     Risk **high**, genuine (a real new authentication surface — WebSocket
+     ticket auth — not a DD-5 keyword false positive).
+  2. **New `chat` Postgres schema (migration 0018)** — PRD §7's second
+     named cross-subsystem exception (after the sandbox schema): both
+     subsystems' own API layer reads/writes it directly, the same category
+     `app.domain.subsystem_boundary`'s AST checker already exempts `engine`
+     from (not `live`, which it actually protects). Pre-implementation
+     security review considered and explicitly rejected adding
+     `app.db.chat` to `FORBIDDEN_MODULES` for this reason; a positive test
+     (`test_does_not_flag_the_shared_chat_schema_orm`) proves the exemption
+     is intentional, not an oversight. `chat_thread`/`chat_message` tables,
+     a `stakeholder_persona` Postgres enum (6 values), sandbox-role excluded
+     via migration 0001's exact two-line pattern (schema-level REVOKE +
+     `ALTER DEFAULT PRIVILEGES`, so a future table added to `chat` stays
+     excluded automatically).
+  3. **Message immutability (PRD 6.13/ER-6) enforced by a `BEFORE
+     UPDATE/DELETE/TRUNCATE` trigger, not `REVOKE`** — the app's own DB
+     connection is the schema-owning `meadowops` role, and Postgres table
+     owners bypass GRANT/REVOKE entirely, so only a trigger fires
+     unconditionally regardless of who issues the statement. Empirically
+     proven live via `docker exec psql` before writing the automated
+     tests: inserted probe rows, confirmed UPDATE/DELETE/TRUNCATE as the
+     owner role are all rejected with the expected error, and that cleaning
+     up the probe rows afterward genuinely requires the documented `ALTER
+     TABLE ... DISABLE TRIGGER` escape hatch. A dedicated test
+     (`test_immutability_triggers_are_enabled`) independently confirms the
+     triggers are durably enabled (`pg_trigger.tgenabled = 'O'`) on the
+     shared dev database, not just "unconditional when enabled."
+  4. **WebSocket auth via a short-lived (20s), single-use ticket**, minted
+     over an authenticated REST call (`POST /api/v1/chat/ws-ticket`) and
+     burned on connect (`GET /ws/chat?ticket=...`) — the browser
+     `WebSocket` API can't set an `Authorization` header, and the session
+     lives in an httpOnly cookie neither frontend's JS can read. The
+     rejected alternative (sending the httpOnly session cookie on the WS
+     handshake) works only by accident in local dev (cookies scope by
+     host+path, not port — a prior finding from U20a) and breaks under the
+     real multi-host deployment target. A pre-implementation security
+     MEDIUM additionally required the live WS connection's own remaining
+     lifetime to be tied to the session JWT's `exp` claim (independently
+     re-decoded at ticket-mint time), not just the 20s ticket TTL — closes
+     the gap where an accepted WS connection would otherwise be the first
+     credential in the project able to outlive its own session with no
+     re-check.
+  5. **Every chat route rejects the internal-service credential**
+     (`reject_service_role`, mirroring the Query Playground's own pattern)
+     except thread creation, which uses the stricter `require_admin`
+     (DD-25: the Builder picks which thread to open — also inherently
+     excludes role=service). `sender_user_id`/`sender_role` on every
+     message are derived only from the caller's verified session identity,
+     never from the request body — closing the same class of forgery bug
+     (client-side role trust) U20a's own pre-implementation review caught.
+     A route-inventory test (`test_every_chat_route_is_explicitly_
+     classified`) pins the exact classification of all 5 REST routes; the
+     WebSocket route isn't enumerable that way (FastAPI dependency
+     injection doesn't apply to WS routes) so its auth is proven directly
+     against a real connection instead.
+  6. **Post-implementation review found and fixed two real correctness
+     bugs, not just style issues.** `create_message_route` was originally
+     `async def` so it could `await` the broadcast directly — both
+     reviewers flagged this as blocking the asyncio event loop with inline
+     synchronous DB work on every message send, stalling every other live
+     WebSocket connection for the duration; fixed by reverting to this
+     project's established sync-route convention and using FastAPI's
+     `BackgroundTasks` to schedule the broadcast after the response is
+     returned. Separately, the WS handler's task-cancellation logic
+     originally lived inside the `try` block after `await asyncio.wait`,
+     which skips it entirely if the outer coroutine itself is cancelled
+     (server shutdown, an ASGI-level cancellation — a real trigger for a
+     long-lived WS route) — fixed by moving `cancel()` + a gathered await
+     for both tasks into `finally`, guaranteed to run regardless of exit
+     path.
+  7. **Test-fixture cleanup against DB-trigger-protected data needed an
+     autocommit connection, not a shared ORM transaction** — an earlier
+     version's single multi-statement `db_session` teardown meant one
+     failed statement (e.g. the trigger-disabled DELETE) poisoned every
+     later statement in the same transaction, including the trigger
+     re-enable, silently leaking rows for a later, *unrelated* test file to
+     collide with (root-caused a transient flake in
+     `test_exception_engine.py` this way). Fixed by switching to a fresh
+     `psycopg.connect(owner_dsn, autocommit=True)` connection with
+     independent per-statement transactions and a `try/finally` around the
+     disable→delete→enable sequence, matching `tests/infra/
+     test_sandbox_boundary.py`'s own established pattern.
+  8. **745/745 backend tests passing** (689 pre-unit + 56 new), 0 skipped
+     (a pre-existing enum-constraint test that silently depended on
+     ambient DB state and could never fail regardless of what it checked
+     was fixed along the way to build its own probe scenario instead — the
+     same "test that could never fail" anti-pattern this project has hit
+     before, per `sandbox_refresh.py`'s own docstring). Backend-only — no
+     UI. U21 (the Analyst inbox / Builder composer) is the separate
+     follow-on unit that builds on this substrate.
+  9. **Live-verified against a real running uvicorn ASGI server, not just
+     `TestClient`'s in-process shim** (advisor-recommended, since every
+     automated WS test in this unit goes through the shim, and U21's whole
+     frontend depends on this path working for real): logged in against
+     the real dev backend, minted a real ticket over a real HTTP POST,
+     connected a throwaway Python `websockets` client to the real
+     WebSocket route, posted a message over a second real HTTP request
+     while the socket was open, and confirmed the `BackgroundTasks`-
+     scheduled broadcast frame actually arrived with the correct
+     `thread_id`/`message_id`/`body`. One real gotcha surfaced and
+     resolved along the way, not a code bug: the WS route is registered on
+     a router with `prefix="/api/v1/chat"`, so the real path is
+     `/api/v1/chat/ws/chat`, not the bare `/ws/chat` an initial smoke-test
+     attempt used — Starlette/uvicorn report a route-not-found WS
+     handshake the same way they report a pre-`accept()` rejection (HTTP
+     403, generic, no body), so this looked identical to a ticket-
+     rejection failure until traced with a temporary debug print (added,
+     used, then fully reverted — confirmed via `git diff` showing zero
+     diff on `app/api/chat.py` afterward). All probe data (one
+     `zztest`-prefixed scenario, its thread, its message) manually cleaned
+     from the shared dev database and confirmed at zero afterward; full
+     backend suite re-confirmed 745/745 passing post-cleanup.
+
+- **DD-31 (Unit 21 — chat inbox/composer, full-stack implementation, 2026-09-03/04):**
+  1. **Built per the three scoping decisions already recorded in U21's
+     §6 row** (`AskUserQuestion`, 2026-09-03): chat-UI-without-AI-composer
+     now, unread badges via a new `chat.chat_thread_read_state` table,
+     Analyst-side file attachments deferred to a follow-on unit. harness-os
+     `new-feature` workflow run 137 scoped it (`create_spec`
+     `MEADOWOPS-UI-001`, `assess_risk` — another DD-5 keyword false
+     positive on "auth"/"session," since this reuses U21a's existing WS
+     ticket auth verbatim and adds no new auth surface). Run 137 stays
+     parked at stage "tests" per the known B6 bookkeeping gap (§0.1) — real
+     RED-then-GREEN TDD was still followed via `uv run pytest` directly,
+     independent of that gap.
+  2. **Backend: the read-state/unread-badge addition** — migration 0019
+     (`chat.chat_thread_read_state`, composite PK `thread_id`+`user_id`, FKs
+     to `chat_thread`/`live.user`, no new schema-level grants needed since
+     migration 0018's `ALTER DEFAULT PRIVILEGES` already covers future
+     `chat` tables), `mark_thread_read` (idempotent upsert via
+     `pg_insert(...).on_conflict_do_update`, `clock_timestamp()` not
+     `now()` — see point 3), `list_threads_with_unread` (one aggregated
+     query per viewer using `func.count(...).filter(...)` — Postgres
+     `COUNT(...) FILTER (WHERE ...)` — joined via a read-state subquery,
+     avoiding N+1 the same way U16's own review fixed this exact
+     anti-pattern), `ThreadReadWithUnread` schema, `mark_thread_read_route`
+     (`POST /threads/{id}/read`) and a rewritten `list_threads_route`.
+  3. **Real bugs found and fixed during backend TDD, not just style:**
+     (a) a test initially tuple-unpacked `list_threads_with_unread`'s
+     dataclass results (`for t, unread in ...`) instead of using
+     `.thread`/`.unread_count`; (b) Postgres's `now()`/`CURRENT_TIMESTAMP`
+     is transaction-time (frozen at the transaction's first statement), so
+     a "message sent after mark-read" test using both `func.now()` (message
+     `sent_at`) and, initially, also `func.now()` for `last_read_at`
+     produced identical timestamps inside one test's single uncommitted
+     transaction — fixed by switching `mark_thread_read` to
+     `clock_timestamp()` (real statement-time) and relocating the specific
+     temporal-ordering assertion to the API-layer test file, where
+     `TestClient` genuinely commits a separate transaction per call, which
+     is the only place this scenario is actually provable; (c) adding
+     `chat_thread_read_state` (FK→`chat_thread`) broke an existing test
+     fixture's teardown order — its `chat_thread` delete started failing
+     with `ForeignKeyViolation` whenever a test had created read-state
+     rows, and because that exception wasn't caught, every later cleanup
+     statement in the same teardown was skipped too, leaking rows that
+     later collided with an unrelated test's own cleanup; fixed by deleting
+     `chat_thread_read_state` first; (d) a related fixture's manual
+     dev-database cleanup for the leaked rows above initially missed one
+     `exception_flag` row because the fixture's `Scenario` never actually
+     sets `source_exception_flag_id` (a soft/optional reference per
+     DD-24) — the flag and scenario were created together but never
+     FK-linked, so a cleanup query keyed on that column matched zero rows;
+     found and fixed by matching the leaked row's exact content instead.
+     Both closed-set tests (`test_chat_schema_and_tables_exist`,
+     `test_every_chat_route_is_explicitly_classified`) needed — and got —
+     a conscious update for the new table/route, the established pattern
+     for this project's closed-set tests. 758/758 backend tests passing
+     (745→758, 13 new), stable across repeated runs.
+  4. **Frontend: full-stack chat UI across both subsystems** — Subsystem 1
+     (orbynadmin)'s new Chat page (Appendix D.1) and Subsystem 2
+     (shadcn-dashboard)'s Mail page, fully rewritten from the original
+     template's fake-email UI into the Builder's real thread
+     composer/monitor (Appendix D.2, "Amended 2026-09-02"). Both apps get:
+     a `chat-api.ts` server-side proxy (identical shape to
+     `admin-api.ts`/`scenario-api.ts` — reads the httpOnly session cookie,
+     forwards a Bearer token, never trusts client input for identity), 4
+     Next.js API route handlers, and a `use-chat-socket.ts` hook. The
+     Builder creates threads via a new dialog (scenario — filtered to
+     `status=active` only, matching Appendix C's walkthrough — + one of the
+     6 fixed personas); the Analyst only ever replies to threads that
+     already exist, mirroring the backend's own `require_admin` vs.
+     `reject_service_role` split, unchanged by this unit. No AI-suggested
+     composer, no file attachments — both explicitly out of scope per
+     point 1.
+  5. **WebSocket architecture: the browser connects directly to the
+     backend, not through either app's own proxy** — a Next.js Route
+     Handler can't hold a live upstream connection open for a browser
+     client. `use-chat-socket.ts` POSTs to its own app's
+     `/api/chat/ws-ticket` (server-side, cookie-authenticated) to mint a
+     fresh ticket on every connect/reconnect, then opens
+     `new WebSocket(...)` directly against a new browser-exposed
+     `NEXT_PUBLIC_MEADOWOPS_WS_BASE_URL` env var (added to both apps'
+     `.env.example`/`.env.local`) — the one deliberate exception to the
+     API-only cross-subsystem boundary the PRD's own risk table (§13)
+     already names for this feature. On any frame for the currently-open
+     thread: appended locally (deduped by `message_id`, since the sender's
+     own POST response already appended it once and the registry broadcasts
+     back to the sender's own connection too) and immediately re-marked
+     read, so the sender's own echo never bumps their own badge; on a frame
+     for any other thread, the thread list is refetched from `GET /threads`
+     for an authoritative count. A 30s poll is a safety-net fallback for
+     the thread list generally.
+  6. **Real bugs found and fixed during frontend build, not just style:**
+     (a) `onFrameRef.current = onFrame` was originally assigned inline
+     during render — React 19's `react-hooks/refs` lint rule correctly
+     flags any ref write during render, even one whose only reader is an
+     async WebSocket event callback that never fires during a render pass;
+     fixed by moving the assignment into a bare `useEffect(() => {...})`
+     (no dep array) in both apps' `use-chat-socket.ts`; (b) the first live
+     Playwright pass hit a real 404 on the new mark-read route that turned
+     out to be a stale `uvicorn` process (started earlier in this session,
+     no `--reload` flag) still serving code from before the read-state
+     routes existed — not a code bug, fixed by restarting the backend;
+     (c) a `docker exec`-based harness-gate false alarm ("no verified
+     config checksums" for a nested app directory) turned out to be caused
+     by this session's own shell `cd`-ing into that nested directory and
+     the gate keying off the live shell's cwd rather than the edited
+     file's path — not an actual missing project registration, fixed by
+     returning to the repo root rather than running `harness init`
+     (confirmed via `config_checksums`'s own Postgres rows: the repo root
+     is, and has only ever needed to be, the one registered path).
+  7. **Two review passes, both dispatched post-implementation, findings
+     fixed before considering the unit done:**
+     - **code-reviewer**: backend read-state addition clean, no findings.
+       Frontend: 1 HIGH (`connect()` in both `use-chat-socket.ts` files
+       only scheduled a reconnect on a non-ok ticket-fetch response — a
+       network failure, a non-JSON body, or `new WebSocket()` itself
+       throwing on a misconfigured env var was an unhandled rejection that
+       silently killed reconnection forever; fixed by wrapping the whole
+       body in `try/catch`, both files) + 2 MEDIUM (a failed send cleared
+       the draft unconditionally, silently discarding what the user typed —
+       fixed by only clearing on a confirmed-successful send, plus adding a
+       client-side `maxLength` matching the backend's
+       `MAX_MESSAGE_BODY_LENGTH`, plus a visible inline error; and a
+       self-healing but real race where a stale `GET /threads` refetch
+       could briefly restore a non-zero unread count on the thread the
+       viewer currently has open — fixed by making the client the authority
+       on "I'm looking at this one right now" via a `selectedIdRef`-backed
+       merge instead of a wholesale array replace) + 1 LOW (a placeholder
+       `sender_user_id: ""` on WS-derived messages, now commented).
+     - **security-reviewer**: 0 CRITICAL/HIGH. 1 MEDIUM (no rate limiting
+       anywhere on the chat REST surface, and this unit's own auto-mark-read
+       fires unconditionally on every broadcast frame for every viewer with
+       a thread open, amplifying write volume with no debounce — fixed with
+       a 500ms trailing debounce in both apps, cleared on unmount; a
+       general chat-surface rate limiter remains a genuine follow-up, not
+       blocking this unit) + 4 LOW, three resolved: the WS ticket
+       appearing in server access logs via the query string (accepted —
+       single-use, 20s TTL, already the design U21a's own review approved);
+       `.env.example`'s comment overclaiming "no CORS/Origin setup needed"
+       reworded to name the actual control (`SESSION_COOKIE`'s
+       `sameSite: "lax"` blocks the cross-site ticket POST, not an absence
+       of any control) plus an explicit `wss://`-in-production reminder,
+       in both apps; and a claimed gap in Subsystem 2's `.env.example`
+       that `git diff` genuinely can't see — confirmed via
+       `git check-ignore` that the file is gitignored (`.env*`) in that
+       app, so the correct on-disk content was never a diff-visible
+       omission in the first place, no fix needed. Verified clean and
+       explicitly confirmed: per-viewer read-state authorization (derived
+       only from the caller's own verified JWT, proven by an existing test
+       asserting one viewer's mark-read never affects another's count),
+       migration 0019 needs no new grants, all 8 new API routes only ever
+       trust the httpOnly cookie server-side, the WS ticket is never
+       persisted client-side, message bodies render as plain JSX text with
+       zero `dangerouslySetInnerHTML`/`innerHTML` anywhere in the diff, and
+       the new-thread picker's closed `<Select>`s are UX convenience only
+       — the real enforcement is server-side Pydantic/`Literal` validation,
+       which the review confirmed rather than assumed.
+  8. **Final regression pass after all review fixes**: both apps'
+     `tsc --noEmit` clean; ESLint clean for orbynadmin (shadcn-dashboard's
+     ESLint config has a pre-existing, unrelated "circular structure"
+     crash on its own flat-config/plugin setup, confirmed reproducible on
+     files nobody touched this unit — not a regression, not fixed here).
+     Full Playwright walkthrough re-run end-to-end against real dev
+     servers after every fix: fresh probe scenario/exception, Builder login
+     → new-thread dialog (scenario+persona pickers) → send → Analyst login
+     → Chat page shows the thread with an unread badge → open it → history
+     loads, badge clears → reply → reply appears in the Builder's
+     already-open tab in real time with zero manual refresh, zero console
+     errors on either app throughout. All probe data (one
+     `zztest`-prefixed scenario/flag/thread/messages) manually cleaned from
+     the shared dev database and confirmed at zero afterward; full backend
+     suite re-confirmed 758/758 passing post-cleanup.
+
+- **DD-32 (Unit 22 — Claude scenario generation + validation pipeline, 2026-09-04):**
+  1. **Scoped via one consolidated `AskUserQuestion`** (two sub-questions,
+     both answered "Recommended") before any code: (a) **extend
+     `regenerate_scenario`** itself — full overwrite of both the mechanical
+     facts and the AI narrative on every regenerate call — rather than add a
+     new separate "Generate" action, since PRD 6.4's Builder-controls list
+     names no separate "generate" verb; (b) Claude's response must be
+     **structured JSON**, schema-validated per field, not free prose, so the
+     DB-fact check (referenced entity ids) can run mechanically, matching
+     PRD 6.8's evaluator pattern. harness-os `new-feature` workflow run 138
+     scoped it (`create_spec` `MEADOWOPS-DOMAIN-011`/content id
+     `MEADOWOPS-DOM-016`, `assess_risk` → **medium**, `requiredGates:
+     [spec, tests, review:code]`).
+  2. **Timestamp gotcha on `assess_risk`, found and worked around**: the
+     first `assess_risk` call (made right after `create_spec` returned)
+     silently didn't count as evidence for the workflow's "risk" stage —
+     `workflow_status` kept re-issuing the same `assess_risk` directive.
+     Root-caused via direct Postgres query (`docker exec harness_postgres
+     psql`): the risk assessment's own `created_at` predated the
+     `workflow_runs.stage_started_at` timestamp for when the run actually
+     *entered* the "risk" stage (the two calls landed ~4 minutes apart, and
+     the stage transition happens asynchronously after `create_spec`
+     resolves, not synchronously with it). Calling `assess_risk` a second
+     time, now safely after `stage_started_at`, advanced the workflow
+     immediately to "tests." Not fixed in harness-os itself (out of scope,
+     read-only MCP server) — recorded here as a reusable diagnostic for any
+     future unit that sees a directive repeat: check
+     `workflow_runs.stage_started_at` against the evidence table's own
+     `created_at` before assuming the call itself failed.
+  3. **B6 bookkeeping gap re-confirmed, not fixed**: after writing the RED
+     tests (which failed on `ModuleNotFoundError` — `app.domain.
+     scenario_generation` didn't exist yet — a valid RED per CONST-CORE-002,
+     since "the test fails for the right reason" doesn't require the
+     failure to be an assertion), `workflow_status` still reissued
+     `establish_red_phase`. Queried `test_runs` directly this time (not just
+     inferred from precedent): zero rows exist for `/home/lehoa/projects/
+     MeadowOps` at all, of any phase, ever — confirming B6 is a total gap
+     for this project's Python units, not a partial/intermittent one.
+     Proceeded via real `uv run pytest`-observed RED→GREEN exactly as every
+     prior unit this session has, then closed the run out via
+     `record_decision` (id 1581, `approved`) instead of waiting on
+     `workflow_status` to self-advance past "tests."
+  4. **New `app.domain.scenario_generation` module**: `ScenarioNarrative`
+     frozen dataclass (the six AI-generated fields plus
+     `referenced_entity_ids: dict[str, list[str]]`, keyed by
+     `product_ids`/`warehouse_ids`/`supplier_ids`/`purchase_order_ids`/
+     `shipment_ids`); `build_generation_prompt` reuses the existing
+     `GENERATION_TEMPLATE` (`app.domain.prompt_templates`, built idle since
+     Unit 1's infra spec) rendered as-is — left untouched per PRD 6.11 ER-6
+     ("prompts... versioned; never silently rewrite history") — with a
+     JSON-response-format instruction appended as a separate, unversioned
+     suffix rather than folded into the template text; `parse_narrative_
+     response` schema-validates Claude's JSON per field;
+     `generate_scenario_narrative` orchestrates PRD 9.2's exactly-one-
+     automatic-retry (the original call plus one retry, for either a
+     `ClaudeAPIError`/`ClaudeTimeoutError` or a malformed/incomplete
+     schema), tested against all three failure modes plus a dedicated test
+     proving a third queued success never gets used. No DB/session access
+     in this module by design — `app.services.scenario_service` is the only
+     caller wired to both the DB models this needs and this module's
+     ClaudeClient-calling functions.
+  5. **`regenerate_scenario` rewritten** (`app.services.scenario_service`):
+     now takes a required `claude_client: ClaudeClient` parameter, calls
+     `generate_scenario_narrative`, then a new `validate_referenced_entity_
+     ids` DB-fact check (String-PK `Product`/`Warehouse`/`Supplier` via
+     `session.get`; UUID-PK `PurchaseOrder`/`Shipment` parsed with a
+     try/except so a malformed id string is a clean validation error, not
+     an unhandled `ValueError`) — `scenario.ground_truth` is only reassigned
+     once *both* succeed, so every failure path (Claude retry exhausted, or
+     a bad referenced id) leaves it byte-for-byte untouched, test-verified
+     on both paths. This deliberately **supersedes U18's own merge-not-
+     replace code-review fix** (`test_full_overwrite_replaces_a_previously_
+     hand_edited_narrative` names the supersession explicitly) — that fix
+     predated any AI call existing to run here at all; the Builder's edit
+     path for a narrative they want to keep is `update_ground_truth`, not
+     skipping regenerate.
+  6. **API layer** (`app.api.admin_scenarios`): new `get_claude_client`
+     dependency reads `request.app.state.claude_client` (`None` until the
+     real Anthropic adapter lands in Phase 4 per blocker B3 — no API key
+     configured). `regenerate_scenario_route` now returns 503 with the
+     client unset, 502 on `ScenarioGenerationFailedError` (Claude call
+     exhausted its retry), 422 with `{"errors": [...]}` on
+     `ScenarioGenerationValidationError` (bad referenced ids) — the same
+     `{"errors": [...]}` shape `approve_scenario_route` already uses.
+  7. **Docstring-only updates** to `app.domain.scenario`,
+     `app.domain.claude_client`, `app.domain.prompt_templates` — none said
+     anything false before (all correctly said "not yet, that's U22"), but
+     all three needed to stop saying it now that U22 exists.
+     `validate_for_approval`'s own deferral of the KPI-claim-correctness and
+     no-world-state-contradiction checks is retargeted from "doesn't exist
+     until U22" to **U30** ("full edge case catalog" unit), by the same
+     precedent U17 already set deferring SR-1/SR-3 to that same unit (see
+     `app.domain.reporting_sync`'s docstring).
+  8. **code-reviewer dispatched post-implementation: APPROVE**, 1 MEDIUM +
+     1 LOW.
+     - MEDIUM (fixed): no test exercised `regenerate_scenario` → `approve_
+       scenario` back-to-back on the happy path — the new 9-key ground_truth
+       literal had only been hand-verified to satisfy
+       `REQUIRED_GROUND_TRUTH_FIELDS`, not test-locked. Added
+       `test_a_regenerated_scenario_passes_approval`.
+     - LOW (documented, not code-changed): `ScenarioGenerationFailedError`'s
+       message wraps `str(last_error)` verbatim into the 502 response body —
+       harmless today (`MockClaudeClient`-authored text only), but flagged
+       as a constraint the real Phase 4 Anthropic adapter must respect
+       (never let a raw upstream response body/headers reach that string
+       unredacted). Documented in the exception class's own docstring.
+  9. **security-reviewer dispatched post-implementation: 0 CRITICAL/HIGH**,
+     2 MEDIUM + 2 LOW + 1 informational.
+     - LOW (fixed): `json.loads` on a sufficiently deeply-nested JSON
+       document raises `RecursionError`, not `JSONDecodeError` — confirmed
+       empirically by the reviewer (`"["*100000 + "]"*100000`) to escape
+       `parse_narrative_response`'s own exception handler as an unhandled
+       500 instead of the intended clean schema-error path. Fixed by
+       widening the `except` clause; regression test added at a smaller,
+       still-over-the-default-recursion-limit depth (3,000).
+     - LOW (fixed): no cap on list length anywhere in the parsed narrative
+       (`supporting_signals` etc., or any `referenced_entity_ids` list) —
+       combined with the MEDIUM below, an unusually large response could
+       drive an unbounded number of downstream DB round-trips. Fixed with a
+       `_MAX_LIST_ITEMS = 50` cap enforced in `parse_narrative_response`,
+       two new regression tests.
+     - MEDIUM (documented as a known limitation, not fixed): the DB
+       session's connection is held open across the Claude call inside
+       `regenerate_scenario` (SQLAlchemy's default autobegin already opened
+       one for the earlier scenario/flag reads), and `ClaudeClient.
+       create_message` carries no timeout parameter at all — harmless today
+       since `MockClaudeClient` returns instantly, but a real, slow/hanging
+       live call in Phase 4 could exhaust the app's whole connection pool
+       and threadpool (sync routes), not just this one request. Not fixed
+       now — restructuring session/transaction ordering or adding a timeout
+       to a Protocol with no real implementation yet would be speculative
+       work against an adapter whose actual latency characteristics aren't
+       known. Documented directly on the `ClaudeClient` Protocol's own
+       docstring for whoever builds that adapter.
+     - MEDIUM (documented as a known limitation, deferred to U30): `validate_
+       referenced_entity_ids` only checks ids Claude *declares* in its own
+       `referenced_entity_ids` manifest for *global* existence — an id used
+       only inside the narrative's free-text fields is never checked at
+       all, and a declared id that is real but unrelated to this specific
+       scenario's evidence package (`GENERATION_TEMPLATE`'s own "reference
+       only... identifiers that exist in the evidence package" instruction)
+       passes anyway. Both gaps are the "richer than mere existence" half of
+       PRD 9.2's edge case, the same class of judgment-requiring check U17
+       already put out of its own unit's scope for SR-1/SR-3 (deferred to
+       U30) — deferred here by the identical reasoning rather than expanding
+       this unit's scope beyond the two decisions the user actually made.
+       Documented directly on `validate_referenced_entity_ids`'s own
+       docstring.
+     - Informational: same 502-error-text-forwarding constraint the
+       code-reviewer independently flagged (point 8 above) — two reviewers
+       converging on the same forward-looking note without prompting each
+       other reinforced that it's worth keeping as a documented constraint
+       even though nothing needed to change today.
+  10. **Final regression pass**: full backend suite 813/813 passing (805
+      pre-fixes → 813 after adding the 8 new/changed regression tests across
+      both review passes). No frontend changes this unit — U22 is
+      backend-only by its own nature (an admin API action's server-side
+      generation pipeline, no new UI surface).
+
 ---
 
 ## 4. Phase 1 — Foundation
@@ -1729,9 +2181,9 @@ evaluation, ledger recording. A simulated callback scenario has actually run.
 ### Phase 3 units
 | Unit | Spec ID (planned) | Description | Status |
 |---|---|---|---|
-| U21 | MEADOWOPS-UI-001 | **Corrected 2026-09-02 (see B8/DD-19):** Analyst's persona-chat inbox (Subsystem 1, Appendix D.1's Chat page, S1-FR-15) + Builder's composer/thread monitor (Subsystem 2, Mail page repurposed) — was "Mail-style, Subsystem 2 only," now full-stack across both apps per 6.1/6.13's chat redesign | Not started |
-| U21a | *(not yet scoped — placeholder)* | **Added 2026-09-02 (see B8/DD-19):** Chat delivery infrastructure — Chat Thread/Chat Message data model (Appendix B), websocket real-time layer, the §7 named cross-subsystem exception (shared message store, each side still API-only). U21 depends on this existing first. To be formally scoped via harness-os when Phase 3 begins, not scoped ahead of Phase 2. **Interface design captured 2026-09-02, not yet built (see DD-25):** one `ChatThread` per (Scenario, persona) pair, locked to that persona for its whole life; Builder's Subsystem 2 side opens a thread to act as that persona (no per-message identity switching); Analyst's Subsystem 1 side is one unified inbox across every persona's thread, replying only ever as herself, threads labeled by persona not by scenario. | Not scoped |
-| U22 | MEADOWOPS-DOMAIN-011 | Claude scenario generation + validation pipeline (6.4) | Not started |
+| U21 | MEADOWOPS-UI-001 | **Corrected 2026-09-02 (see B8/DD-19):** Analyst's persona-chat inbox (Subsystem 1, Appendix D.1's Chat page, S1-FR-15) + Builder's composer/thread monitor (Subsystem 2, Mail page repurposed) — was "Mail-style, Subsystem 2 only," now full-stack across both apps per 6.1/6.13's chat redesign. **Scoped 2026-09-03 (user, 2 AskUserQuestions):** build now as chat-UI-without-AI-composer (plain-text send/receive over U21a's substrate — AI-suggested message/sufficiency check is U23's job, blocked on B3); unread-thread badges get a new `chat.chat_thread_read_state` table (mutable, outside the immutability trigger — S1-FR-15 names them, U21a's schema had no read-tracking); Analyst-side file attachments (S1-FR-15/PRD 380 — allowlist, size cap, object storage, thread-scoped access, own boundary test) explicitly **deferred to a follow-on unit**, same precedent as U18→U20/U20→U20a. | **Done, full-stack — see DD-31.** `new-feature` workflow run 137 (spec `MEADOWOPS-UI-001`, risk assessed — another DD-5 false positive on reused auth keywords, parked at stage "tests" per the known B6 bookkeeping gap, §0.1). Backend read-state addition (migration 0019, `mark_thread_read`/`list_threads_with_unread`) + full frontend (orbynadmin's new Chat page, shadcn-dashboard's Mail page rewritten from its fake-email template) shipped. code-reviewer (backend clean; frontend 1 HIGH + 2 MEDIUM + 1 LOW, all fixed) and security-reviewer (0 CRITICAL/HIGH, 1 MEDIUM + 4 LOW, fixed or confirmed non-issues) both dispatched post-implementation. 758/758 backend tests passing (745→758, 13 new); both frontends' `tsc --noEmit` clean. Live-verified end-to-end in real browsers after every fix: Builder creates a thread and sends a message, Analyst sees an unread badge, opens it, replies, and the reply arrives in the Builder's already-open tab in real time with zero console errors. No AI composer, no file attachments (both explicitly deferred). |
+| U21a | MEADOWOPS-DOM-014 | Chat delivery infrastructure — Chat Thread/Chat Message data model (Appendix B), websocket real-time layer, the §7 named cross-subsystem exception (shared message store, each side still API-only). U21 depends on this existing first. **Interface design from DD-25** (one `ChatThread` per (Scenario, persona) pair locked for life; Builder opens a thread to act as that persona; Analyst has one unified inbox across every persona's thread, replying only as herself) implemented as designed. | **Done, backend-only — see DD-30.** `security-change` workflow run 136 completed (security_review/1576, approval/1577, implement/1578, finalize/1579, all approved). Risk **high** (genuine — new WebSocket auth surface, not a DD-5 false positive). Pre-implementation security review (2 MEDIUM incorporated into the design before any code) + post-implementation code-reviewer (WARNING, 3 MEDIUM + 1 LOW, all fixed) + post-implementation security-reviewer (2 MEDIUM + 4 LOW, both MEDIUMs fixed). 745/745 backend tests passing (689 pre-unit + 56 new), 0 skipped, stable across repeated runs. No UI — U21 (chat inbox/composer) is the separate follow-on unit that builds on this substrate. |
+| U22 | MEADOWOPS-DOMAIN-011 | Claude scenario generation + validation pipeline (6.4) | **Done, backend-only — see DD-32.** `new-feature` workflow run 138 (spec `MEADOWOPS-DOMAIN-011`/content id `MEADOWOPS-DOM-016`, risk assessed **medium**, decision 1581 approved). Scoped via one `AskUserQuestion` (extend `regenerate_scenario` with a full overwrite; Claude returns structured JSON, not prose). New `app.domain.scenario_generation` module (prompt building via the existing `GENERATION_TEMPLATE`, JSON schema validation, exactly-one-automatic-retry per PRD 9.2); `regenerate_scenario` now requires a `ClaudeClient` and only writes `ground_truth` after both AI generation and a new referenced-entity-id DB-fact check succeed — deliberately supersedes U18's own merge-not-replace fix. API layer 503s with no Claude client configured (still true — Phase 4/B3), 502s on a Claude failure, 422s on a bad referenced id. code-reviewer (APPROVE, 1 MEDIUM + 1 LOW, both addressed) and security-reviewer (0 CRITICAL/HIGH, 2 MEDIUM + 2 LOW + 1 informational — the 2 LOW fixed, both MEDIUM documented as known limitations deferred to Phase 4's real adapter and U30 respectively) both dispatched post-implementation. 813/813 backend tests passing (758→813). No frontend changes. |
 | U23 | MEADOWOPS-DOMAIN-012 | Stakeholder persona roleplay + multi-round pushback loop (6.5, 6.6). **Amended 2026-09-02 (see B8/DD-19):** also covers the Builder-invoked AI sufficiency check (6.13) — same AI-wiring moment, same conversational mechanics | Not started |
 | U24 | MEADOWOPS-DOMAIN-013 | Ledger full lifecycle wiring + callback mechanism (4.4) | Not started |
 | U25 | MEADOWOPS-DOMAIN-014 | AI evaluation framework (schema-validated) + adaptive difficulty engine (6.7, 6.8) | Not started |

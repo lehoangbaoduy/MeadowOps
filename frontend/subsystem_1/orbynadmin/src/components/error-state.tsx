@@ -51,7 +51,7 @@ export function ErrorState({
         />
       </div>
 
-      {/* Header — OrbynAdmin wordmark */}
+      {/* Header — MeadowOps wordmark */}
       <header className="flex items-center px-6 py-5">
         <Link
           href="/dashboard"
@@ -60,7 +60,7 @@ export function ErrorState({
           <span className="flex size-8 items-center justify-center rounded-lg bg-primary text-primary-foreground">
             <IconSparkles className="size-5" />
           </span>
-          <span className="tracking-tight">OrbynAdmin</span>
+          <span className="tracking-tight">MeadowOps</span>
         </Link>
       </header>
 
@@ -110,7 +110,7 @@ export function ErrorState({
 
       {/* Footer */}
       <footer className="px-6 py-6 text-center text-sm text-muted-foreground">
-        © {new Date().getFullYear()} OrbynAdmin. All rights reserved.
+        © {new Date().getFullYear()} MeadowOps. All rights reserved.
       </footer>
     </div>
   );

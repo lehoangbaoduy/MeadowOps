@@ -165,3 +165,20 @@ class QueryResultStatus(str, enum.Enum):
     ERROR = "error"
     TIMED_OUT = "timed_out"
     CANCELLED = "cancelled"
+
+
+class StakeholderPersona(str, enum.Enum):
+    """Unit 21a (MEADOWOPS-DOM-014, PRD 6.5): the fixed 6-persona set a
+    ChatThread is locked to for its whole life (DD-25). A closed,
+    PRD-defined label set, not an admin-editable entity — the richer
+    Stakeholder Persona table Appendix B names separately (priorities,
+    style, any future prompt-config content) is U23's to build if its
+    roleplay AI ever needs more than a name; this unit only needs a
+    discriminator ChatThread's own uniqueness constraint can key on."""
+
+    OPERATIONS_MANAGER = "operations_manager"
+    PROCUREMENT_MANAGER = "procurement_manager"
+    WAREHOUSE_MANAGER = "warehouse_manager"
+    IT_MANAGER = "it_manager"
+    OPERATIONS_DIRECTOR = "operations_director"
+    CFO = "cfo"

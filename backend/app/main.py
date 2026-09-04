@@ -5,16 +5,25 @@ from fastapi import Depends, FastAPI
 
 from app.api.admin_scenarios import router as admin_scenarios_router
 from app.api.auth import router as auth_router
+from app.api.chat import router as chat_router
 from app.api.customers import router as customers_router
 from app.api.dashboard import router as dashboard_router
 from app.api.master_data import router as master_data_router
 from app.api.query_playground import router as query_playground_router
 from app.core.auth import require_authenticated
+from app.core.chat_registry import ChatConnectionRegistry
 from app.core.config import Settings
 from app.core.internal_client import build_subsystem2_client
 from app.core.rate_limit import LoginRateLimiter
+from app.core.ws_tickets import WsTicketStore
 from app.db.session import make_engine
 from app.domain.scheduler import build_scheduler
+
+# Unit 21a (MEADOWOPS-DOM-014, PRD 6.13): the WS ticket handshake window,
+# not the session's own lifetime — kept short and fixed rather than a
+# Settings field, mirroring how short-lived this credential is meant to be
+# (see app.core.ws_tickets' own docstring).
+_CHAT_WS_TICKET_TTL_SECONDS = 20
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -76,12 +85,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         max_attempts=settings.login_rate_limit_max_attempts,
         window_seconds=settings.login_rate_limit_window_seconds,
     )
+    # Unit 21a: one instance per app (never a module-level global), same
+    # reasoning as login_rate_limiter above — independent create_app()
+    # calls in tests must not share ticket/connection state.
+    app.state.chat_ws_tickets = WsTicketStore(ttl_seconds=_CHAT_WS_TICKET_TTL_SECONDS)
+    app.state.chat_connections = ChatConnectionRegistry()
+    # Unit 22 (MEADOWOPS-DOM-016): no real Anthropic SDK adapter exists yet
+    # (Phase 4, blocker B3 - no API key configured). app.api.admin_scenarios.
+    # regenerate_scenario_route returns a clean 503 while this is None;
+    # tests substitute a MockClaudeClient via app.state.claude_client.
+    app.state.claude_client = None
     app.include_router(auth_router)
     app.include_router(master_data_router)
     app.include_router(customers_router)
     app.include_router(dashboard_router)
     app.include_router(admin_scenarios_router)
     app.include_router(query_playground_router)
+    app.include_router(chat_router)
 
     @app.get("/health")
     def health() -> dict[str, str]:

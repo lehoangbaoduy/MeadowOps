@@ -110,6 +110,59 @@ def test_sandbox_role_cannot_reach_engine_schema(owner_dsn: str, sandbox_dsn: st
             cur.execute("drop table if exists engine.boundary_probe")
 
 
+def test_sandbox_role_cannot_reach_chat_schema(owner_dsn: str, sandbox_dsn: str) -> None:
+    """Unit 21a (MEADOWOPS-DOM-014): chat is PRD §7's second named exception
+    to the no-direct-cross-subsystem-access rule, but that exception is
+    "each subsystem's own API layer reads/writes it" — the sandbox role
+    (arbitrary user-submitted SQL, PRD 5.9) has no more business reaching
+    it than it does `live`/`reporting`/`engine`. Same boundary-probe
+    pattern as those three schemas below — proven even though
+    `_live_table_names()` already excludes `chat` by construction (it isn't
+    `live`), matching 8.4's "verified with an actual permission test, not
+    just asserted" standard rather than trusting that filter alone."""
+    with psycopg.connect(owner_dsn, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute(
+            "create table if not exists chat.boundary_probe (id integer primary key)"
+        )
+    try:
+        with psycopg.connect(sandbox_dsn, autocommit=True) as conn, conn.cursor() as cur:
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                cur.execute("select * from chat.boundary_probe")
+    finally:
+        with psycopg.connect(owner_dsn, autocommit=True) as conn, conn.cursor() as cur:
+            cur.execute("drop table if exists chat.boundary_probe")
+
+
+def test_sandbox_role_cannot_reach_real_chat_message_table(
+    owner_dsn: str, sandbox_dsn: str
+) -> None:
+    """Same boundary against the real table (not a synthetic probe),
+    mirroring TestRealSchemaTables' own reasoning below for live."""
+    with psycopg.connect(sandbox_dsn, autocommit=True) as conn, conn.cursor() as cur:
+        with pytest.raises(psycopg.errors.InsufficientPrivilege):
+            cur.execute("select * from chat.chat_message")
+
+
+def test_a_table_created_later_in_chat_schema_is_still_blocked_by_default(
+    owner_dsn: str, sandbox_dsn: str
+) -> None:
+    """Mirrors test_a_table_created_later_in_live_schema_is_still_blocked_
+    by_default below — proves migration 0018's own ALTER DEFAULT PRIVILEGES
+    line (not just the schema-level REVOKE) actually covers a table added
+    to `chat` after this migration ran, the same guarantee `live` already
+    has."""
+    with psycopg.connect(owner_dsn, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute("drop table if exists chat.future_probe")
+        cur.execute("create table chat.future_probe (id integer primary key)")
+    try:
+        with psycopg.connect(sandbox_dsn, autocommit=True) as conn, conn.cursor() as cur:
+            with pytest.raises(psycopg.errors.InsufficientPrivilege):
+                cur.execute("select * from chat.future_probe")
+    finally:
+        with psycopg.connect(owner_dsn, autocommit=True) as conn, conn.cursor() as cur:
+            cur.execute("drop table if exists chat.future_probe")
+
+
 def test_sandbox_role_cannot_reach_reporting_schema(owner_dsn: str, sandbox_dsn: str) -> None:
     with psycopg.connect(owner_dsn, autocommit=True) as conn, conn.cursor() as cur:
         cur.execute(

@@ -13,6 +13,7 @@ import {
   IconSparkles,
   IconBuildingWarehouse,
   IconTerminal2,
+  IconMessageCircle,
   type Icon,
 } from "@tabler/icons-react";
 
@@ -74,6 +75,7 @@ export const navGroups: NavGroup[] = [
       { title: "Shipping", url: "/shipping", icon: IconTruck },
       { title: "Activity", url: "/activity", icon: IconActivity },
       { title: "Query", url: "/query", icon: IconTerminal2 },
+      { title: "Chat", url: "/chat", icon: IconMessageCircle },
     ],
   },
   {

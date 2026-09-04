@@ -6,10 +6,13 @@ app.domain.ledger/app.domain.reporting_sync) — app.services.scenario_service
 is the only caller, and owns the ORM/session/AI-boundary concerns this
 module deliberately stays free of.
 
-`regenerate` (6.4) has no AI to be non-deterministic about in this unit
-(that's U22) — it re-runs build_ground_truth_from_exception_flag against
-the source flag's current data, so it is itself just this module's builder
-function called again, not a separate function.
+`regenerate` (6.4) had no AI to be non-deterministic about at this unit -
+it just re-ran build_ground_truth_from_exception_flag against the source
+flag's current data. Unit 22 (app.services.scenario_service.
+regenerate_scenario) now also calls Claude for the four narrative fields
+and uncertainty on every regenerate call; build_ground_truth_from_
+exception_flag below still owns only the mechanically-derived known_cause/
+evidence half of that package.
 """
 
 from __future__ import annotations
@@ -79,15 +82,19 @@ class ExceptionFlagNotOpenError(ValueError):
 
 
 def build_ground_truth_from_exception_flag(flag: ExceptionFlagSnapshot) -> dict:
-    """Deterministic skeleton, not an AI-generated package (that's U22) —
-    `known_cause` and `evidence` are mechanically derivable straight from
-    the flag's own columns, so this function fills those in; the four
-    narrative fields a real evidence package needs (supporting_signals,
-    distractors, expected_considerations, both conclusion lists) require
-    human judgment this unit has no way to automate, so they start empty
-    and are the Builder's own "edit" step (6.4) before the scenario can
-    pass validate_for_approval below. `uncertainty` likewise starts as a
-    placeholder the Builder is expected to replace.
+    """Deterministic skeleton, not an AI-generated package - `known_cause`
+    and `evidence` are mechanically derivable straight from the flag's own
+    columns, so this function fills those in; the four narrative fields a
+    real evidence package needs (supporting_signals, distractors,
+    expected_considerations, both conclusion lists) start empty here, since
+    this function alone has no way to generate them. Two different callers
+    fill them in afterward: app.services.scenario_service.
+    create_scenario_from_exception_flag leaves them for the Builder's own
+    "edit" step (6.4); regenerate_scenario (Unit 22) instead calls Claude
+    (app.domain.scenario_generation) to (re)generate them on every call.
+    Either way the scenario must pass validate_for_approval below before
+    approval. `uncertainty` likewise starts as a placeholder here, replaced
+    by whichever of those two paths ran.
 
     Raises ExceptionFlagNotOpenError if the flag has already resolved —
     security/data-integrity review of this unit: a scenario silently built
@@ -144,13 +151,16 @@ def build_ground_truth_from_exception_flag(flag: ExceptionFlagSnapshot) -> dict:
 def validate_for_approval(
     *, ground_truth: dict, difficulty_tier: str | None, competency_cluster: str | None
 ) -> list[str]:
-    """The slice of PRD 6.4's approve-time validation checklist this unit
-    can check mechanically, without AI-generated prose to evaluate against
-    (DD-24 point 3): the ground-truth package is complete (all seven named
-    fields present and non-empty) and difficulty/competency targeting is
-    set. 6.4's KPI-claim-correctness and no-world-state-contradiction
-    checks need generated narrative text that doesn't exist until U22, so
-    they are not — and cannot yet be — implemented here.
+    """The slice of PRD 6.4's approve-time validation checklist checked
+    mechanically here (DD-24 point 3): the ground-truth package is complete
+    (all seven named fields present and non-empty) and difficulty/
+    competency targeting is set. Unit 22 gave this package real
+    AI-generated narrative text to evaluate, but 6.4's KPI-claim-correctness
+    and no-world-state-contradiction checks are still not implemented here
+    - by the same U17 precedent that put SR-1/SR-3 out of scope of their
+    own unit (see app.domain.reporting_sync's docstring), those two checks
+    are deferred to Phase 3's "full edge case catalog" unit (U30), not
+    folded into this unit's own scope.
 
     Returns the list of validation errors (empty means valid) rather than
     raising, so the Draft-stays-in-Draft rejection path (PRD 9.2's own

@@ -27,8 +27,12 @@ import {
 } from "@/components/ui/sidebar"
 
 const data = {
+  // Unit 20a made this app admin-only (`(dashboard)/layout.tsx` rejects
+  // anything that isn't role "admin" before this shell ever renders), but
+  // this nav data still had the original template's "Analyst" placeholder
+  // — every session reaching here is a Builder, never an Analyst.
   user: {
-    name: "Analyst",
+    name: "Builder",
     email: "",
     avatar: "",
   },
@@ -128,7 +132,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 </div>
                 <div className="grid flex-1 text-left text-sm leading-tight">
                   <span className="truncate font-medium">MeadowOps</span>
-                  <span className="truncate text-xs">Analyst Workspace</span>
+                  <span className="truncate text-xs">Builder Workspace</span>
                 </div>
               </Link>
             </SidebarMenuButton>

@@ -41,5 +41,5 @@
     "tailwindcss": "^4",
     "typescript": "^5"
   },
-  "description": "OrbynAdmin — a free & open-source admin dashboard template built with Next.js 16, Tailwind CSS v4 and shadcn/ui."
+  "description": "MeadowOps Control Tower — the operational admin dashboard for Subsystem 1."
 }

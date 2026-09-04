@@ -11,6 +11,7 @@ since master data never reads it — the admin token here is minted against
 a real seeded `live.user` row's id.
 """
 
+import json
 import os
 import uuid
 from collections.abc import Generator
@@ -27,6 +28,7 @@ from app.db.auth import User
 from app.db.enums import UserRole
 from app.db.exception_flags import ExceptionFlag
 from app.db.scenario import Scenario
+from app.domain.claude_client import ClaudeAPIError, ClaudeResponse, MockClaudeClient
 from app.main import create_app
 from app.services.baseline_data import seed_master_data
 from app.services.exception_rule_defaults import seed_exception_rule_thresholds
@@ -112,6 +114,20 @@ def _complete_ground_truth_payload() -> dict:
         "unacceptable_conclusions": ["bad"],
         "uncertainty": "moderate",
     }
+
+
+def _narrative_payload(**overrides) -> dict:
+    payload = {
+        "supporting_signals": ["signal"],
+        "distractors": ["distractor"],
+        "expected_considerations": ["consideration"],
+        "acceptable_conclusions": ["ok"],
+        "unacceptable_conclusions": ["bad"],
+        "uncertainty": "moderate",
+        "referenced_entity_ids": {"product_ids": [_PRODUCT_ID], "warehouse_ids": [_WAREHOUSE_ID]},
+    }
+    payload.update(overrides)
+    return payload
 
 
 class TestAuth:
@@ -249,6 +265,83 @@ class TestApproveScenario:
 
         assert response.status_code == 200
         assert response.json()["status"] == "approved"
+
+
+class TestRegenerateScenario:
+    def test_returns_503_when_no_claude_client_is_configured(
+        self, client: TestClient, admin_auth: dict[str, str], open_flag_id: str
+    ) -> None:
+        # app.state.claude_client is None until a real Anthropic adapter is
+        # wired in (Phase 4, blocker B3) — the route must fail clearly, not
+        # crash, when the Builder hits Regenerate before then.
+        created = client.post(
+            "/api/v1/admin/scenarios", json=_create_payload(open_flag_id), headers=admin_auth
+        ).json()
+
+        response = client.post(
+            f"/api/v1/admin/scenarios/{created['id']}/regenerate", headers=admin_auth
+        )
+
+        assert response.status_code == 503
+
+    def test_regenerates_with_an_ai_generated_narrative_when_configured(
+        self, client: TestClient, admin_auth: dict[str, str], open_flag_id: str
+    ) -> None:
+        created = client.post(
+            "/api/v1/admin/scenarios", json=_create_payload(open_flag_id), headers=admin_auth
+        ).json()
+        client.app.state.claude_client = MockClaudeClient(
+            script=[ClaudeResponse(content=json.dumps(_narrative_payload()))]
+        )
+
+        response = client.post(
+            f"/api/v1/admin/scenarios/{created['id']}/regenerate", headers=admin_auth
+        )
+
+        assert response.status_code == 200
+        assert response.json()["ground_truth"]["uncertainty"] == "moderate"
+        assert response.json()["ground_truth"]["supporting_signals"] == ["signal"]
+
+    def test_returns_422_with_error_details_when_referenced_ids_are_unknown(
+        self, client: TestClient, admin_auth: dict[str, str], open_flag_id: str
+    ) -> None:
+        created = client.post(
+            "/api/v1/admin/scenarios", json=_create_payload(open_flag_id), headers=admin_auth
+        ).json()
+        client.app.state.claude_client = MockClaudeClient(
+            script=[
+                ClaudeResponse(
+                    content=json.dumps(
+                        _narrative_payload(
+                            referenced_entity_ids={"product_ids": ["SKU-DOES-NOT-EXIST"]}
+                        )
+                    )
+                )
+            ]
+        )
+
+        response = client.post(
+            f"/api/v1/admin/scenarios/{created['id']}/regenerate", headers=admin_auth
+        )
+
+        assert response.status_code == 422
+        assert response.json()["detail"]["errors"] != []
+
+    def test_returns_502_when_claude_generation_fails_after_retry(
+        self, client: TestClient, admin_auth: dict[str, str], open_flag_id: str
+    ) -> None:
+        created = client.post(
+            "/api/v1/admin/scenarios", json=_create_payload(open_flag_id), headers=admin_auth
+        ).json()
+        client.app.state.claude_client = MockClaudeClient(
+            script=[ClaudeAPIError("boom"), ClaudeAPIError("boom again")]
+        )
+
+        response = client.post(
+            f"/api/v1/admin/scenarios/{created['id']}/regenerate", headers=admin_auth
+        )
+
+        assert response.status_code == 502
 
 
 class TestUpdateGroundTruth:

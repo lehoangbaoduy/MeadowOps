@@ -71,6 +71,18 @@ class TestCheckSourceIsDiscriminating:
     def test_does_not_flag_subsystem_2s_own_engine_schema_orm(self) -> None:
         assert check_source("from app.db.scenario import Scenario\n") == []
 
+    def test_does_not_flag_the_shared_chat_schema_orm(self) -> None:
+        """Unit 21a (MEADOWOPS-DOM-014): pre-implementation security review
+        of that unit considered and deliberately did not add app.db.chat to
+        FORBIDDEN_MODULES — `chat` is PRD §7's second named exception (a
+        store both subsystems' own API layer reads/writes), the same
+        category this boundary already exempts `engine` from above, not
+        Subsystem 1's protected `live` data this checker actually polices.
+        A positive test, not just a docstring claim: proves the exemption
+        is intentional and stays intentional if FORBIDDEN_MODULES is ever
+        edited without re-reading this reasoning."""
+        assert check_source("from app.db.chat import ChatThread\n") == []
+
     def test_does_not_flag_the_internal_client_helper_itself(self) -> None:
         assert check_source("from app.core.internal_client import build_subsystem2_client\n") == []
 
@@ -212,6 +224,33 @@ class TestServiceCredentialRouteAllowlist:
             ("POST", "/api/v1/query/cancel-confirmation"): "service_rejected",
             ("POST", "/api/v1/query/refresh-sandbox"): "service_rejected",
             ("GET", "/api/v1/query/history"): "service_rejected",
+        }
+
+    def test_every_chat_route_is_explicitly_classified(self) -> None:
+        """Unit 21a (MEADOWOPS-DOM-014): the internal-service credential has
+        no legitimate reason to touch chat at all (pre-implementation
+        security review) — every route is service_rejected except thread
+        creation, which is admin_only (DD-25: the Builder picks which
+        thread to open), a stricter bucket that also excludes role=service
+        (require_admin's own check). The `/ws/chat` WebSocket route isn't
+        enumerable by `_classify_routes` (FastAPI dependency injection
+        doesn't apply to WS routes at all) — its own auth story is proven
+        directly in tests/api/test_chat_api.py's TestWebSocketConnection,
+        not here."""
+        classified = _classify_routes()
+        chat_routes = {
+            path: cls for path, cls in classified.items() if path[1].startswith("/api/v1/chat/")
+        }
+        assert chat_routes == {
+            ("POST", "/api/v1/chat/ws-ticket"): "service_rejected",
+            ("POST", "/api/v1/chat/threads"): "admin_only",
+            ("GET", "/api/v1/chat/threads"): "service_rejected",
+            ("GET", "/api/v1/chat/threads/{thread_id}/messages"): "service_rejected",
+            ("POST", "/api/v1/chat/threads/{thread_id}/messages"): "service_rejected",
+            # Unit 21 (MEADOWOPS-DOM-015): mark-thread-read, same
+            # reasoning as every other chat route — no legitimate reason
+            # for the internal-service credential to touch it.
+            ("POST", "/api/v1/chat/threads/{thread_id}/read"): "service_rejected",
         }
 
     def test_health_and_login_are_public_not_service_allowed(self) -> None:

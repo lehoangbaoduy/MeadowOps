@@ -7,8 +7,8 @@ import { Toaster } from "@/components/ui/sonner";
 import { inter } from "@/lib/fonts";
 
 export const metadata: Metadata = {
-  title: "MeadowOps — Analyst Workspace",
-  description: "MeadowOps Analyst Work Simulation Engine.",
+  title: "MeadowOps — Builder Workspace",
+  description: "MeadowOps Builder scenario workspace (work simulation engine).",
 };
 
 export default function RootLayout({

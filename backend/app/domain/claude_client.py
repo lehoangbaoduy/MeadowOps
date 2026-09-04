@@ -9,10 +9,11 @@ response), so a real adapter can satisfy it later without changing any
 caller. `MockClaudeClient` is the only implementation built at this unit:
 scriptable to return a normal response, raise an API error/timeout (PRD 9.2
 line 411), or return a malformed/incomplete response (PRD 6.8/9.2 line 413)
-- the three cases Phase 3's retry (U22/U25) and schema-validation (U25)
-logic will be tested against. That retry/validation logic itself, and the
-`anthropic` SDK dependency a real adapter would need, are out of scope
-here - nothing in this module makes a live API call.
+- the three cases app.domain.scenario_generation's retry/schema-validation
+logic (Unit 22) is tested against, and U25's evaluation pipeline will be
+too. The `anthropic` SDK dependency a real adapter would need is still out
+of scope here - nothing in this module makes a live API call (Phase 4,
+blocker B3).
 """
 
 from __future__ import annotations
@@ -37,6 +38,16 @@ class ClaudeResponse:
 
 @runtime_checkable
 class ClaudeClient(Protocol):
+    """Security review of Unit 22 (2026-09-04): this Protocol carries no
+    timeout parameter, and app.services.scenario_service.regenerate_scenario
+    (the first real caller) holds its DB session's connection open across
+    the call. MockClaudeClient returns instantly, so this is not a live risk
+    yet - but the real Anthropic adapter built in Phase 4 (blocker B3) needs
+    either a bounded timeout on create_message itself or a caller-side
+    restructure that releases the DB connection before calling out, so a
+    slow/hanging live call can't exhaust the connection pool for the whole
+    app."""
+
     def create_message(
         self,
         *,
