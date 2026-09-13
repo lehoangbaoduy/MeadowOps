@@ -96,6 +96,43 @@ async def test_internal_client_is_rejected_by_query_playground_execute() -> None
 
 
 @pytest.mark.asyncio
+async def test_internal_client_reaches_the_ledger_callback_candidates_route() -> None:
+    """Unit 24 (MEADOWOPS-DOM-018): the callback mechanism's read side - the
+    first genuine caller of this boundary from app.services.subsystem2 itself
+    (app.services.subsystem2.ledger_client), proven here the same way as the
+    dashboard read above: real routing/auth/ORM/Pydantic serialization, all
+    in-process via ASGITransport. An empty list for an entity with no
+    decisions is still a real 200, not a 404 - PRD 9.2's "callback scenario
+    referencing a since-deactivated entity" edge case means this route must
+    never treat "no candidates" as an error."""
+    app = create_app(settings=_settings())
+    async with app.router.lifespan_context(app):
+        client = app.state.subsystem2_client
+        response = await client.get(
+            "/api/v1/ledger/entities/supplier/SUP-does-not-exist/callback-candidates"
+        )
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+@pytest.mark.asyncio
+async def test_internal_client_is_rejected_by_ledger_write_routes() -> None:
+    app = create_app(settings=_settings())
+    async with app.router.lifespan_context(app):
+        client = app.state.subsystem2_client
+        response = await client.post(
+            "/api/v1/ledger/decisions",
+            json={
+                "entity_type": "supplier",
+                "entity_id": "SUP-001",
+                "title": "x",
+                "summary": "x",
+            },
+        )
+    assert response.status_code == 403
+
+
+@pytest.mark.asyncio
 async def test_internal_client_never_reaches_the_database_directly() -> None:
     """Structural proof, not just behavioral: nothing in this test module -
     or in the internal client it exercises - imports app.db.session or any

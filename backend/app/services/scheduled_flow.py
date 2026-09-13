@@ -10,13 +10,38 @@ does not itself touch the clock. Transaction boundaries belong to the
 caller (matching simulation_clock_ops's own convention): nothing here
 commits except via the caller's own session.commit().
 
-Scope, stated explicitly rather than left to infer: this unit does not
-model partial-quantity PO receipts or SO shipments beyond what "not enough
-inventory yet" naturally produces (a line simply waits for the next tick
-once stock arrives) — PurchaseOrderStatus.PARTIALLY_RECEIVED exists in the
-schema but nothing here produces it; realistic imperfections (short
-receipts, damaged-in-transit, etc.) are SR-1..SR-4's job (Unit 17), not
-this one's.
+Scope, as amended by Unit 30 (MEADOWOPS-DOM-030, PRD 9.2 catalog row 4):
+this unit's original scope note said PurchaseOrderStatus.PARTIALLY_RECEIVED
+existed in the schema but nothing produced it — Unit 30 closes that gap.
+_progress_purchase_orders now rolls a seeded, real chance
+(roll_partial_receipt_fraction) that a receipt tick only partially
+fulfills a PO's lines, leaving it PARTIALLY_RECEIVED until a later tick
+(re-rolled independently each day) completes it. SO shipments still don't
+model partial-quantity fulfillment beyond what "not enough inventory yet"
+naturally produces — that remains out of this unit's scope, PRD 9.2's
+catalog has no row asking for it.
+
+Unit 27 (MEADOWOPS-DOM-021, business id MEADOWOPS-DOMAIN-016, PRD 3.4/5.2)
+activates two more pieces of Phase 1 schema that had sat unused until now:
+
+- WarehouseTransfer / TransferStatus: a low warehouse pulls unallocated
+  surplus of the same product from whichever other warehouse has the most
+  to spare (never below that donor's own reorder threshold), progressing
+  PENDING -> IN_TRANSIT -> COMPLETED over WAREHOUSE_TRANSFER_TRANSIT_DAYS,
+  same shape as the PO/shipment progression above. Transfers are created
+  before POs each tick, and each guards against the other's open request
+  for the same (product, warehouse) so the two mechanisms never double-
+  replenish the same shortfall; when no warehouse has any surplus,
+  transfers simply create nothing and POs still fire as before.
+- Carrier.variability / reliability_pct: a shipment's promised_delivery_date
+  is unchanged (still the carrier's average transit time), but its actual
+  arrival can now diverge from that promise — carrier_actual_transit_days
+  is recomputed from the stable (ship_date, shipment.id) pair every tick,
+  so the result doesn't need its own persisted column. This is what makes
+  Unit 15's evaluate_late_shipment check reachable for the first time.
+  ShipmentStatus.EXCEPTION is deliberately left unused — the PRD's carrier
+  table frames reliability_pct as an on-time rate, not a distinct failure
+  mode, and evaluate_late_shipment already treats "late" as its own thing.
 """
 
 import logging
@@ -36,6 +61,7 @@ from app.db.enums import (
     ScheduledTickStatus,
     ShipmentStatus,
     SourceSystem,
+    TransferStatus,
 )
 from app.db.facts import (
     InventorySnapshot,
@@ -45,6 +71,7 @@ from app.db.facts import (
     SalesOrder,
     SalesOrderLine,
     Shipment,
+    WarehouseTransfer,
 )
 from app.db.scheduling import (
     PurchaseOrderLifecycleEvent,
@@ -55,12 +82,17 @@ from app.domain.scheduled_flow import (
     DEMAND_LOOKBACK_DAYS,
     SupplierCandidate,
     assign_supplier,
+    carrier_actual_transit_days,
     is_below_reorder_point,
     jittered_lead_time_days,
     pick_demand_products,
     pick_demand_quantity,
     pick_requested_date_offset,
+    pick_transfer_donor,
     reorder_quantity,
+    roll_partial_receipt_fraction,
+    transferable_surplus,
+    warehouse_deficit,
 )
 
 logger = logging.getLogger(__name__)
@@ -69,6 +101,11 @@ REORDER_SAFETY_DAYS = 14  # matches Unit 10's low_stock_days_of_supply default
 REORDER_TARGET_DAYS_OF_SUPPLY = 30
 NEW_ORDER_PROBABILITY_PER_CUSTOMER = 0.15
 GENERIC_PROMISE_DAYS = 2
+# Warehouses have no carrier_id (internal move, not a Carrier-mediated
+# shipment) -- PRD 3.1 calls a transfer "a lightweight operation between
+# any two of the three warehouses", so a single fixed duration stands in
+# for a per-pair distance model rather than inventing one from nothing.
+WAREHOUSE_TRANSFER_TRANSIT_DAYS = 2
 
 
 def _sim_datetime(simulation_date: date) -> datetime:
@@ -119,6 +156,36 @@ def _has_open_purchase_order(session: Session, product_id: str, warehouse_id: st
     return exists is not None
 
 
+def _has_open_inbound_transfer(session: Session, product_id: str, warehouse_id: str) -> bool:
+    exists = session.execute(
+        select(WarehouseTransfer.id)
+        .where(
+            WarehouseTransfer.product_id == product_id,
+            WarehouseTransfer.to_warehouse_id == warehouse_id,
+            WarehouseTransfer.status.in_((TransferStatus.PENDING, TransferStatus.IN_TRANSIT)),
+        )
+        .limit(1)
+    ).first()
+    return exists is not None
+
+
+def _allocated_quantity(session: Session, product_id: str, warehouse_id: str) -> int:
+    total = session.execute(
+        select(
+            func.coalesce(
+                func.sum(SalesOrderLine.quantity_ordered - SalesOrderLine.quantity_shipped), 0
+            )
+        )
+        .join(SalesOrder, SalesOrder.id == SalesOrderLine.sales_order_id)
+        .where(
+            SalesOrderLine.product_id == product_id,
+            SalesOrder.warehouse_id == warehouse_id,
+            SalesOrder.status.in_((SalesOrderStatus.ALLOCATED, SalesOrderStatus.PARTIALLY_SHIPPED)),
+        )
+    ).scalar_one()
+    return int(total)
+
+
 def _progress_purchase_orders(session: Session, simulation_date: date) -> int:
     events = 0
     open_pos = (
@@ -150,25 +217,52 @@ def _progress_purchase_orders(session: Session, simulation_date: date) -> int:
                 .scalars()
                 .all()
             )
+            # PRD 9.2 catalog row 4: re-rolled independently each tick
+            # (keyed on this simulation_date + the PO's own id, same
+            # reproducibility discipline as carrier_actual_transit_days) so
+            # a PO that arrives short one day can still complete on a later
+            # one without needing a second, separate roll mechanism.
+            fraction = roll_partial_receipt_fraction(
+                _rng(simulation_date, f"po_partial_receipt:{po.id}")
+            )
+            fully_received = True
             for line in lines:
                 remaining = line.quantity_ordered - line.quantity_received
                 if remaining <= 0:
                     continue
+                receive_qty = remaining if fraction is None else max(1, int(remaining * fraction))
+                receive_qty = min(receive_qty, remaining)
+                if receive_qty < remaining:
+                    fully_received = False
                 session.add(
                     InventoryTransaction(
                         transaction_at=_sim_datetime(simulation_date),
                         product_id=line.product_id,
                         warehouse_id=po.warehouse_id,
                         transaction_type=InventoryTransactionType.RECEIPT,
-                        quantity_delta=remaining,
+                        quantity_delta=receive_qty,
                         reference_type="purchase_order",
                         reference_id=po.id,
                         source_system=SourceSystem.PROCUREMENT,
                     )
                 )
-                line.quantity_received = line.quantity_ordered
-            po.status = PurchaseOrderStatus.RECEIVED
+                line.quantity_received += receive_qty
+            po.status = (
+                PurchaseOrderStatus.RECEIVED
+                if fully_received
+                else PurchaseOrderStatus.PARTIALLY_RECEIVED
+            )
         else:
+            continue
+        if po.status == from_status:
+            # A PO that rolls partial on two consecutive ticks
+            # (PARTIALLY_RECEIVED -> PARTIALLY_RECEIVED) is real receiving
+            # activity (already captured in the InventoryTransaction rows
+            # above) but not a status *transition* -
+            # PurchaseOrderLifecycleEvent is documented as recording
+            # transitions, so logging a same-status row here would be
+            # audit-trail noise and would inflate this tick's event count
+            # for a tick that didn't actually change the PO's status.
             continue
         session.add(
             PurchaseOrderLifecycleEvent(
@@ -199,7 +293,9 @@ def _create_purchase_orders_if_needed(session: Session, simulation_date: date) -
 
     for product in products:
         for warehouse in warehouses:
-            if _has_open_purchase_order(session, product.id, warehouse.id):
+            if _has_open_purchase_order(
+                session, product.id, warehouse.id
+            ) or _has_open_inbound_transfer(session, product.id, warehouse.id):
                 continue
             position = _current_inventory_position(session, product.id, warehouse.id)
             demand = _avg_daily_shipped_demand(session, product.id, warehouse.id, simulation_date)
@@ -241,6 +337,132 @@ def _create_purchase_orders_if_needed(session: Session, simulation_date: date) -
                     simulation_date=simulation_date,
                 )
             )
+            created += 1
+    return created
+
+
+def _progress_warehouse_transfers(session: Session, simulation_date: date) -> int:
+    events = 0
+    in_flight = (
+        session.execute(
+            select(WarehouseTransfer).where(
+                WarehouseTransfer.status.in_((TransferStatus.PENDING, TransferStatus.IN_TRANSIT))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for transfer in in_flight:
+        if transfer.status == TransferStatus.PENDING:
+            transfer.status = TransferStatus.IN_TRANSIT
+            events += 1
+        elif simulation_date >= transfer.transfer_date + timedelta(
+            days=WAREHOUSE_TRANSFER_TRANSIT_DAYS
+        ):
+            transfer.status = TransferStatus.COMPLETED
+            session.add(
+                InventoryTransaction(
+                    transaction_at=_sim_datetime(simulation_date),
+                    product_id=transfer.product_id,
+                    warehouse_id=transfer.to_warehouse_id,
+                    transaction_type=InventoryTransactionType.TRANSFER_IN,
+                    quantity_delta=transfer.quantity,
+                    reference_type="warehouse_transfer",
+                    reference_id=transfer.id,
+                    source_system=SourceSystem.WMS,
+                )
+            )
+            events += 1
+    session.flush()
+    return events
+
+
+def _create_warehouse_transfers_if_needed(session: Session, simulation_date: date) -> int:
+    created = 0
+    products = session.execute(select(Product).where(Product.is_active.is_(True))).scalars().all()
+    # Ordered explicitly: recipients are served against a shared,
+    # per-product donor pool that's debited as each transfer is created
+    # (see positions[donor_id] below), so which recipient goes first is
+    # outcome-relevant here in a way it wasn't for the PO loop above.
+    # Without an ORDER BY that resolution order is whatever Postgres
+    # happens to return it in — unspecified, and not something a tick's
+    # reproducibility should depend on.
+    warehouses = (
+        session.execute(
+            select(Warehouse).where(Warehouse.is_active.is_(True)).order_by(Warehouse.id)
+        )
+        .scalars()
+        .all()
+    )
+    for product in products:
+        # Local, per-product snapshot: a donor's position is debited here
+        # (not written to the DB until the InventoryTransaction below) so a
+        # second recipient warehouse considered later in this same loop
+        # sees the donor's already-committed-this-tick surplus, not the
+        # stale pre-tick figure — otherwise two recipients could both be
+        # sized against the same surplus and jointly overdraw the donor.
+        positions = {
+            w.id: _current_inventory_position(session, product.id, w.id) for w in warehouses
+        }
+        allocated = {w.id: _allocated_quantity(session, product.id, w.id) for w in warehouses}
+        demands = {
+            w.id: _avg_daily_shipped_demand(session, product.id, w.id, simulation_date)
+            for w in warehouses
+        }
+        for warehouse in warehouses:
+            if _has_open_purchase_order(
+                session, product.id, warehouse.id
+            ) or _has_open_inbound_transfer(session, product.id, warehouse.id):
+                continue
+            deficit = warehouse_deficit(
+                positions[warehouse.id], demands[warehouse.id], REORDER_SAFETY_DAYS
+            )
+            if deficit <= 0:
+                continue
+            candidates = [
+                (
+                    donor.id,
+                    transferable_surplus(
+                        positions[donor.id],
+                        allocated[donor.id],
+                        demands[donor.id],
+                        REORDER_SAFETY_DAYS,
+                    ),
+                )
+                for donor in warehouses
+                if donor.id != warehouse.id
+            ]
+            picked = pick_transfer_donor(candidates)
+            if picked is None:
+                continue
+            donor_id, donor_surplus = picked
+            quantity = min(deficit, donor_surplus)
+            if quantity <= 0:
+                continue
+            transfer = WarehouseTransfer(
+                product_id=product.id,
+                from_warehouse_id=donor_id,
+                to_warehouse_id=warehouse.id,
+                quantity=quantity,
+                transfer_date=simulation_date,
+                status=TransferStatus.PENDING,
+                source_system=SourceSystem.WMS,
+            )
+            session.add(transfer)
+            session.flush()
+            session.add(
+                InventoryTransaction(
+                    transaction_at=_sim_datetime(simulation_date),
+                    product_id=product.id,
+                    warehouse_id=donor_id,
+                    transaction_type=InventoryTransactionType.TRANSFER_OUT,
+                    quantity_delta=-quantity,
+                    reference_type="warehouse_transfer",
+                    reference_id=transfer.id,
+                    source_system=SourceSystem.WMS,
+                )
+            )
+            positions[donor_id] -= quantity
             created += 1
     return created
 
@@ -381,9 +603,17 @@ def _progress_shipments(session: Session, simulation_date: date) -> int:
         if shipment.status == ShipmentStatus.PENDING:
             shipment.status = ShipmentStatus.IN_TRANSIT
             progressed += 1
-        elif simulation_date >= shipment.promised_delivery_date:
+            continue
+        carrier = session.get(Carrier, shipment.carrier_id)
+        promised_transit_days = (shipment.promised_delivery_date - shipment.ship_date).days
+        rng = _rng(shipment.ship_date, f"carrier_transit:{shipment.id}")
+        actual_transit_days = carrier_actual_transit_days(
+            promised_transit_days, carrier.variability, float(carrier.reliability_pct), rng
+        )
+        actual_delivery_date = shipment.ship_date + timedelta(days=actual_transit_days)
+        if simulation_date >= actual_delivery_date:
             shipment.status = ShipmentStatus.DELIVERED
-            shipment.actual_delivery_date = simulation_date
+            shipment.actual_delivery_date = actual_delivery_date
             progressed += 1
     return progressed
 
@@ -551,6 +781,8 @@ def run_scheduled_tick(session: Session, simulation_date: date) -> ScheduledTick
     try:
         events = 0
         events += _progress_purchase_orders(session, simulation_date)
+        events += _progress_warehouse_transfers(session, simulation_date)
+        events += _create_warehouse_transfers_if_needed(session, simulation_date)
         events += _create_purchase_orders_if_needed(session, simulation_date)
         events += _progress_sales_orders_and_shipments(session, simulation_date)
         events += _create_sales_orders_if_needed(session, simulation_date)

@@ -33,6 +33,14 @@ by app.domain.scenario_generation.build_generation_prompt - rendered as-is
 rewritten"), with that module's own JSON-response-format instructions
 appended as an unversioned suffix rather than folded into the template text
 here.
+
+Updated at Unit 23 (MEADOWOPS-DOM-017): STAKEHOLDER_ROLEPLAY_TEMPLATE is
+now called, by app.domain.persona_chat.build_pushback_prompt - also
+rendered as-is, with an attitude modifier appended as an unversioned suffix
+rather than folded in, the same discipline. SUFFICIENCY_CHECK_TEMPLATE is
+new at this unit (not a pre-existing skeleton like the other three) - its
+own JSON-response-format instructions are part of the template text itself
+here, since there is no prior frozen version to avoid disturbing.
 """
 
 from __future__ import annotations
@@ -126,6 +134,32 @@ STAKEHOLDER_ROLEPLAY_TEMPLATE = PromptTemplate(
     ),
 )
 
+SUFFICIENCY_CHECK_TEMPLATE = PromptTemplate(
+    name="sufficiency_check",
+    version="v1",
+    required_context=frozenset({"ground_truth_package", "analyst_message"}),
+    template=(
+        "You are grading whether an Analyst trainee's latest message to a "
+        "stakeholder is sufficient, against this scenario's ground truth "
+        "(the Analyst never sees this):\n{ground_truth_package}\n\n"
+        "The Analyst's latest message:\n{analyst_message}\n\n"
+        "This is a recommendation only, distinct from a final evaluation - "
+        "you never grade the Analyst's overall performance here, only "
+        "whether this one message engages the evidence enough to move the "
+        "conversation forward, or needs pushback first.\n\n"
+        "Never state a specific ground-truth fact (a supporting signal, "
+        "distractor, expected consideration, or conclusion) directly in "
+        "suggested_pushback - a Builder may paste it straight into the "
+        "thread the Analyst is meant to investigate independently. Phrase "
+        "it only as a Socratic nudge that prompts further investigation.\n\n"
+        "Respond with ONLY a single JSON object (no prose, no markdown "
+        "fences) with exactly these keys: \"verdict\" (either \"sufficient\" "
+        "or \"insufficient\") and \"suggested_pushback\" (a string with a "
+        "suggested pushback message when verdict is \"insufficient\", or "
+        "null when verdict is \"sufficient\")."
+    ),
+)
+
 EVALUATION_TEMPLATE = PromptTemplate(
     name="draft_evaluation",
     version="v1",
@@ -160,5 +194,6 @@ EVALUATION_TEMPLATE = PromptTemplate(
 ALL_TEMPLATES = (
     GENERATION_TEMPLATE,
     STAKEHOLDER_ROLEPLAY_TEMPLATE,
+    SUFFICIENCY_CHECK_TEMPLATE,
     EVALUATION_TEMPLATE,
 )

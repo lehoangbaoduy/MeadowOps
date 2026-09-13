@@ -26,13 +26,16 @@ from app.db.enums import (
     ScenarioType,
     UserRole,
 )
+from app.db.dimensions import Warehouse
 from app.db.exception_flags import ExceptionFlag
 from app.db.scenario import Scenario
+from app.db.world_state import SimulationClock
 from app.domain.claude_client import ClaudeAPIError, ClaudeResponse, MockClaudeClient
 from app.domain.scenario import ExceptionFlagNotOpenError
 from app.domain.scenario_generation import ScenarioGenerationFailedError
 from app.services.baseline_data import seed_master_data
 from app.services.exception_rule_defaults import seed_exception_rule_thresholds
+from app.services.simulation_clock_ops import reset_simulation, seed_initial_world_state_and_clock
 from app.services.scenario_service import (
     ExceptionFlagNotFoundError,
     ScenarioGenerationValidationError,
@@ -580,3 +583,73 @@ class TestUpdateGroundTruth:
     def test_raises_when_scenario_does_not_exist(self, session: Session) -> None:
         with pytest.raises(ScenarioNotFoundError):
             update_ground_truth(session, uuid.uuid4(), {"uncertainty": "x"})
+
+
+class TestWorldStatePinning:
+    """PRD 9.2 catalog row 7 / PRD 4.2 line 130: every scenario stores its
+    own world_state_id at creation, and a later global reset (which always
+    inserts a *new* world_state row, per app.services.simulation_clock_ops.
+    reset_simulation) must never affect an already-pinned scenario's own
+    reference. Unit 4's own tests already proved this at the world_state-row
+    level ("rows are append-only"); this is the first test that proves it
+    against a real Scenario row, now that the table exists (Phase 3)."""
+
+    def test_a_scenario_s_world_state_id_survives_a_later_reset(
+        self, session: Session, builder_id: uuid.UUID
+    ) -> None:
+        seed_initial_world_state_and_clock(session)
+        clock = session.get(SimulationClock, 1)
+        pinned_world_state_id = clock.current_world_state_id
+
+        flag = _open_flag(session)
+        scenario = create_scenario_from_exception_flag(
+            session,
+            exception_flag_id=flag.id,
+            scenario_type=ScenarioType.DATA_QUALITY_ISSUE,
+            competency_cluster=CompetencyCluster.ANALYSIS_DIAGNOSIS,
+            difficulty_tier=DifficultyTier.STANDARD,
+            title="zztest world-state pin",
+            created_by=builder_id,
+        )
+        assert scenario.world_state_id == pinned_world_state_id
+
+        reset_simulation(session)
+        reset_simulation(session)
+
+        session.refresh(scenario)
+        assert scenario.world_state_id == pinned_world_state_id
+
+
+class TestGroundTruthImmuneToLaterMasterDataEdits:
+    """Unit 30 (MEADOWOPS-DOM-030, PRD 9.2 catalog row 9): a master-data
+    edit (Warehouse/Supplier/Carrier) applied mid-scenario must not change
+    the historical scenario's own data. Confirmatory only, no new
+    production logic - app.domain.scenario.build_ground_truth_from_
+    exception_flag already snapshots the flag's own column values into
+    Scenario.ground_truth (a static JSONB blob) at creation time, and
+    nothing ever re-joins that blob against the live `live.warehouse`/
+    `live.supplier` rows afterward, so this is a structural guarantee this
+    test simply proves against a real edit."""
+
+    def test_editing_the_warehouse_after_scenario_creation_leaves_its_ground_truth_unchanged(
+        self, session: Session, builder_id: uuid.UUID
+    ) -> None:
+        flag = _open_flag(session)
+        scenario = create_scenario_from_exception_flag(
+            session,
+            exception_flag_id=flag.id,
+            scenario_type=ScenarioType.DATA_QUALITY_ISSUE,
+            competency_cluster=CompetencyCluster.ANALYSIS_DIAGNOSIS,
+            difficulty_tier=DifficultyTier.STANDARD,
+            title="zztest master-data-edit immunity",
+            created_by=builder_id,
+        )
+        original_ground_truth = dict(scenario.ground_truth)
+
+        warehouse = session.get(Warehouse, _WAREHOUSE_ID)
+        warehouse.name = "Renamed Mid-Scenario Warehouse"
+        warehouse.region = "renamed-region"
+        session.flush()
+
+        session.refresh(scenario)
+        assert scenario.ground_truth == original_ground_truth

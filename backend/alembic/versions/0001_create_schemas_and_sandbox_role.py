@@ -92,8 +92,15 @@ def upgrade() -> None:
     # search_path excluding `sandbox`, and any function it defines must
     # pin its own search_path. Flagged by security review of this unit.
     op.execute("GRANT USAGE, CREATE ON SCHEMA sandbox TO meadowops_sandbox")
+    # FOR ROLE CURRENT_USER, not a hardcoded "meadowops": this migration
+    # (and app.services.sandbox_refresh) always run as the DB owner role,
+    # whatever it's named — "meadowops" locally (docker-compose), but a
+    # managed-Postgres provider (Neon: "neondb_owner", Supabase: "postgres",
+    # etc.) picks its own owner role name. Hardcoding "meadowops" here made
+    # this migration fail outside local dev with "role meadowops does not
+    # exist" — found deploying to Railway/Neon for B1 (PRD 8.2).
     op.execute(
-        "ALTER DEFAULT PRIVILEGES FOR ROLE meadowops IN SCHEMA sandbox "
+        "ALTER DEFAULT PRIVILEGES FOR ROLE CURRENT_USER IN SCHEMA sandbox "
         "GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO meadowops_sandbox"
     )
 
@@ -129,7 +136,7 @@ def downgrade() -> None:
     op.execute("GRANT CREATE ON SCHEMA public TO PUBLIC")
     op.execute("ALTER ROLE meadowops_sandbox CONNECTION LIMIT -1")
     op.execute(
-        "ALTER DEFAULT PRIVILEGES FOR ROLE meadowops IN SCHEMA sandbox "
+        "ALTER DEFAULT PRIVILEGES FOR ROLE CURRENT_USER IN SCHEMA sandbox "
         "REVOKE SELECT, INSERT, UPDATE, DELETE ON TABLES FROM meadowops_sandbox"
     )
     op.execute("REVOKE USAGE, CREATE ON SCHEMA sandbox FROM meadowops_sandbox")

@@ -21,11 +21,20 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from app.db.chat import ChatThread
 from app.db.dimensions import Product, Supplier, Warehouse
-from app.db.enums import CompetencyCluster, DifficultyTier, ScenarioSource, ScenarioStatus, ScenarioType
+from app.db.enums import (
+    ChatThreadStatus,
+    CompetencyCluster,
+    DifficultyTier,
+    ScenarioSource,
+    ScenarioStatus,
+    ScenarioType,
+)
 from app.db.exception_flags import ExceptionFlag
 from app.db.facts import PurchaseOrder, Shipment
 from app.db.scenario import Scenario
+from app.db.world_state import SimulationClock
 from app.domain.claude_client import ClaudeClient
 from app.domain.scenario import (
     ExceptionFlagSnapshot,
@@ -138,6 +147,15 @@ def create_scenario_from_exception_flag(
 
     ground_truth = build_ground_truth_from_exception_flag(_snapshot_from_flag(flag))
 
+    # PRD 4.2 line 130 / catalog row 7: pin the scenario to whatever
+    # world_state is current right now. A soft reference (see
+    # app.db.scenario.Scenario.world_state_id's own docstring) - the
+    # simulation_clock singleton may not be seeded yet in every environment
+    # (e.g. a fresh test DB that never calls seed_initial_world_state_and_
+    # clock), so this stays None rather than raising in that case.
+    clock = session.get(SimulationClock, 1)
+    world_state_id = clock.current_world_state_id if clock is not None else None
+
     scenario = Scenario(
         title=title,
         scenario_type=scenario_type,
@@ -145,6 +163,7 @@ def create_scenario_from_exception_flag(
         difficulty_tier=difficulty_tier,
         source=ScenarioSource.EXCEPTION_FLAG,
         source_exception_flag_id=flag.id,
+        world_state_id=world_state_id,
         ground_truth=ground_truth,
         status=ScenarioStatus.DRAFT,
         created_by=created_by,
@@ -300,8 +319,52 @@ def approve_scenario(session: Session, scenario_id: uuid.UUID) -> Scenario:
 
 
 def activate_scenario(session: Session, scenario_id: uuid.UUID) -> Scenario:
+    """PRD 9.2 catalog row 19: only one scenario may be active *at a time*
+    - not "only one scenario active across this system's entire history".
+    That distinction matters here because ScenarioStatus has no
+    active->completed transition (app.domain.scenario.VALID_TRANSITIONS):
+    activation was deliberately left as this unit's own lifecycle terminus,
+    so every scenario that has ever been activated stays status=ACTIVE
+    forever (see B13 in prd/MeadowOps_progress.md for the deferred "real"
+    terminal-status fix this punts on). A DB-level "at most one row with
+    status=active, ever" constraint was tried first (migration 0023) and
+    reverted - it broke real, correct multi-scenario history
+    (app.services.evaluation_service's difficulty-tier lookups, the QA
+    harness's callback scenario both rely on many past scenarios coexisting
+    at status=active).
+
+    So "still active" here means "another scenario is ACTIVE and its work
+    isn't done yet" - approximated as: has no chat.chat_thread with
+    status=COMPLETED. A scenario with zero threads, or only open ones, is
+    still in flight and blocks; one with *at least one* completed thread
+    (deliberate - a scenario with a CFO thread completed and an Ops thread
+    still open already counts as "done" for this guard) has had its work
+    wrapped up and no longer does, even though its own status column never
+    moves off ACTIVE.
+
+    Not race-safe: this is a check-then-write with no DB constraint
+    underneath it (migration 0023 dropped ux_scenario_single_active - see
+    that migration's own docstring), so two concurrent activation requests
+    can both pass the check and both flush. Acceptable for now under this
+    project's single-Analyst-seat assumption everywhere else; a real fix
+    needs the terminal-status column B13 already tracks, not a index that
+    breaks multi-scenario history."""
     scenario = _get_scenario(session, scenario_id)
     _require_transition(scenario, ScenarioStatus.ACTIVE)
+
+    completed_thread_scenario_ids = select(ChatThread.scenario_id).where(
+        ChatThread.status == ChatThreadStatus.COMPLETED
+    )
+    blocking_scenario_id = session.execute(
+        select(Scenario.id)
+        .where(Scenario.status == ScenarioStatus.ACTIVE)
+        .where(Scenario.id != scenario_id)
+        .where(Scenario.id.not_in(completed_thread_scenario_ids))
+    ).scalars().first()
+    if blocking_scenario_id is not None:
+        raise ScenarioTransitionError(
+            f"cannot activate {scenario_id}: scenario {blocking_scenario_id} is still active"
+        )
 
     scenario.status = ScenarioStatus.ACTIVE
     scenario.activated_at = datetime.now(timezone.utc)

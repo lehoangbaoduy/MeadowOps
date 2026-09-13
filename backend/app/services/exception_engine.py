@@ -48,12 +48,13 @@ from typing import NamedTuple
 from sqlalchemy import func, select, text
 from sqlalchemy.orm import Session
 
-from app.db.enums import ShipmentStatus
+from app.db.enums import PurchaseOrderStatus, ShipmentStatus
 from app.db.exception_flags import ExceptionFlag
 from app.db.exception_rules import ExceptionRuleThreshold
-from app.db.facts import PurchaseOrder, Shipment
+from app.db.facts import PurchaseOrder, PurchaseOrderLine, Shipment
 from app.domain.exception_engine import (
     evaluate_at_risk_purchase_order,
+    evaluate_duplicate_purchase_order,
     evaluate_late_shipment,
     evaluate_low_stock,
 )
@@ -73,6 +74,17 @@ LATE_SHIPMENT_CATEGORY = "late_shipment_grace_days"
 # import each other's private machinery in both directions.
 REPORTING_LAG_STALE_CATEGORY = "reporting_lag_stale"
 REPORTING_CONFLICT_CATEGORY = "reporting_conflict_qty_variance"
+# Unit 30 (MEADOWOPS-DOM-030, PRD 9.2 catalog row 2 / SR-3).
+DUPLICATE_PURCHASE_ORDER_CATEGORY = "duplicate_purchase_order"
+
+# Open, non-terminal statuses a duplicate submission could plausibly still
+# be in — mirrors app.services.scheduled_flow._progress_purchase_orders'
+# own open-status set.
+_DUPLICATE_PO_OPEN_STATUSES = (
+    PurchaseOrderStatus.SUBMITTED,
+    PurchaseOrderStatus.CONFIRMED,
+    PurchaseOrderStatus.PARTIALLY_RECEIVED,
+)
 
 # Arbitrary fixed key for the advisory lock, unique to this module — any
 # constant works, since pg_advisory_xact_lock's keyspace is just a shared
@@ -256,6 +268,58 @@ def _late_shipment_evaluations(
     return evaluations
 
 
+def _duplicate_purchase_order_evaluations(
+    session: Session, threshold_count: int
+) -> dict[EntityKey, Evaluation]:
+    """Groups open POs by (supplier, warehouse, expected delivery date,
+    product) — the natural "did we accidentally submit this twice" key,
+    since a genuinely distinct order rarely lands on exactly the same
+    combination. product_id is part of the key (code review finding): app.
+    services.scheduled_flow.assign_supplier is deterministic per
+    ProductCategory and expected_delivery_date's jitter is drawn from a
+    small fixed set for a low-variability supplier, so two different
+    products in the same category can legitimately land on the identical
+    supplier/warehouse/date without being an accidental duplicate.
+
+    Joins to PurchaseOrderLine, so a PO appears once per product line it
+    has (every PO created by app.services.scheduled_flow.
+    _create_purchase_orders_if_needed has exactly one line, so in practice
+    this is one row per PO). Only open (non-terminal) POs are considered,
+    so a group that shrinks back to one (the duplicate gets cancelled) is
+    simply absent from the returned dict — _sync_flags's own documented
+    convention auto-resolves an omitted entity's open flag, no extra
+    bookkeeping needed here."""
+    rows = session.execute(
+        select(
+            PurchaseOrder.id,
+            PurchaseOrder.supplier_id,
+            PurchaseOrder.warehouse_id,
+            PurchaseOrder.expected_delivery_date,
+            PurchaseOrder.order_date,
+            PurchaseOrderLine.product_id,
+        )
+        .join(PurchaseOrderLine, PurchaseOrderLine.purchase_order_id == PurchaseOrder.id)
+        .where(PurchaseOrder.status.in_(_DUPLICATE_PO_OPEN_STATUSES))
+    ).all()
+
+    groups: dict[tuple, list] = {}
+    for r in rows:
+        key = (r.supplier_id, r.warehouse_id, r.expected_delivery_date, r.product_id)
+        groups.setdefault(key, []).append(r)
+
+    evaluations: dict[EntityKey, Evaluation] = {}
+    for group_rows in groups.values():
+        count = len(group_rows)
+        if not evaluate_duplicate_purchase_order(count, threshold_count=threshold_count):
+            continue
+        # The earliest-placed PO in the group is treated as the original;
+        # every later one is the actual duplicate flagged for review.
+        ordered = sorted(group_rows, key=lambda r: (r.order_date, r.id))
+        for dup in ordered[1:]:
+            evaluations[EntityKey(purchase_order_id=dup.id)] = Evaluation(True, Decimal(count))
+    return evaluations
+
+
 def evaluate_exceptions(session: Session, simulation_date: date) -> ExceptionEvaluationResult:
     session.execute(text("SELECT pg_advisory_xact_lock(hashtext(:key))"), {"key": _ADVISORY_LOCK_KEY})
 
@@ -342,6 +406,21 @@ def evaluate_exceptions(session: Session, simulation_date: date) -> ExceptionEva
             )
             opened += o
             resolved += r
+
+    if DUPLICATE_PURCHASE_ORDER_CATEGORY in thresholds:
+        threshold = thresholds[DUPLICATE_PURCHASE_ORDER_CATEGORY]
+        evaluations = _duplicate_purchase_order_evaluations(
+            session, threshold_count=int(threshold.threshold_value)
+        )
+        o, r = _sync_flags(
+            session,
+            category=DUPLICATE_PURCHASE_ORDER_CATEGORY,
+            simulation_date=simulation_date,
+            threshold_value=threshold.threshold_value,
+            evaluations=evaluations,
+        )
+        opened += o
+        resolved += r
 
     session.flush()
 

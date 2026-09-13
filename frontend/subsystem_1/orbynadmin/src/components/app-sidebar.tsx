@@ -32,9 +32,19 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 
-export function AppSidebar() {
+export function AppSidebar({ role }: { role?: string | null }) {
   const pathname = usePathname();
   const { config } = useThemeConfig();
+
+  // Unit 28 (MEADOWOPS-API-005): drops adminOnly items for a non-admin role
+  // (and the Analyst's not-yet-known-during-SSR-fallback null) — cosmetic
+  // only, see NavItem.adminOnly's own comment for the real boundary.
+  const visibleGroups = navGroups
+    .map((group) => ({
+      ...group,
+      items: group.items.filter((item) => !item.adminOnly || role === "admin"),
+    }))
+    .filter((group) => group.items.length > 0);
 
   return (
     <Sidebar
@@ -46,7 +56,7 @@ export function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent className="overscroll-contain">
-        {navGroups.map((group) => (
+        {visibleGroups.map((group) => (
           <SidebarGroup key={group.label}>
             <SidebarGroupLabel>{group.label}</SidebarGroupLabel>
             <SidebarMenu>

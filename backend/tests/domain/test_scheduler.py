@@ -8,7 +8,7 @@ _run_tick's own contract is to commit).
 """
 
 import os
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 from sqlalchemy import create_engine
@@ -56,6 +56,8 @@ class TestRunTick:
             patch("app.domain.scheduler.sync_reporting_layer") as mock_sync_reporting,
             patch("app.domain.scheduler.evaluate_exceptions") as mock_evaluate_exceptions,
             patch("app.domain.scheduler.compute_and_snapshot_kpis") as mock_snapshot_kpis,
+            patch("app.domain.scheduler.flag_stale") as mock_flag_stale,
+            patch("app.domain.scheduler.sweep_thread_deadlines") as mock_sweep_deadlines,
             patch("app.domain.scheduler.Session") as mock_session_cls,
         ):
             mock_session = MagicMock()
@@ -71,6 +73,13 @@ class TestRunTick:
             mock_sync_reporting.assert_called_once_with(mock_session, fake_date, lag_days=2)
             mock_evaluate_exceptions.assert_called_once_with(mock_session, fake_date)
             mock_snapshot_kpis.assert_called_once_with(mock_session, fake_date)
+            # Unit 24: flag_stale runs too, just not under test here - its
+            # own call-order/args assertions live in
+            # test_success_path_also_flags_stale_decisions below.
+            mock_flag_stale.assert_called_once()
+            # Unit 30a: same reasoning - own assertions live in
+            # test_success_path_also_sweeps_thread_deadlines below.
+            mock_sweep_deadlines.assert_called_once()
             mock_session.commit.assert_called_once()
         engine.dispose()
 
@@ -144,6 +153,7 @@ class TestRunTick:
                 side_effect=lambda *a, **kw: call_order.append("evaluate_exceptions"),
             ),
             patch("app.domain.scheduler.compute_and_snapshot_kpis"),
+            patch("app.domain.scheduler.flag_stale"),
             patch("app.domain.scheduler.Session") as mock_session_cls,
         ):
             mock_session = MagicMock()
@@ -173,6 +183,117 @@ class TestRunTick:
             mock_session.rollback.assert_not_called()
             mock_evaluate_exceptions.assert_not_called()
             mock_snapshot_kpis.assert_not_called()
+        engine.dispose()
+
+    def test_success_path_also_flags_stale_decisions(self) -> None:
+        # Unit 24 (MEADOWOPS-DOM-018, PRD 4.4): "flagged after a configurable
+        # period rather than sitting in limbo indefinitely" - wall-clock
+        # datetime.now(), not the simulation date, since DecisionEvent
+        # timestamps are already wall-clock (app.services.scenario_service.
+        # approve_scenario's own approved_at convention).
+        engine = create_engine(os.environ["MEADOWOPS_DATABASE_URL"])
+        fake_date = date(2026, 3, 5)
+        fixed_now = datetime(2026, 3, 5, 12, 0, tzinfo=timezone.utc)
+        with (
+            patch("app.domain.scheduler.advance_simulation", return_value=fake_date),
+            patch("app.domain.scheduler.run_scheduled_tick"),
+            patch("app.domain.scheduler.sync_reporting_layer"),
+            patch("app.domain.scheduler.evaluate_exceptions"),
+            patch("app.domain.scheduler.compute_and_snapshot_kpis"),
+            patch("app.domain.scheduler.flag_stale") as mock_flag_stale,
+            patch("app.domain.scheduler.datetime") as mock_datetime,
+            patch("app.domain.scheduler.Session") as mock_session_cls,
+        ):
+            mock_datetime.now.return_value = fixed_now
+            mock_session = MagicMock()
+            mock_session_cls.return_value.__enter__.return_value = mock_session
+            _run_tick(engine, stale_decision_after_days=30)
+            mock_flag_stale.assert_called_once_with(mock_session, as_of=fixed_now, after_days=30)
+        engine.dispose()
+
+    def test_a_failing_tick_skips_stale_flagging_too(self) -> None:
+        engine = create_engine(os.environ["MEADOWOPS_DATABASE_URL"])
+        fake_date = date(2026, 3, 5)
+        with (
+            patch("app.domain.scheduler.advance_simulation", return_value=fake_date),
+            patch(
+                "app.domain.scheduler.run_scheduled_tick", side_effect=RuntimeError("boom")
+            ),
+            patch("app.domain.scheduler.flag_stale") as mock_flag_stale,
+            patch("app.domain.scheduler.sweep_thread_deadlines") as mock_sweep_deadlines,
+            patch("app.domain.scheduler.Session") as mock_session_cls,
+        ):
+            mock_session = MagicMock()
+            mock_session_cls.return_value.__enter__.return_value = mock_session
+            _run_tick(engine)  # must not raise
+            mock_session.commit.assert_called_once()
+            mock_flag_stale.assert_not_called()
+            mock_sweep_deadlines.assert_not_called()
+        engine.dispose()
+
+    def test_success_path_also_sweeps_thread_deadlines(self) -> None:
+        # Unit 30a (MEADOWOPS-UI-003, PRD 6.1, B12): wall-clock now(), same
+        # reasoning as flag_stale's own as_of — deadlines are real-world
+        # days (PRD 6.1's "Response windows... real-world days per round"),
+        # not simulation days.
+        engine = create_engine(os.environ["MEADOWOPS_DATABASE_URL"])
+        fake_date = date(2026, 3, 5)
+        fixed_now = datetime(2026, 3, 5, 12, 0, tzinfo=timezone.utc)
+        with (
+            patch("app.domain.scheduler.advance_simulation", return_value=fake_date),
+            patch("app.domain.scheduler.run_scheduled_tick"),
+            patch("app.domain.scheduler.sync_reporting_layer"),
+            patch("app.domain.scheduler.evaluate_exceptions"),
+            patch("app.domain.scheduler.compute_and_snapshot_kpis"),
+            patch("app.domain.scheduler.flag_stale"),
+            patch("app.domain.scheduler.sweep_thread_deadlines") as mock_sweep_deadlines,
+            patch("app.domain.scheduler.datetime") as mock_datetime,
+            patch("app.domain.scheduler.Session") as mock_session_cls,
+        ):
+            mock_datetime.now.return_value = fixed_now
+            mock_session = MagicMock()
+            mock_session_cls.return_value.__enter__.return_value = mock_session
+            _run_tick(engine, chat_deadline_approaching_within_hours=12)
+            mock_sweep_deadlines.assert_called_once_with(
+                mock_session, now=fixed_now, approaching_within=timedelta(hours=12)
+            )
+        engine.dispose()
+
+    def test_a_failing_exception_or_kpi_pass_also_skips_deadline_sweep(self) -> None:
+        engine = create_engine(os.environ["MEADOWOPS_DATABASE_URL"])
+        fake_date = date(2026, 3, 5)
+        with (
+            patch("app.domain.scheduler.advance_simulation", return_value=fake_date),
+            patch("app.domain.scheduler.run_scheduled_tick"),
+            patch("app.domain.scheduler.sync_reporting_layer"),
+            patch(
+                "app.domain.scheduler.evaluate_exceptions", side_effect=RuntimeError("boom")
+            ),
+            patch("app.domain.scheduler.compute_and_snapshot_kpis"),
+            patch("app.domain.scheduler.flag_stale"),
+            patch("app.domain.scheduler.sweep_thread_deadlines") as mock_sweep_deadlines,
+            patch("app.domain.scheduler.Session") as mock_session_cls,
+        ):
+            mock_session = MagicMock()
+            mock_session_cls.return_value.__enter__.return_value = mock_session
+            _run_tick(engine)  # must not raise
+            mock_sweep_deadlines.assert_not_called()
+        engine.dispose()
+
+    def test_build_scheduler_passes_stale_decision_after_days_through(self) -> None:
+        engine = create_engine(os.environ["MEADOWOPS_DATABASE_URL"])
+        scheduler = build_scheduler(engine, interval_seconds=60, stale_decision_after_days=45)
+        job = scheduler.get_job(JOB_ID)
+        assert job.args[2] == 45
+        engine.dispose()
+
+    def test_build_scheduler_passes_chat_deadline_approaching_within_hours_through(self) -> None:
+        engine = create_engine(os.environ["MEADOWOPS_DATABASE_URL"])
+        scheduler = build_scheduler(
+            engine, interval_seconds=60, chat_deadline_approaching_within_hours=6
+        )
+        job = scheduler.get_job(JOB_ID)
+        assert job.args[-1] == 6
         engine.dispose()
 
     def test_a_db_level_failure_rolls_back_before_the_fallback_commit(self) -> None:
@@ -211,5 +332,5 @@ class TestBuildSchedulerReportingLagDays:
         engine = create_engine(os.environ["MEADOWOPS_DATABASE_URL"])
         scheduler = build_scheduler(engine, interval_seconds=60, reporting_lag_days=4)
         job = scheduler.get_job(JOB_ID)
-        assert job.args == (engine, 4)
+        assert job.args == (engine, 4, 30, 24)
         engine.dispose()

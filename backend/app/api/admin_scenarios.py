@@ -16,12 +16,13 @@ not a client-supplied value.
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from psycopg import errors as pg_errors
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.core.auth import require_admin
+from app.core.claude import get_claude_client
 from app.db.enums import CompetencyCluster, DifficultyTier, ScenarioStatus, ScenarioType
 from app.db.scenario import Scenario
 from app.db.session import get_session
@@ -50,13 +51,6 @@ from app.services.scenario_service import (
     update_ground_truth,
 )
 
-
-def get_claude_client(request: Request) -> ClaudeClient | None:
-    """`app.state.claude_client` is `None` until a real Anthropic SDK
-    adapter is wired in (Phase 4, blocker B3: no API key configured yet) -
-    regenerate_scenario_route below turns that into a clean 503 rather than
-    calling the service layer with nothing to call Claude through."""
-    return request.app.state.claude_client
 
 router = APIRouter(prefix="/api/v1/admin/scenarios", tags=["admin-scenarios"])
 

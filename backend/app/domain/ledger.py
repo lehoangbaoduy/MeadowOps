@@ -10,6 +10,7 @@ are ever stored, structurally.
 """
 
 import enum
+from datetime import datetime, timedelta
 
 
 class DecisionEventStatus(str, enum.Enum):
@@ -69,3 +70,16 @@ def validate_transition(
     itself."""
     if to_state not in _ALLOWED_TRANSITIONS[from_state]:
         raise InvalidTransitionError(from_state, to_state)
+
+
+def is_decision_stale(*, proposed_at: datetime, as_of: datetime, after_days: int) -> bool:
+    """Pure predicate for PRD 4.4's stale-decision flagging ("flagged after
+    a configurable period rather than sitting in limbo indefinitely") — kept
+    separate from the DB query that finds candidate rows
+    (app.services.ledger.flag_stale), the same domain/service split
+    app.domain.scheduled_flow.is_below_reorder_point already uses. Age is
+    measured from proposed_at regardless of whether the record has since
+    moved to clarification_requested and back — the clock is "how long has
+    this sat without a final decision", not "how long since the last
+    status change"."""
+    return as_of - proposed_at >= timedelta(days=after_days)

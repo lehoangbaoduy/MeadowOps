@@ -167,6 +167,87 @@ class QueryResultStatus(str, enum.Enum):
     CANCELLED = "cancelled"
 
 
+class ChatThreadStatus(str, enum.Enum):
+    """Unit 25 (MEADOWOPS-DOM-019, PRD 6.1/6.6 steps 8-9): a minimal
+    two-state addition to ChatThread, not PRD 6.1's full nine-state work
+    lifecycle (Draft/Open/Awaiting Analyst/Awaiting Stakeholder Reply/
+    Deadline Approaching/Overdue/Under AI Evaluation/Pending Human Review/
+    Completed). Pending Human Review is U26's (Human Review table). OPEN
+    covers every pre-completion state this codebase already models
+    implicitly via message history; COMPLETED is the one transition PRD
+    6.6 step 8 actually requires - "the Builder marks the thread
+    Completed", which synchronously triggers step 9's evaluation
+    (app.services.evaluation.complete_thread_and_generate_evaluation).
+    No persisted "under evaluation" state on purpose - evaluation runs
+    inside that one request/transaction, so there is nothing for a thread
+    to be stuck in if it fails; see that module's docstring.
+
+    Unit 30a (MEADOWOPS-UI-003, B12) is the notification/deadline-driven
+    states' owning unit, and deliberately did NOT expand this enum to add
+    them: ChatThread.deadline_at/deadline_approaching_notified/
+    overdue_notified (app.db.chat) model "approaching"/"overdue" as a
+    derived condition over a still-OPEN thread, not a new persisted
+    status. Adding real DEADLINE_APPROACHING/OVERDUE members would break
+    send_message's `status == COMPLETED` guard's implicit "anything else
+    is still open" assumption and every existing `status == OPEN` filter
+    (app.services.evaluation, app.services.portfolio, app.services.
+    scenario_service) without providing anything a derived column can't."""
+
+    OPEN = "open"
+    COMPLETED = "completed"
+
+
+class NotificationKind(str, enum.Enum):
+    """Unit 30a (MEADOWOPS-UI-003, PRD 6.1, B12 follow-on to U30): the two
+    notification kinds with a real, testable producer during Build & Test
+    - both written only by app.services.notifications.sweep_thread_
+    deadlines. PRD 6.1 names two more kinds this project deliberately does
+    NOT model as Notification rows: "new message" is already served by the
+    existing unread-badge mechanism (U21, ChatThreadReadState/
+    list_threads_with_unread) - a second, redundant row per message would
+    duplicate a working mechanism on the hottest write path in this
+    codebase for no closed catalog row. "monthly review available" has no
+    producer at all yet - PRD 6.9's own text is explicit that the monthly
+    review cadence itself doesn't start until Active Use, so there is
+    nothing to notify about during Build & Test; adding the member now
+    would be a dead branch no test could exercise."""
+
+    DEADLINE_APPROACHING = "deadline_approaching"
+    DEADLINE_MISSED = "deadline_missed"
+
+
+class DifficultyRecommendation(str, enum.Enum):
+    """Unit 25 (MEADOWOPS-DOM-019, PRD 6.7): the AI evaluator's per-thread
+    difficulty-tier recommendation for its scenario's single competency
+    cluster (engine.scenario.competency_cluster is one enum value per
+    scenario, not a set - PRD 6.7's "most scenarios naturally exercise two
+    of the three clusters" nuance is deferred, not modeled, rather than
+    guessing an unbacked multi-cluster shape). The three DifficultyTier
+    values plus HOLD, PRD 6.7's own defined "hold, insufficient evidence"
+    valid result - never a forced tier change."""
+
+    FOUNDATIONAL = "foundational"
+    STANDARD = "standard"
+    STRETCH = "stretch"
+    HOLD = "hold"
+
+
+class HumanReviewVerdict(str, enum.Enum):
+    """Unit 26 (MEADOWOPS-DOM-020, PRD 6.6 step 11, ER-3/ER-4): a monthly
+    reviewer's verdict on one Evaluation row's own
+    `difficulty_recommendation` - PRD's edge case #29, "reviewer overrides
+    an AI tier recommendation, logged distinctly from simple agreement".
+    AGREE needs no further payload; OVERRIDE requires
+    HumanReview.overridden_recommendation to carry the reviewer's own call
+    (enforced by both a Pydantic model validator and a DB CHECK constraint,
+    migration 0021) - ER-3 frames this as a logged learning artifact, not a
+    correction, so the schema never conflates "reviewer disagreed" with
+    "evaluation was wrong"."""
+
+    AGREE = "agree"
+    OVERRIDE = "override"
+
+
 class StakeholderPersona(str, enum.Enum):
     """Unit 21a (MEADOWOPS-DOM-014, PRD 6.5): the fixed 6-persona set a
     ChatThread is locked to for its whole life (DD-25). A closed,

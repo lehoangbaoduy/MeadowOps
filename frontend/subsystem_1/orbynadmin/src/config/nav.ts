@@ -14,6 +14,7 @@ import {
   IconBuildingWarehouse,
   IconTerminal2,
   IconMessageCircle,
+  IconHistory,
   type Icon,
 } from "@tabler/icons-react";
 
@@ -35,6 +36,14 @@ export type NavItem = {
   icon?: Icon;
   badge?: string;
   items?: NavChild[];
+  /**
+   * Unit 28 (MEADOWOPS-API-005, PRD 6.12): hides the item from the Analyst
+   * role. Cosmetic only — the actual boundary is the backend's
+   * require_admin on the route this links to (app.core.auth); AppSidebar
+   * filters on this flag using the role passed down from AppLayout's
+   * server-side getCurrentRole().
+   */
+  adminOnly?: boolean;
 };
 
 export type NavGroup = {
@@ -75,6 +84,12 @@ export const navGroups: NavGroup[] = [
       { title: "Shipping", url: "/shipping", icon: IconTruck },
       { title: "Activity", url: "/activity", icon: IconActivity },
       { title: "Query", url: "/query", icon: IconTerminal2 },
+      {
+        title: "Query Log",
+        url: "/admin/query-log",
+        icon: IconHistory,
+        adminOnly: true,
+      },
       { title: "Chat", url: "/chat", icon: IconMessageCircle },
     ],
   },

@@ -19,6 +19,13 @@ export type ChatSocketFrame = {
   message_id: string;
   sender_role: "admin" | "analyst";
   body: string;
+  // Unit 30c (MEADOWOPS-UI-005, B12 follow-on to U30): mirrors
+  // app.api.chat.create_message_route's broadcast payload — without this,
+  // a message sent with an attachment would render with no attachment
+  // link at all on every connection that receives it live, since mail.tsx's
+  // handleFrame is what actually wins the race against the POST response
+  // for the sender's own optimistic update.
+  attachment_ref: string | null;
   sent_at: string;
 };
 

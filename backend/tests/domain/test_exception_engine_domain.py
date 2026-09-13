@@ -11,6 +11,7 @@ from decimal import Decimal
 from app.db.enums import PurchaseOrderStatus, ShipmentStatus
 from app.domain.exception_engine import (
     evaluate_at_risk_purchase_order,
+    evaluate_duplicate_purchase_order,
     evaluate_late_shipment,
     evaluate_low_stock,
 )
@@ -152,3 +153,17 @@ class TestEvaluateLateShipment:
             status=ShipmentStatus.PENDING,
         )
         assert result is False
+
+
+class TestEvaluateDuplicatePurchaseOrder:
+    """PRD 9.2 catalog row 2 / SR-3: injectable duplicate records must be
+    detected and flagged, not silently deduplicated or silently accepted."""
+
+    def test_does_not_flag_a_single_matching_po(self) -> None:
+        assert evaluate_duplicate_purchase_order(1, threshold_count=1) is False
+
+    def test_flags_a_second_matching_po_over_the_threshold(self) -> None:
+        assert evaluate_duplicate_purchase_order(2, threshold_count=1) is True
+
+    def test_does_not_flag_exactly_at_the_threshold(self) -> None:
+        assert evaluate_duplicate_purchase_order(2, threshold_count=2) is False

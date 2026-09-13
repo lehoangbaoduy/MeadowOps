@@ -1,7 +1,11 @@
+from pathlib import Path
+
 from psycopg.conninfo import make_conninfo
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
+
+from app.domain.attachment_validation import DEFAULT_MAX_ATTACHMENT_SIZE_BYTES
 
 
 class Settings(BaseSettings):
@@ -74,6 +78,48 @@ class Settings(BaseSettings):
     # DD-2's ASGITransport means this secret never crosses a real network
     # boundary.
     internal_service_token: str = Field(min_length=32)
+    # Unit 24 (MEADOWOPS-DOM-018, PRD 4.4): "flagged after a configurable
+    # period rather than sitting in limbo indefinitely" - no PRD-specified
+    # number, so this is a Settings field like reporting_lag_days above
+    # rather than a hardcoded constant. 30 is a monthly-review-cadence
+    # default, not a PRD requirement - ops can tune it without a redeploy.
+    # ge=1, not ge=0 (security review, LOW): 0 would mass-flag every open
+    # decision as STALE on the very next scheduler tick - a misconfigured
+    # "no delay" is never a meaningful staleness threshold.
+    stale_decision_after_days: int = Field(default=30, ge=1)
+    # Unit 30a (MEADOWOPS-UI-003, PRD 6.1): "Response windows: default 3-5
+    # real-world days per round" - the PRD gives a range, not one number;
+    # 4 is the midpoint, tunable without a redeploy like the Settings
+    # fields above it. app.services.chat.send_message reads this via an
+    # explicit function argument, not by importing Settings itself
+    # (app.api.chat passes it through), same convention as
+    # reporting_lag_days/stale_decision_after_days.
+    chat_response_window_days: int = Field(default=4, ge=1)
+    # How far ahead of deadline_at the scheduler's deadline sweep
+    # (app.services.notifications.sweep_thread_deadlines) starts treating a
+    # still-open thread as "approaching" rather than merely "open" - hours,
+    # not days, since a multi-day response window makes a same-day warning
+    # more useful than a whole extra day's notice.
+    chat_deadline_approaching_within_hours: int = Field(default=24, ge=1)
+    # Unit 30c (MEADOWOPS-UI-005, PRD 380): "stored in object storage,
+    # never in the operational Postgres database." Filesystem-backed for
+    # now (app.core.storage's own docstring: Phase 4 owns real deployment,
+    # not yet decided between Railway/Render/Fly - PRD 8.2). Defaults to a
+    # directory under the backend package itself so it resolves the same
+    # way regardless of the invoking process's own cwd (mirrors
+    # app.domain.kpi_sql's _SQL_DIR pattern) - not committed to source
+    # control (see repo-root .gitignore).
+    attachment_storage_dir: str = Field(
+        default_factory=lambda: str(
+            Path(__file__).resolve().parents[2] / "var" / "chat_attachments"
+        )
+    )
+    # PRD 380: "a hard per-file size cap" - no PRD-specified number, chosen
+    # as a sane default for the images/PDF/CSV allowlist at this project's
+    # scale, tunable without a redeploy like the Settings fields above it.
+    max_attachment_size_bytes: int = Field(
+        default=DEFAULT_MAX_ATTACHMENT_SIZE_BYTES, gt=0
+    )
 
     def owner_dsn(self) -> str:
         """A plain psycopg-style DSN (not the `postgresql+psycopg://`

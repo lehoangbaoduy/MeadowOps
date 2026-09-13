@@ -45,7 +45,41 @@ export type ChatThread = {
   scenario_id: string;
   persona: Persona;
   created_at: string;
+  // Unit 30a (MEADOWOPS-UI-003, PRD 6.1): mirrors app.schemas.chat.
+  // ThreadRead/ThreadReadWithUnread — deadline_at is null once a thread has
+  // no message yet or its most recent sender was the Analyst; is_overdue is
+  // a moment-of-response computation the backend recomputes on every
+  // response, not a stored flag.
+  deadline_at: string | null;
+  is_overdue: boolean;
   unread_count: number;
+  // Unit 30b (MEADOWOPS-UI-004, PRD 6.1 "Drafting" bullet, catalog row
+  // 31): this viewer's own not-yet-sent draft for this thread ("" if
+  // none) — mirrors app.schemas.chat.ThreadReadWithUnread.draft_body.
+  draft_body: string;
+};
+
+export type NotificationKind = "deadline_approaching" | "deadline_missed";
+
+const NOTIFICATION_LABELS: Record<NotificationKind, string> = {
+  deadline_approaching: "Response due soon",
+  deadline_missed: "Response overdue",
+};
+
+export function notificationLabel(kind: string): string {
+  return NOTIFICATION_LABELS[kind as NotificationKind] ?? kind;
+}
+
+// Mirrors app.schemas.chat.NotificationRead. The Builder (admin role)
+// receives deadline_missed rows only — app.services.notifications.
+// _recipient_ids notifies the Builder when a thread goes overdue, and
+// notifies the Analyst separately (Subsystem 1) when one is approaching.
+export type Notification = {
+  id: string;
+  thread_id: string;
+  kind: NotificationKind;
+  created_at: string;
+  read_at: string | null;
 };
 
 export type ChatMessage = {

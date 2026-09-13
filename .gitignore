@@ -3,6 +3,7 @@
 
 backend/.venv/
 backend/__pycache__/
+backend/var/
 **/__pycache__/
 *.pyc
 

@@ -64,6 +64,11 @@ class Scenario(Base, TimestampMixin):
     source_exception_flag_id: Mapped[uuid.UUID | None] = mapped_column(
         UUID(as_uuid=True), nullable=True
     )
+    # Soft reference (migration 0023, PRD 4.2 line 130) — same reasoning as
+    # source_exception_flag_id above: world_state rows are append-only, so a
+    # plain UUID pin is enough to survive any number of later resets
+    # (PRD 9.2 catalog row 7).
+    world_state_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True), nullable=True)
     ground_truth: Mapped[dict] = mapped_column(JSONB, nullable=False)
     status: Mapped[ScenarioStatus] = mapped_column(
         pg_enum(ScenarioStatus, "scenario_status", schema="engine"),

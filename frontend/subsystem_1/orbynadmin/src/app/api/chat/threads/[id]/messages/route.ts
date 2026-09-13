@@ -17,6 +17,9 @@ export async function POST(
 ): Promise<NextResponse> {
   const { id } = await params;
   const payload = await request.json();
-  const response = await sendMessage(id, payload.body);
+  // Unit 30c (MEADOWOPS-UI-005, B12 follow-on to U30): attachment_id is
+  // optional - only present when the composer has an uploaded-but-not-yet-
+  // sent attachment pending.
+  const response = await sendMessage(id, payload.body, payload.attachment_id);
   return NextResponse.json(await response.json(), { status: response.status });
 }

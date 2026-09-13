@@ -25,6 +25,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar"
+import { clearAllDraftBuffers } from "@/app/(dashboard)/mail/composer-draft"
 
 export function NavUser({
   user,
@@ -45,6 +46,12 @@ export function NavUser({
   // browser straight back to /dashboard). Mirrors orbynadmin's own
   // nav-user.tsx (Unit 17a): POST /api/logout, then navigate.
   async function handleLogOut() {
+    // Security review (Unit 30b, HIGH): this app's sign-in page serves
+    // only Builder/admin accounts, but a shared workstation could still
+    // see two different Builder logins over time — without this, a draft
+    // left in localStorage by whoever was last logged in would silently
+    // pre-fill the next person's composer on this same browser.
+    clearAllDraftBuffers()
     // Code review, MEDIUM: an unhandled rejection here (offline, a
     // network blip) would leave the cookie in place with no navigation —
     // this is the one in-app escape hatch from a stuck session, so it

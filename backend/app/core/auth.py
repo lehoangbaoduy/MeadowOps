@@ -90,3 +90,26 @@ def reject_service_role(
             detail="Internal service credential cannot access this route",
         )
     return identity
+
+
+def require_analyst(identity: dict[str, str] = Depends(reject_service_role)) -> dict[str, str]:
+    """Unit 30c (MEADOWOPS-UI-005, S1-FR-15/PRD 347/380): write-gating
+    dependency for the one Analyst-only write this app has - uploading a
+    chat attachment. Built on reject_service_role (not require_authenticated
+    directly) so role="service" 403s with reject_service_role's own clear
+    "internal service credential" message and, just as importantly, so
+    tests/architecture/test_subsystem_boundary.py's static dependency-graph
+    classifier (which only recognizes require_admin/reject_service_role/
+    require_authenticated) correctly buckets every route built on this one
+    as "service_rejected" - the same bucket every other chat route is in -
+    instead of falling through to "service_allowed" by accident of not
+    calling reject_service_role explicitly. Mirrors require_admin's own
+    shape otherwise (403, not 401, for a validly-authenticated Admin token).
+    PRD 8.4/380 frame file attachments as Analyst-side specifically
+    (S1-FR-15's own wording), not a capability either role gets - the
+    asymmetry is deliberate, not an oversight to fix later."""
+    if identity["role"] != "analyst":
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, detail="Analyst role required"
+        )
+    return identity

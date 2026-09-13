@@ -49,6 +49,16 @@ class QueryLogRead(BaseModel):
     submitted_at: datetime
 
 
+class AdminQueryLogRead(QueryLogRead):
+    """Unit 28 (MEADOWOPS-API-005, PRD 6.12/S1-FR-14): adds the submitting
+    user's email for the admin cross-user view. A separate schema from
+    QueryLogRead rather than adding `user_email` there — QueryLogRead is
+    also returned by the Analyst-facing GET /api/v1/query/history, which has
+    no business exposing another user's identity via a widened field."""
+
+    user_email: str
+
+
 class SandboxRefreshResponse(BaseModel):
     status: str
     tables_mirrored: int

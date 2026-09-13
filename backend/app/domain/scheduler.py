@@ -24,6 +24,7 @@ point-in-time" semantics).
 """
 
 import logging
+from datetime import datetime, timedelta, timezone
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from sqlalchemy import Engine
@@ -31,6 +32,8 @@ from sqlalchemy.orm import Session
 
 from app.services.exception_engine import evaluate_exceptions
 from app.services.kpi_engine import compute_and_snapshot_kpis
+from app.services.ledger import flag_stale
+from app.services.notifications import sweep_thread_deadlines
 from app.services.reporting_sync import sync_reporting_layer
 from app.services.scheduled_flow import run_scheduled_tick
 from app.services.simulation_clock_ops import SimulationPausedError, advance_simulation
@@ -40,7 +43,12 @@ logger = logging.getLogger(__name__)
 JOB_ID = "scheduled_flow_tick"
 
 
-def _run_tick(engine: Engine, reporting_lag_days: int = 2) -> None:
+def _run_tick(
+    engine: Engine,
+    reporting_lag_days: int = 2,
+    stale_decision_after_days: int = 30,
+    chat_deadline_approaching_within_hours: int = 24,
+) -> None:
     """Never lets one bad tick kill the scheduler thread — APScheduler
     would otherwise just log-and-continue on an uncaught exception anyway
     (its own default), so catching explicitly here is about producing a
@@ -76,6 +84,26 @@ def _run_tick(engine: Engine, reporting_lag_days: int = 2) -> None:
             sync_reporting_layer(session, new_date, lag_days=reporting_lag_days)
             evaluate_exceptions(session, new_date)
             compute_and_snapshot_kpis(session, new_date)
+            # Unit 24 (MEADOWOPS-DOM-018, PRD 4.4): wall-clock now(), not
+            # new_date - DecisionEvent timestamps are already wall-clock
+            # (app.services.scenario_service.approve_scenario's own
+            # approved_at convention), independent of the simulation
+            # calendar the three calls above advance against. Skipped
+            # alongside them on a failure above, same short-circuit
+            # contract as evaluate_exceptions/compute_and_snapshot_kpis.
+            flag_stale(
+                session, as_of=datetime.now(timezone.utc), after_days=stale_decision_after_days
+            )
+            # Unit 30a (MEADOWOPS-UI-003, PRD 6.1, B12): same short-circuit-
+            # on-failure contract as every other post-tick pass above -
+            # skipped alongside them on a failure, since a still-half-run
+            # tick is the wrong moment to be sweeping deadlines. Wall-clock
+            # now(), same reasoning as flag_stale's own as_of.
+            sweep_thread_deadlines(
+                session,
+                now=datetime.now(timezone.utc),
+                approaching_within=timedelta(hours=chat_deadline_approaching_within_hours),
+            )
         except Exception:
             logger.exception("scheduled tick failed for simulation_date=%s", new_date)
             if not session.is_active:
@@ -98,7 +126,12 @@ def _run_tick(engine: Engine, reporting_lag_days: int = 2) -> None:
 
 
 def build_scheduler(
-    engine: Engine, *, interval_seconds: int, reporting_lag_days: int = 2
+    engine: Engine,
+    *,
+    interval_seconds: int,
+    reporting_lag_days: int = 2,
+    stale_decision_after_days: int = 30,
+    chat_deadline_approaching_within_hours: int = 24,
 ) -> BackgroundScheduler:
     # max_instances=1 only prevents overlapping ticks within THIS process
     # (security review, LOW) — if ever deployed with multiple app
@@ -113,7 +146,12 @@ def build_scheduler(
         _run_tick,
         "interval",
         seconds=interval_seconds,
-        args=[engine, reporting_lag_days],
+        args=[
+            engine,
+            reporting_lag_days,
+            stale_decision_after_days,
+            chat_deadline_approaching_within_hours,
+        ],
         id=JOB_ID,
         max_instances=1,  # never let two ticks overlap and race the clock lock
         coalesce=True,

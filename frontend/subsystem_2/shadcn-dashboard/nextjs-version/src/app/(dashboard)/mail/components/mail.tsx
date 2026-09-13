@@ -135,7 +135,7 @@ export function Mail({ threads: initialThreads, scenarios, defaultLayout = [32, 
                   sender_user_id: "",
                   sender_role: frame.sender_role,
                   body: frame.body,
-                  attachment_ref: null,
+                  attachment_ref: frame.attachment_ref,
                   sent_at: frame.sent_at,
                 },
               ]

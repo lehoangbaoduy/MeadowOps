@@ -84,3 +84,12 @@ export function refreshSandbox(): Promise<Response> {
 export function getQueryHistory(): Promise<Response> {
   return adminFetch("/api/v1/query/history");
 }
+
+/**
+ * Unit 28 (MEADOWOPS-API-005, PRD 6.12/S1-FR-14): admin cross-user view of
+ * the same query_log Unit 19 writes — require_admin on the backend, unlike
+ * getQueryHistory above (which is the caller's own rows only).
+ */
+export function getAdminQueryLog(limit: number, offset: number): Promise<Response> {
+  return adminFetch(`/api/v1/admin/query-log?limit=${limit}&offset=${offset}`);
+}

@@ -185,8 +185,12 @@ def _swap_schemas(conn: psycopg.Connection, table_names: list[str]) -> None:
                 f"GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES "
                 f"IN SCHEMA {STAGING_SCHEMA} TO meadowops_sandbox"
             )
+        # FOR ROLE CURRENT_USER, not a hardcoded "meadowops" — this function
+        # always runs as owner_dsn's role, whatever it's named in a given
+        # environment (see alembic/versions/0001_create_schemas_and_sandbox
+        # _role.py's matching fix for the full rationale).
         cur.execute(
-            f"ALTER DEFAULT PRIVILEGES FOR ROLE meadowops IN SCHEMA {STAGING_SCHEMA} "
+            f"ALTER DEFAULT PRIVILEGES FOR ROLE CURRENT_USER IN SCHEMA {STAGING_SCHEMA} "
             f"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO meadowops_sandbox"
         )
         cur.execute(f"GRANT USAGE, CREATE ON SCHEMA {STAGING_SCHEMA} TO meadowops_sandbox")

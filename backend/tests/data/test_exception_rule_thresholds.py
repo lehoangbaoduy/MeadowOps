@@ -23,6 +23,8 @@ EXPECTED_IDS = {
     # two threshold-driven categories.
     "reporting_lag_stale",
     "reporting_conflict_qty_variance",
+    # Unit 30 (MEADOWOPS-DOM-030, PRD 9.2 catalog row 2 / SR-3).
+    "duplicate_purchase_order",
 }
 
 
@@ -55,7 +57,7 @@ def test_default_threshold_values_are_seeded_and_non_negative(owner_dsn: str) ->
     assert set(rows) == EXPECTED_IDS
     for threshold_value, unit, is_active in rows.values():
         assert threshold_value >= 0
-        assert unit in ("days", "units")
+        assert unit in ("days", "units", "count")
         assert is_active is True
 
 

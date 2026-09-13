@@ -8,7 +8,7 @@ commit — caller-owns-the-transaction).
 
 import os
 import uuid
-from datetime import date
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
@@ -16,7 +16,9 @@ from sqlalchemy import create_engine, delete
 from sqlalchemy.orm import Session
 
 from app.db.auth import User
+from app.db.chat import ChatAttachment
 from app.db.enums import (
+    ChatThreadStatus,
     CompetencyCluster,
     DifficultyTier,
     ScenarioType,
@@ -27,7 +29,12 @@ from app.db.exception_flags import ExceptionFlag
 from app.db.scenario import Scenario
 from app.services.baseline_data import seed_master_data
 from app.services.chat import (
+    MAX_MESSAGE_BODY_LENGTH,
+    AttachmentAlreadyLinkedError,
+    AttachmentNotFoundError,
+    AttachmentOwnershipError,
     MessageBodyTooLongError,
+    ThreadCompletedError,
     ThreadNotFoundError,
     get_or_create_thread,
     get_thread,
@@ -35,6 +42,7 @@ from app.services.chat import (
     list_threads,
     list_threads_with_unread,
     mark_thread_read,
+    save_draft,
     send_message,
 )
 from app.services.exception_rule_defaults import seed_exception_rule_thresholds
@@ -224,6 +232,257 @@ class TestSendMessage:
         with pytest.raises(ThreadNotFoundError):
             list_messages(session, uuid.uuid4())
 
+    def test_send_message_raises_once_the_thread_is_completed(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID
+    ) -> None:
+        # Unit 25 (MEADOWOPS-DOM-019, security review, LOW): "the
+        # Analyst's most recent message is the submission of record"
+        # (PRD 6.6 step 8) - a message sent after Completed would
+        # silently outrun the record the evaluation was already graded
+        # against.
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        thread.status = ChatThreadStatus.COMPLETED
+        session.flush()
+        with pytest.raises(ThreadCompletedError):
+            send_message(
+                session,
+                thread_id=thread.id,
+                sender_user_id=admin_id,
+                sender_role=UserRole.ADMIN,
+                body="too late",
+            )
+
+
+class TestSendMessageWithAttachment:
+    """Unit 30c (MEADOWOPS-UI-005, S1-FR-15/PRD 347/380, B12 follow-on to
+    U30): send_message's attachment-claiming path. Attachments are built
+    directly as ChatAttachment rows here (not through app.services.
+    chat_attachments.upload_attachment) — this class tests send_message's
+    own ownership/claim logic in isolation from upload validation, which
+    tests/services/test_chat_attachments.py already covers."""
+
+    def _make_attachment(
+        self, session: Session, *, thread_id: uuid.UUID, uploaded_by_user_id: uuid.UUID
+    ) -> ChatAttachment:
+        attachment = ChatAttachment(
+            thread_id=thread_id,
+            uploaded_by_user_id=uploaded_by_user_id,
+            storage_key=uuid.uuid4().hex,
+            original_filename="evidence.jpg",
+            content_type="image/jpeg",
+            size_bytes=123,
+        )
+        session.add(attachment)
+        session.flush()
+        return attachment
+
+    def test_claims_a_valid_attachment(
+        self, session: Session, scenario_id: uuid.UUID, analyst_id: uuid.UUID
+    ) -> None:
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        attachment = self._make_attachment(
+            session, thread_id=thread.id, uploaded_by_user_id=analyst_id
+        )
+        message = send_message(
+            session,
+            thread_id=thread.id,
+            sender_user_id=analyst_id,
+            sender_role=UserRole.ANALYST,
+            body="see attached",
+            attachment_id=attachment.id,
+        )
+        assert message.attachment_ref == str(attachment.id)
+        assert attachment.message_id == message.id
+
+    def test_raises_for_an_unknown_attachment_id(
+        self, session: Session, scenario_id: uuid.UUID, analyst_id: uuid.UUID
+    ) -> None:
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        with pytest.raises(AttachmentNotFoundError):
+            send_message(
+                session,
+                thread_id=thread.id,
+                sender_user_id=analyst_id,
+                sender_role=UserRole.ANALYST,
+                body="see attached",
+                attachment_id=uuid.uuid4(),
+            )
+
+    def test_raises_when_the_attachment_belongs_to_a_different_thread(
+        self, session: Session, scenario_id: uuid.UUID, analyst_id: uuid.UUID
+    ) -> None:
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        other_thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.IT_MANAGER
+        )
+        attachment = self._make_attachment(
+            session, thread_id=other_thread.id, uploaded_by_user_id=analyst_id
+        )
+        with pytest.raises(AttachmentOwnershipError):
+            send_message(
+                session,
+                thread_id=thread.id,
+                sender_user_id=analyst_id,
+                sender_role=UserRole.ANALYST,
+                body="see attached",
+                attachment_id=attachment.id,
+            )
+
+    def test_raises_when_a_builder_tries_to_claim_the_analysts_attachment(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID, analyst_id: uuid.UUID
+    ) -> None:
+        """The structural half of S1-FR-15's Analyst-side-only scoping
+        (see app.services.chat.AttachmentOwnershipError's own docstring):
+        an attachment's uploaded_by_user_id is only ever set by the
+        require_analyst-gated upload route, so a Builder-sent message can
+        never satisfy this ownership check against their own user_id -
+        proven directly here, not just asserted by the upload route's own
+        role gate."""
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        attachment = self._make_attachment(
+            session, thread_id=thread.id, uploaded_by_user_id=analyst_id
+        )
+        with pytest.raises(AttachmentOwnershipError):
+            send_message(
+                session,
+                thread_id=thread.id,
+                sender_user_id=admin_id,
+                sender_role=UserRole.ADMIN,
+                body="see attached",
+                attachment_id=attachment.id,
+            )
+
+    def test_raises_when_the_attachment_already_backs_another_message(
+        self, session: Session, scenario_id: uuid.UUID, analyst_id: uuid.UUID
+    ) -> None:
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        attachment = self._make_attachment(
+            session, thread_id=thread.id, uploaded_by_user_id=analyst_id
+        )
+        send_message(
+            session,
+            thread_id=thread.id,
+            sender_user_id=analyst_id,
+            sender_role=UserRole.ANALYST,
+            body="first message with this attachment",
+            attachment_id=attachment.id,
+        )
+        with pytest.raises(AttachmentAlreadyLinkedError):
+            send_message(
+                session,
+                thread_id=thread.id,
+                sender_user_id=analyst_id,
+                sender_role=UserRole.ANALYST,
+                body="second message trying to reuse it",
+                attachment_id=attachment.id,
+            )
+
+    def test_a_failed_send_leaves_the_attachment_unclaimed(
+        self, session: Session, scenario_id: uuid.UUID, analyst_id: uuid.UUID
+    ) -> None:
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        attachment = self._make_attachment(
+            session, thread_id=thread.id, uploaded_by_user_id=analyst_id
+        )
+        with pytest.raises(MessageBodyTooLongError):
+            send_message(
+                session,
+                thread_id=thread.id,
+                sender_user_id=analyst_id,
+                sender_role=UserRole.ANALYST,
+                body="x" * (MAX_MESSAGE_BODY_LENGTH + 1),
+                attachment_id=attachment.id,
+            )
+        assert attachment.message_id is None
+
+
+class TestSendMessageDeadlineTracking:
+    """Unit 30a (MEADOWOPS-UI-003, PRD 6.1, B12): "Response windows: default
+    3-5 real-world days per round" - a message from the Builder (persona/
+    admin role) starts the Analyst's response window; the Analyst's own
+    reply clears it. Catalog row 15 depends on this: no deadline_at, no
+    overdue concept to sweep for."""
+
+    def test_a_builder_message_sets_the_deadline_response_window_days_out(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID
+    ) -> None:
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        before = datetime.now(timezone.utc)
+        send_message(
+            session,
+            thread_id=thread.id,
+            sender_user_id=admin_id,
+            sender_role=UserRole.ADMIN,
+            body="VP wants a status update",
+            response_window_days=3,
+        )
+        session.refresh(thread)
+        assert thread.deadline_at is not None
+        assert before + timedelta(days=3) <= thread.deadline_at
+
+    def test_an_analyst_reply_clears_the_deadline(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID, analyst_id: uuid.UUID
+    ) -> None:
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        send_message(
+            session, thread_id=thread.id, sender_user_id=admin_id,
+            sender_role=UserRole.ADMIN, body="VP wants a status update",
+        )
+        session.refresh(thread)
+        assert thread.deadline_at is not None
+
+        send_message(
+            session, thread_id=thread.id, sender_user_id=analyst_id,
+            sender_role=UserRole.ANALYST, body="Working on it",
+        )
+        session.refresh(thread)
+        assert thread.deadline_at is None
+
+    def test_a_new_message_resets_the_notified_flags(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID, analyst_id: uuid.UUID
+    ) -> None:
+        """Idempotency pair backing catalog row 30 - a fresh round (new
+        deadline_at) is eligible for its own DEADLINE_APPROACHING/
+        DEADLINE_MISSED notifications again, not permanently suppressed by
+        a prior round's sweep having already fired."""
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        send_message(
+            session, thread_id=thread.id, sender_user_id=admin_id,
+            sender_role=UserRole.ADMIN, body="VP wants a status update",
+        )
+        session.refresh(thread)
+        thread.deadline_approaching_notified = True
+        thread.overdue_notified = True
+        session.flush()
+
+        send_message(
+            session, thread_id=thread.id, sender_user_id=analyst_id,
+            sender_role=UserRole.ANALYST, body="Working on it",
+        )
+        session.refresh(thread)
+        assert thread.deadline_approaching_notified is False
+        assert thread.overdue_notified is False
+
 
 class TestReadState:
     """Unit 21 (MEADOWOPS-DOM-015, S1-FR-15): unread-thread badges — backed
@@ -312,3 +571,151 @@ class TestReadState:
             (item.thread.id, item.unread_count) for item in list_threads_with_unread(session, user_id=analyst_id)
         )
         assert counts[thread.id] == 0
+
+
+class TestDraftPersistence:
+    """Unit 30b (MEADOWOPS-UI-004, PRD 6.1 'Drafting' bullet, catalog row
+    31, B12 follow-on to U30): a per-(thread, user) draft, backed by
+    chat.chat_thread_draft (migration 0025) and surfaced through
+    list_threads_with_unread's own draft_body field - see
+    ChatThreadDraft's own docstring for why this is a table of its own
+    rather than folded into read-state."""
+
+    def _draft_body(self, session: Session, *, thread_id: uuid.UUID, user_id: uuid.UUID) -> str:
+        items = list_threads_with_unread(session, user_id=user_id)
+        return next(item.draft_body for item in items if item.thread.id == thread_id)
+
+    def test_save_draft_raises_for_an_unknown_thread(
+        self, session: Session, admin_id: uuid.UUID
+    ) -> None:
+        with pytest.raises(ThreadNotFoundError):
+            save_draft(session, thread_id=uuid.uuid4(), user_id=admin_id, body="hello")
+
+    def test_a_thread_with_no_saved_draft_has_an_empty_draft_body(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID
+    ) -> None:
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        assert self._draft_body(session, thread_id=thread.id, user_id=admin_id) == ""
+
+    def test_save_draft_then_it_is_readable_back(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID
+    ) -> None:
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        save_draft(session, thread_id=thread.id, user_id=admin_id, body="typing a status update")
+        assert (
+            self._draft_body(session, thread_id=thread.id, user_id=admin_id)
+            == "typing a status update"
+        )
+
+    def test_saving_again_overwrites_rather_than_duplicates(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID
+    ) -> None:
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        save_draft(session, thread_id=thread.id, user_id=admin_id, body="first draft")
+        save_draft(session, thread_id=thread.id, user_id=admin_id, body="first draft, revised")
+        assert (
+            self._draft_body(session, thread_id=thread.id, user_id=admin_id)
+            == "first draft, revised"
+        )
+
+    def test_saving_an_empty_body_clears_a_previously_saved_draft(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID
+    ) -> None:
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        save_draft(session, thread_id=thread.id, user_id=admin_id, body="never mind")
+        save_draft(session, thread_id=thread.id, user_id=admin_id, body="")
+        assert self._draft_body(session, thread_id=thread.id, user_id=admin_id) == ""
+
+    def test_saving_a_whitespace_only_body_also_clears_it(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID
+    ) -> None:
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        save_draft(session, thread_id=thread.id, user_id=admin_id, body="something")
+        save_draft(session, thread_id=thread.id, user_id=admin_id, body="   \n  ")
+        assert self._draft_body(session, thread_id=thread.id, user_id=admin_id) == ""
+
+    def test_save_draft_rejects_a_body_over_the_length_cap(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID
+    ) -> None:
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        with pytest.raises(MessageBodyTooLongError):
+            save_draft(
+                session,
+                thread_id=thread.id,
+                user_id=admin_id,
+                body="x" * (MAX_MESSAGE_BODY_LENGTH + 1),
+            )
+
+    def test_a_builders_draft_and_an_analysts_draft_on_the_same_thread_never_collide(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID, analyst_id: uuid.UUID
+    ) -> None:
+        """The exact collision an advisor review flagged before
+        implementation: the Builder's persona-message draft and the
+        Analyst's reply draft target the same thread_id. Per-(thread,
+        user) storage means neither ever overwrites the other's."""
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        save_draft(session, thread_id=thread.id, user_id=admin_id, body="Builder's persona draft")
+        save_draft(session, thread_id=thread.id, user_id=analyst_id, body="Analyst's reply draft")
+        assert (
+            self._draft_body(session, thread_id=thread.id, user_id=admin_id)
+            == "Builder's persona draft"
+        )
+        assert (
+            self._draft_body(session, thread_id=thread.id, user_id=analyst_id)
+            == "Analyst's reply draft"
+        )
+
+    def test_a_successful_send_clears_only_the_senders_own_draft(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID, analyst_id: uuid.UUID
+    ) -> None:
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        save_draft(session, thread_id=thread.id, user_id=admin_id, body="about to send this")
+        save_draft(session, thread_id=thread.id, user_id=analyst_id, body="Analyst's own, untouched")
+
+        send_message(
+            session, thread_id=thread.id, sender_user_id=admin_id,
+            sender_role=UserRole.ADMIN, body="about to send this",
+        )
+
+        assert self._draft_body(session, thread_id=thread.id, user_id=admin_id) == ""
+        assert (
+            self._draft_body(session, thread_id=thread.id, user_id=analyst_id)
+            == "Analyst's own, untouched"
+        )
+
+    def test_a_failed_send_leaves_the_draft_untouched(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID
+    ) -> None:
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        thread.status = ChatThreadStatus.COMPLETED
+        session.flush()
+        save_draft(session, thread_id=thread.id, user_id=admin_id, body="stuck in the composer")
+
+        with pytest.raises(ThreadCompletedError):
+            send_message(
+                session, thread_id=thread.id, sender_user_id=admin_id,
+                sender_role=UserRole.ADMIN, body="too late",
+            )
+
+        assert (
+            self._draft_body(session, thread_id=thread.id, user_id=admin_id)
+            == "stuck in the composer"
+        )

@@ -77,12 +77,15 @@ export function ChatInbox({ initialThreads }: { initialThreads: ChatThread[] }) 
   }, []);
 
   const handleSend = useCallback(
-    async (body: string): Promise<boolean> => {
+    // Unit 30c (MEADOWOPS-UI-005, B12 follow-on to U30): attachmentId is
+    // optional - the already-uploaded, not-yet-claimed ChatAttachment's id
+    // (see thread-view.tsx's own upload flow).
+    async (body: string, attachmentId?: string): Promise<boolean> => {
       if (!selectedId) return false;
       const response = await fetch(`/api/chat/threads/${selectedId}/messages`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ body }),
+        body: JSON.stringify(attachmentId ? { body, attachment_id: attachmentId } : { body }),
       });
       if (!response.ok) return false;
       const message: ChatMessage = await response.json();
@@ -109,7 +112,7 @@ export function ChatInbox({ initialThreads }: { initialThreads: ChatThread[] }) 
                   sender_user_id: "",
                   sender_role: frame.sender_role,
                   body: frame.body,
-                  attachment_ref: null,
+                  attachment_ref: frame.attachment_ref,
                   sent_at: frame.sent_at,
                 },
               ]

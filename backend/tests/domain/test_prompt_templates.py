@@ -20,6 +20,7 @@ from app.domain.prompt_templates import (
     EVALUATION_TEMPLATE,
     GENERATION_TEMPLATE,
     STAKEHOLDER_ROLEPLAY_TEMPLATE,
+    SUFFICIENCY_CHECK_TEMPLATE,
     PromptRenderError,
 )
 
@@ -33,14 +34,18 @@ def _placeholders_in(template_text: str) -> set[str]:
 
 
 class TestTemplateRegistry:
-    def test_exactly_three_templates_are_registered(self):
-        assert len(ALL_TEMPLATES) == 3
+    def test_exactly_four_templates_are_registered(self):
+        # Three from PRD line 470's original skeleton set, plus
+        # sufficiency_check (Unit 23, PRD 6.13 - not part of that original
+        # three-way list since 6.13's own sufficiency check post-dates it).
+        assert len(ALL_TEMPLATES) == 4
 
-    def test_registered_templates_match_the_three_prd_line_470_use_cases(self):
+    def test_registered_templates_match_the_prd_use_cases(self):
         names = {t.name for t in ALL_TEMPLATES}
         assert names == {
             "scenario_generation",
             "stakeholder_roleplay",
+            "sufficiency_check",
             "draft_evaluation",
         }
 
@@ -121,6 +126,52 @@ class TestStakeholderRoleplayTemplate:
         del incomplete["known_information"]
         with pytest.raises(PromptRenderError):
             STAKEHOLDER_ROLEPLAY_TEMPLATE.render(incomplete)
+
+
+class TestSufficiencyCheckTemplate:
+    CONTEXT = {
+        "ground_truth_package": "Known cause: reorder point misconfigured",
+        "analyst_message": "It looks like the reorder point is too low, can we raise it?",
+    }
+
+    def test_renders_with_full_context_and_leaves_no_placeholder(self):
+        rendered = SUFFICIENCY_CHECK_TEMPLATE.render(self.CONTEXT)
+        for key in SUFFICIENCY_CHECK_TEMPLATE.required_context:
+            assert "{" + key + "}" not in rendered
+
+    def test_rendered_output_includes_the_supplied_context_values(self):
+        rendered = SUFFICIENCY_CHECK_TEMPLATE.render(self.CONTEXT)
+        assert "reorder point misconfigured" in rendered
+        assert "can we raise it?" in rendered
+
+    def test_missing_required_context_raises_prompt_render_error(self):
+        incomplete = dict(self.CONTEXT)
+        del incomplete["analyst_message"]
+        with pytest.raises(PromptRenderError):
+            SUFFICIENCY_CHECK_TEMPLATE.render(incomplete)
+
+    def test_instructs_a_json_only_response_naming_both_keys(self):
+        text = SUFFICIENCY_CHECK_TEMPLATE.template
+        assert "JSON" in text
+        assert '"verdict"' in text
+        assert '"suggested_pushback"' in text
+        assert "sufficient" in text
+        assert "insufficient" in text
+
+    def test_is_labeled_a_recommendation_only_distinct_from_a_final_evaluation(self):
+        # PRD 6.13: "This is a recommendation only... distinct from the
+        # post-submission Draft AI evaluation (6.8)."
+        assert "recommendation only" in SUFFICIENCY_CHECK_TEMPLATE.template
+
+    def test_instructs_suggested_pushback_to_avoid_stating_ground_truth_facts_directly(self):
+        # Security review of this unit: suggested_pushback is generated with
+        # the *full*, unredacted ground truth in context and is meant to
+        # seed a message a Builder may paste straight into the Analyst-
+        # visible thread (PRD 6.6 step 5) - without an explicit instruction,
+        # an honest model answer could naturally cite a specific grading-only
+        # fact (a supporting signal, distractor, expected consideration, or
+        # conclusion) in its suggested nudge text.
+        assert "Never state a specific ground-truth fact" in SUFFICIENCY_CHECK_TEMPLATE.template
 
 
 class TestEvaluationTemplate:

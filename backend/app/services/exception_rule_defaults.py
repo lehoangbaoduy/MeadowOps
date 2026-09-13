@@ -85,6 +85,18 @@ EXCEPTION_RULE_THRESHOLDS = [
         "unit": "units",
         "is_active": True,
     },
+    {
+        "id": "duplicate_purchase_order",
+        "name": "Duplicate purchase order",
+        "description": (
+            "Flag an open purchase order as a likely accidental duplicate "
+            "once more than this many open POs share the same supplier, "
+            "warehouse, and expected delivery date (PRD 9.2 / SR-3)."
+        ),
+        "threshold_value": 1,
+        "unit": "count",
+        "is_active": True,
+    },
 ]
 
 

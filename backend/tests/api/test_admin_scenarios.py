@@ -90,6 +90,28 @@ def open_flag_id(db_session: Session) -> Generator[str, None, None]:
 
 
 @pytest.fixture
+def second_flag_id(db_session: Session) -> Generator[str, None, None]:
+    # Distinct product_id (SKU-COR-002, seeded baseline data - same
+    # precedent as tests/e2e/test_qa_callback_scenario.py) so this flag
+    # never collides with open_flag_id's own ux_exception_flag_open_entity
+    # partial unique index.
+    flag = ExceptionFlag(
+        category="low_stock_days_of_supply",
+        product_id="SKU-COR-002",
+        warehouse_id=_WAREHOUSE_ID,
+        simulation_date=date(2026, 6, 1),
+        first_detected_simulation_date=date(2026, 5, 20),
+        measured_value=Decimal("4.00"),
+        threshold_value=Decimal("10.00"),
+    )
+    db_session.add(flag)
+    db_session.commit()
+    yield str(flag.id)
+    db_session.execute(delete(ExceptionFlag).where(ExceptionFlag.id == flag.id))
+    db_session.commit()
+
+
+@pytest.fixture
 def client() -> Generator[TestClient, None, None]:
     with TestClient(create_app(settings=Settings(session_secret_key=TEST_SESSION_SECRET))) as c:
         yield c
@@ -418,6 +440,44 @@ class TestActivateScenario:
         assert response.status_code == 200
         assert response.json()["status"] == "active"
         assert response.json()["activated_at"] is not None
+
+    def test_activating_a_second_scenario_while_one_is_already_active_returns_409(
+        self,
+        client: TestClient,
+        admin_auth: dict[str, str],
+        open_flag_id: str,
+        second_flag_id: str,
+    ) -> None:
+        """PRD 9.2 catalog row 19: only one scenario active at a time."""
+
+        def _create_and_approve(flag_id: str) -> str:
+            created = client.post(
+                "/api/v1/admin/scenarios", json=_create_payload(flag_id), headers=admin_auth
+            ).json()
+            client.patch(
+                f"/api/v1/admin/scenarios/{created['id']}/ground-truth",
+                json=_complete_ground_truth_payload(),
+                headers=admin_auth,
+            )
+            client.post(f"/api/v1/admin/scenarios/{created['id']}/approve", headers=admin_auth)
+            return created["id"]
+
+        first_id = _create_and_approve(open_flag_id)
+        second_id = _create_and_approve(second_flag_id)
+
+        first_response = client.post(
+            f"/api/v1/admin/scenarios/{first_id}/activate", headers=admin_auth
+        )
+        assert first_response.status_code == 200
+
+        second_response = client.post(
+            f"/api/v1/admin/scenarios/{second_id}/activate", headers=admin_auth
+        )
+        assert second_response.status_code == 409
+        unchanged = client.get(
+            f"/api/v1/admin/scenarios/{second_id}", headers=admin_auth
+        ).json()
+        assert unchanged["status"] == "approved"
 
 
 class TestCancelScenario:

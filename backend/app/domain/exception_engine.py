@@ -64,3 +64,11 @@ def evaluate_late_shipment(
             return False
         return (actual_delivery_date - promised_delivery_date).days > grace_days
     return (simulation_date - promised_delivery_date).days > grace_days
+
+
+def evaluate_duplicate_purchase_order(matching_open_po_count: int, *, threshold_count: int) -> bool:
+    """Unit 30 (MEADOWOPS-DOM-030, PRD 9.2 catalog row 2 / SR-3): more than
+    `threshold_count` open POs sharing the same supplier/warehouse/expected
+    delivery date look like an accidental duplicate submission, not
+    independently placed orders."""
+    return matching_open_po_count > threshold_count

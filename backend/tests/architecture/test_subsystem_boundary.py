@@ -205,6 +205,15 @@ EXPECTED_SERVICE_ALLOWED_ROUTES = {
     ("GET", "/api/v1/dashboard/shipments"),
     ("GET", "/api/v1/dashboard/exceptions"),
     ("GET", "/api/v1/dashboard/exceptions/{exception_flag_id}"),
+    # Unit 24 (MEADOWOPS-DOM-018): read routes only - nothing on the ledger
+    # is ground-truth-secret from the Analyst (unlike U23's chat routes),
+    # and the callback-candidates lookup is this unit's whole reason for
+    # being the first real caller of app.services.subsystem2/
+    # app.core.internal_client (see tests/integration/
+    # test_subsystem2_boundary.py). Write routes are admin_only, below.
+    ("GET", "/api/v1/ledger/decisions"),
+    ("GET", "/api/v1/ledger/decisions/{decision_id}"),
+    ("GET", "/api/v1/ledger/entities/{entity_type}/{entity_id}/callback-candidates"),
 }
 
 
@@ -232,7 +241,11 @@ class TestServiceCredentialRouteAllowlist:
         security review) — every route is service_rejected except thread
         creation, which is admin_only (DD-25: the Builder picks which
         thread to open), a stricter bucket that also excludes role=service
-        (require_admin's own check). The `/ws/chat` WebSocket route isn't
+        (require_admin's own check). Unit 23 (MEADOWOPS-DOM-017) adds two
+        more admin_only routes for the same reason as thread creation, plus
+        a stronger one: the Analyst role itself (not just the internal
+        service credential) must never reach either, since both read the
+        scenario's ground truth. The `/ws/chat` WebSocket route isn't
         enumerable by `_classify_routes` (FastAPI dependency injection
         doesn't apply to WS routes at all) — its own auth story is proven
         directly in tests/api/test_chat_api.py's TestWebSocketConnection,
@@ -251,6 +264,93 @@ class TestServiceCredentialRouteAllowlist:
             # reasoning as every other chat route — no legitimate reason
             # for the internal-service credential to touch it.
             ("POST", "/api/v1/chat/threads/{thread_id}/read"): "service_rejected",
+            # Unit 30a (MEADOWOPS-UI-003): notifications, same reasoning as
+            # every other chat route — no legitimate reason for the
+            # internal-service credential to touch a user's own
+            # notification feed.
+            ("GET", "/api/v1/chat/notifications"): "service_rejected",
+            ("POST", "/api/v1/chat/notifications/{notification_id}/read"): "service_rejected",
+            # Unit 30b (MEADOWOPS-UI-004): save-draft, same reasoning as
+            # every other per-user chat route — no legitimate reason for
+            # the internal-service credential to touch a user's own draft.
+            ("PUT", "/api/v1/chat/threads/{thread_id}/draft"): "service_rejected",
+            # Unit 30c (MEADOWOPS-UI-005): upload is require_analyst (built
+            # on reject_service_role - see its own docstring, app.core.auth
+            # - so it classifies here too, not as a separate bucket this
+            # test would need); download is reject_service_role directly,
+            # same "no legitimate reason for the internal-service
+            # credential to touch it" reasoning as every other per-thread
+            # chat route.
+            ("POST", "/api/v1/chat/threads/{thread_id}/attachments"): "service_rejected",
+            ("GET", "/api/v1/chat/messages/{message_id}/attachment"): "service_rejected",
+            ("POST", "/api/v1/chat/threads/{thread_id}/suggest-pushback"): "admin_only",
+            ("POST", "/api/v1/chat/threads/{thread_id}/sufficiency-check"): "admin_only",
+            # Unit 25 (MEADOWOPS-DOM-019): same reasoning as suggest-
+            # pushback/sufficiency-check above - triggers a Claude call
+            # against the scenario's ground truth.
+            ("POST", "/api/v1/chat/threads/{thread_id}/complete"): "admin_only",
+        }
+
+    def test_every_evaluation_route_is_explicitly_classified(self) -> None:
+        """Unit 25 (MEADOWOPS-DOM-019, PRD ER-5): both routes are
+        admin_only, stricter than Unit 24's ledger reads (service_allowed)
+        - the internal-service credential has no legitimate reason to read
+        evaluation content (it is entirely Subsystem 2's own concern,
+        generated and read within this process), and ER-5 requires the
+        Analyst role itself to never see it during normal use.
+
+        Unit 26 (MEADOWOPS-DOM-020) adds the two human-review routes below
+        - also admin_only, same ER-5 reasoning: the External Human Reviewer
+        has no account of their own in this phase (PRD 14), so the Builder
+        stands in, and the Analyst must never reach either route."""
+        classified = _classify_routes()
+        evaluation_routes = {
+            path: cls for path, cls in classified.items() if path[1].startswith("/api/v1/evaluations/")
+        }
+        assert evaluation_routes == {
+            ("GET", "/api/v1/evaluations/threads/{thread_id}"): "admin_only",
+            ("GET", "/api/v1/evaluations/clusters/{cluster}/difficulty-recommendation"): "admin_only",
+            ("POST", "/api/v1/evaluations/threads/{thread_id}/human-review"): "admin_only",
+            ("GET", "/api/v1/evaluations/threads/{thread_id}/human-review"): "admin_only",
+        }
+
+    def test_every_portfolio_route_is_explicitly_classified(self) -> None:
+        """Unit 26 (MEADOWOPS-DOM-020, PRD 6.10): the reflection route is
+        service_rejected, not admin_only - unlike every other route in this
+        unit, PRD 6.10's seven-question reflection is written in the
+        Analyst's own voice (same write-access split app.services.chat.
+        send_message already establishes for her chat replies), so
+        require_admin would be too strict here; reject_service_role still
+        keeps the internal-service credential out. The compiled export
+        route is admin_only - it embeds the full draft evaluation,
+        including difficulty_recommendation, which ER-5 says must stay
+        hidden from the Analyst outside the monthly reveal."""
+        classified = _classify_routes()
+        portfolio_routes = {
+            path: cls for path, cls in classified.items() if path[1].startswith("/api/v1/portfolio/")
+        }
+        assert portfolio_routes == {
+            ("POST", "/api/v1/portfolio/threads/{thread_id}/reflection"): "service_rejected",
+            ("GET", "/api/v1/portfolio/threads/{thread_id}"): "admin_only",
+        }
+
+    def test_every_ledger_route_is_explicitly_classified(self) -> None:
+        classified = _classify_routes()
+        ledger_routes = {
+            path: cls for path, cls in classified.items() if path[1].startswith("/api/v1/ledger/")
+        }
+        assert ledger_routes == {
+            ("POST", "/api/v1/ledger/decisions"): "admin_only",
+            ("POST", "/api/v1/ledger/decisions/{decision_id}/request-clarification"): "admin_only",
+            ("POST", "/api/v1/ledger/decisions/{decision_id}/resubmit"): "admin_only",
+            ("POST", "/api/v1/ledger/decisions/{decision_id}/accept"): "admin_only",
+            ("POST", "/api/v1/ledger/decisions/{decision_id}/reject"): "admin_only",
+            ("POST", "/api/v1/ledger/decisions/{decision_id}/implement"): "admin_only",
+            ("POST", "/api/v1/ledger/decisions/{decision_id}/partially-implement"): "admin_only",
+            ("POST", "/api/v1/ledger/decisions/{decision_id}/outcome"): "admin_only",
+            ("GET", "/api/v1/ledger/decisions"): "service_allowed",
+            ("GET", "/api/v1/ledger/decisions/{decision_id}"): "service_allowed",
+            ("GET", "/api/v1/ledger/entities/{entity_type}/{entity_id}/callback-candidates"): "service_allowed",
         }
 
     def test_health_and_login_are_public_not_service_allowed(self) -> None:

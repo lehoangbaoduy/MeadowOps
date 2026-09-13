@@ -119,14 +119,14 @@ and security explicitly, before a step counts as done. "It runs" is not "done."
 
 ## 1. Status Summary
 
-**Current phase:** Phase 3 — Full Simulation Loop — underway. U21a (chat delivery infrastructure) done, backend-only — see §6/DD-30. U21 (chat inbox/composer, full-stack) done — see §6/DD-31. U22 (Claude scenario generation + validation pipeline) done, backend-only — see §6/DD-32. Phase 2 committed to git (`277b817`); Phase 3 not yet committed (per-phase cadence, phase not yet complete — U23-U30 remain)
-**Last updated:** 2026-09-04 (Units 1-12 + 12a/12b/12c done — Phase 1 genuinely complete, 11/11 checklist items closed; committed to git. The same audit found 4 more checklist items with no covering unit in Phases 2-3, recorded as a standing correction to apply when those units are scoped — see B7/§4/DD-17/DD-18. Per the user's standing instruction, paused to discuss and PRD-amend the Builder↔Analyst persona-chat feature before starting Phase 2 — see B8/DD-19; U21/U23 descriptions corrected, new placeholder unit U21a added for Phase 3 — committed to git. Phase 2 now underway: U13-U17 done. U16 (dashboard API + drill-down, full-stack) closed B9 by wiring the KPI/exception engines into the scheduler tick, added a net-new Supplier view (S1-FR-5 names it, Appendix D has no page mapping for it), and was Playwright-verified live against 20 real scheduler ticks of seeded data — see DD-20. U16's own security review (1 MEDIUM, 2 LOW) is now fully remediated — unbounded result sets fixed with limit/offset params and query-pushed filters, auth-test coverage expanded to all 13 routes. U17 (Reporting-layer lag + one seeded SR-4 conflict) is the first unit *not* auto-classified critical by the DD-5 keyword false positive, and scoped narrower than its own title — SR-2 + SR-4 only, with SR-1/SR-3 explicitly deferred to Phase 3's own edge-case-catalog item — see DD-21. 445 backend tests passing, orbynadmin `npm run build`/`npm run lint` clean. `templates/` renamed to `frontend/` repo-wide (all path references updated; PRD's own conceptual mentions of "templates" left untouched). Paused again before U18 over a real scope question: the user's answer to a scoping question expanded into admin-panel role-gating (Admin edit-only, Analyst view-only) plus a real email+password login — PRD-amended in place (5.1, 8.4, 346, new S1-FR-16) and inserted as new unit **U17a**, since U18's Builder-only controls depend on `require_admin` existing — see DD-22. **U17a now done** — role-based login shipped full-stack (backend + orbynadmin), `require_builder` fully removed, `require_authenticated`/`require_admin` split across every existing protected route, 57 new tests (445→502), live-verified end-to-end against real dev servers, security-reviewed twice (pre- and post-implementation, both APPROVE) — see DD-23. U18 is now unblocked and ready to be scoped for real (Clients confirmed synonymous with Customer, no new entity; Addresses still undefined and unaddressed). **U18 now done (backend-only)** — scenario builder controls (`engine.scenario`, state machine, approve-time validation, admin-only API) shipped, 561 backend tests passing (502→561), code-reviewer + security-reviewer both APPROVE-after-fixes; frontend deferred to U20 by explicit user decision, since Subsystem 2 has no backend/auth wiring at all yet — see DD-24/DD-26. U21/U21a's persona-chat interface design captured as forward notes, not built — see DD-25. **U19 now done, full-stack** — SQL Query Playground (sandbox refresh via staging-schema atomic-rename swap + explicit table allowlist, app-enforced out-of-band query-cancellation timeout, write-statement confirm dialog, S1-FR-14 audit log, full orbynadmin UI) shipped, 658 backend tests passing (561→658), live-verified end-to-end in a real browser (which also surfaced and fixed a real `search_path` UX bug no automated test caught, migration 0017). code-reviewer + security-reviewer both dispatched post-implementation: one HIGH finding (a PL/pgSQL exception handler supposedly defeating the cancel timeout) was investigated empirically against the real dev Postgres instance and found not exploitable as described — corrected the code's own documentation and its regression test rather than building a fix for a non-existent bug, per this session's standing instruction to adapt to empirical evidence over blindly implementing reviewer specs; the other HIGH (multi-statement submissions unprotected against a mid-flight sandbox refresh) was real and fixed via a shared/exclusive Postgres advisory lock — see DD-27. **U20 now done, boundary/backend only** — the Subsystem1↔Subsystem2 API boundary (DD-2): a new internal-service auth credential (`Settings.internal_service_token`), an `httpx.AsyncClient`/`ASGITransport` built once against the running app instance, an AST-based import-boundary checker, a route-inventory allowlist test, and genuine ASGITransport round-trip integration tests. Scope was narrowed at the user's explicit direction — asked first, since an earlier note had conflictingly bundled U18's scenario-builder UI into this unit — to boundary/backend only, matching Phase 2's actual exit criterion; the UI becomes its own not-yet-scoped follow-on unit. A pre-implementation security review (required by the `security-change` workflow) found the original auth design's "read-only for every route" claim was false against Query Playground's own existing routes (they do real work before ever checking the credential's identity) and required a structural fix (a new `reject_service_role` dependency) before any code shipped; the post-implementation review found one more real gap (the route-allowlist test didn't pin the "public, no-auth-at-all" bucket) plus a missing regression test, both fixed. 689 backend tests passing (658→689). Phase 2's own checklist (§5) was fully closed except item 4 (scenario-builder controls UI), left unchecked pending that follow-on unit. **U20a now done, full-stack** — the scenario-builder-UI follow-on unit, scoped via 9 clarifying `AskUserQuestion`s (all answered "Recommended") after the user asked for exhaustive scoping questions before starting: shadcn-dashboard's own independent login/session (mirroring orbynadmin's Unit 8/17a pattern), a real browsable/filterable picker over open exceptions, a formatted narrative/provenance-split preview, and all 7 of U18's scenario lifecycle operations wired in — zero new backend routes. A pre-implementation security review found the original design's admin-only login gate was a bypassable non-boundary (checking role client-side after the cookie was already set) and a cookie-name collision risk with orbynadmin (browsers scope cookies by host+path, not port); both fixed before any code was written. Live-verified end-to-end in a real browser: admin login, Analyst-login rejection with no session ever established, the full scenario lifecycle (create from a real seeded open exception → edit ground truth → approve → activate, plus a separate regenerate → cancel run), and logout. Post-implementation code review found one real HIGH — a Server Component can't clear a cookie during render, so the admin-gate's redirect on a stale/expired/forged session left the cookie attached and the presence-only middleware bounced `/sign-in` straight back to `/dashboard`, an unrecoverable loop guaranteed to eventually hit every session since the cookie outlives the 8-hour backend JWT — fixed via a new `/api/session-expired` route that clears the cookie and redirects in one response, live-verified by forging an invalid cookie and confirming a clean single redirect with no loop. Also fixed along the way: `components/ui/sonner.tsx` was missing `"use client"` (crashed any page rendering the toast provider) and `nav-user.tsx`'s "Log out" was a dead link that never actually cleared the session. Post-implementation security review: APPROVE, independently confirmed all 5 pre-implementation fixes. No backend changes; backend's 689 tests unaffected. **Final Phase 2 review (2026-09-03), before committing:** re-ran the full backend suite (689/689), both frontends' production builds (`next build`, clean), and confirmed zero test-data leakage. Also caught and fixed a real PRD inconsistency in the process — see B11: §10's Phase 2 checklist item 8 had accidentally picked up a persona-composer/AI-sufficiency-check clause from the messaging-feature PRD amendment (B8/DD-19), contradicting that amendment's own decision that Phase 2 stays AI-free; corrected back to the original wording, confirmed via `AskUserQuestion`. Phase 2 committed to git as one whole — see §1 (`277b817`). **Phase 3 now underway.** Per B8's own deferral, U21a (chat delivery infrastructure) was formally scoped via harness-os at the start of this phase — `security-change` workflow (pre-implementation security review, implementation, finalize, decisions 1576-1579, all approved). **U21a now done, backend-only** — new `chat` Postgres schema (migration 0018), WebSocket ticket-auth (short-lived single-use ticket minted over REST, since the browser WS API can't set an `Authorization` header and the session lives in an httpOnly cookie), a `BEFORE UPDATE/DELETE/TRUNCATE` immutability trigger (empirically verified live against the schema-owning role itself, since REVOKE is a no-op against a table owner), sandbox-role exclusion mirroring migration 0001's pattern, and full REST+WS chat delivery (threads, messages, real-time broadcast). Both code-reviewer and security-reviewer dispatched post-implementation found real issues, all fixed — see DD-30 for the full list (async-route event-loop-blocking bug, WS task-cancellation-on-outer-cancellation gap, a fragile test-teardown transaction that had caused a genuine flake in an unrelated test file). 745/745 backend tests passing (689→745), 0 skipped. No UI yet — U21 (the Analyst inbox / Builder composer) is next. **U21 now done, full-stack** — scoped via 3 `AskUserQuestion` decisions (chat-UI-without-AI-composer now, a new `chat_thread_read_state` table for unread badges, file attachments deferred). Backend gained the read-state/unread-badge addition (migration 0019, `mark_thread_read`/`list_threads_with_unread`, 13 new tests, 758/758 passing); both frontends shipped their chat UI (orbynadmin's new Chat page, shadcn-dashboard's Mail page rewritten from its fake-email template) with the browser connecting directly to the backend WebSocket via a server-minted ticket, since neither app's own API proxy can hold a live upstream connection open. code-reviewer and security-reviewer both dispatched post-implementation: code-reviewer found the backend addition clean and one frontend HIGH (an unhandled WS-reconnect failure path that could permanently kill live delivery) plus 2 MEDIUM (silent draft loss on a failed send; a stale refetch race against the optimistic mark-read badge), all fixed; security-reviewer found 0 CRITICAL/HIGH and one MEDIUM (no rate limiting on the chat surface, amplified by this unit's own auto-mark-read — fixed with a client-side debounce) plus 4 LOW, resolved or confirmed non-issues — see DD-31. Live-verified end-to-end in real browsers after every fix, including cross-tab real-time delivery with zero console errors. **U22 now done, backend-only** — Claude scenario-narrative generation wired into `regenerate_scenario` (PRD 6.4/9.2), scoped via one `AskUserQuestion` (extend regenerate with a full overwrite of mechanical facts + AI narrative on every call; Claude returns schema-validated structured JSON, not prose). New `app.domain.scenario_generation` module reuses the existing (previously-idle) `GENERATION_TEMPLATE` and implements PRD 9.2's exactly-one-automatic-retry; `regenerate_scenario` now requires a `ClaudeClient` and a new DB-fact referenced-id check both to succeed before `ground_truth` is ever reassigned, deliberately superseding U18's own merge-not-replace code-review fix (the narrative it protected didn't exist to merge against until this unit). API layer 503s cleanly with no Claude client configured (unchanged — still Phase 4/B3). code-reviewer (APPROVE, 1 MEDIUM + 1 LOW, both addressed) and security-reviewer (0 CRITICAL/HIGH, 2 MEDIUM + 2 LOW + 1 informational) both dispatched post-implementation; the 2 LOW findings (a `RecursionError` that could escape JSON-schema-error handling on deeply-nested input, and an unbounded narrative-list length) were fixed with new regression tests, and both MEDIUM findings (no timeout on the `ClaudeClient` Protocol combined with the DB session being held open across the call; the referenced-id check only validates a self-reported manifest for global existence, not scenario-scoped relevance) were documented in-code as known limitations deferred to Phase 4's real adapter and Unit 30's edge-case-catalog sweep respectively, matching this project's own established deferral precedent rather than building speculative fixes now — see DD-32. 813/813 backend tests passing (758→813).
+**Current phase:** Phase 3 — Full Simulation Loop — underway. U21a (chat delivery infrastructure) done, backend-only — see §6/DD-30. U21 (chat inbox/composer, full-stack) done — see §6/DD-31. U22 (Claude scenario generation + validation pipeline) done, backend-only — see §6/DD-32. U23 (persona-roleplay pushback suggestion + AI sufficiency check) done, backend-only — see §6/DD-33. U24 (Decision & Event Ledger full lifecycle wiring + callback lookup) done, full-stack — see §6/DD-34. U25 (AI evaluation framework + adaptive difficulty engine) done, backend-only — see §6/DD-35. U26 (human review workflow mechanism + portfolio export) done, backend-only — see §6/DD-36. U27 (warehouse transfers + carrier variability) done, backend-only — see §6/DD-37. U28 (admin SQL query history view) done, full-stack — see §6/DD-38. U29 (QA test-analyst harness — all 6 scenario types incl. callback) done, test-only — see §6/DD-39. U30 (edge case catalog implementation sweep, 29/32 rows closed at the time) done, backend-only — see §8/DD-40. U30a (chat notifications + deadline tracking, closes catalog rows 15/30) done, full-stack — see §6/DD-41. U30b (chat composer draft persistence, closes catalog row 31) done, full-stack — see §6/DD-42. U30c (chat file attachments, closes B12 entirely) done, full-stack — see §6/DD-43. Catalog row 32 (backup restore) closed 2026-09-13 via B1 (Railway+Neon deployment target) and B2 (live backup/restore drill) — edge-case catalog now 32/32, **Phase 3 exit criterion satisfied**. Phase 2 committed to git (`277b817`); Phase 3 not yet committed (per-phase cadence — ready to commit now that the phase is complete, pending the user's go-ahead)
+**Last updated:** 2026-09-04 (Units 1-12 + 12a/12b/12c done — Phase 1 genuinely complete, 11/11 checklist items closed; committed to git. The same audit found 4 more checklist items with no covering unit in Phases 2-3, recorded as a standing correction to apply when those units are scoped — see B7/§4/DD-17/DD-18. Per the user's standing instruction, paused to discuss and PRD-amend the Builder↔Analyst persona-chat feature before starting Phase 2 — see B8/DD-19; U21/U23 descriptions corrected, new placeholder unit U21a added for Phase 3 — committed to git. Phase 2 now underway: U13-U17 done. U16 (dashboard API + drill-down, full-stack) closed B9 by wiring the KPI/exception engines into the scheduler tick, added a net-new Supplier view (S1-FR-5 names it, Appendix D has no page mapping for it), and was Playwright-verified live against 20 real scheduler ticks of seeded data — see DD-20. U16's own security review (1 MEDIUM, 2 LOW) is now fully remediated — unbounded result sets fixed with limit/offset params and query-pushed filters, auth-test coverage expanded to all 13 routes. U17 (Reporting-layer lag + one seeded SR-4 conflict) is the first unit *not* auto-classified critical by the DD-5 keyword false positive, and scoped narrower than its own title — SR-2 + SR-4 only, with SR-1/SR-3 explicitly deferred to Phase 3's own edge-case-catalog item — see DD-21. 445 backend tests passing, orbynadmin `npm run build`/`npm run lint` clean. `templates/` renamed to `frontend/` repo-wide (all path references updated; PRD's own conceptual mentions of "templates" left untouched). Paused again before U18 over a real scope question: the user's answer to a scoping question expanded into admin-panel role-gating (Admin edit-only, Analyst view-only) plus a real email+password login — PRD-amended in place (5.1, 8.4, 346, new S1-FR-16) and inserted as new unit **U17a**, since U18's Builder-only controls depend on `require_admin` existing — see DD-22. **U17a now done** — role-based login shipped full-stack (backend + orbynadmin), `require_builder` fully removed, `require_authenticated`/`require_admin` split across every existing protected route, 57 new tests (445→502), live-verified end-to-end against real dev servers, security-reviewed twice (pre- and post-implementation, both APPROVE) — see DD-23. U18 is now unblocked and ready to be scoped for real (Clients confirmed synonymous with Customer, no new entity; Addresses still undefined and unaddressed). **U18 now done (backend-only)** — scenario builder controls (`engine.scenario`, state machine, approve-time validation, admin-only API) shipped, 561 backend tests passing (502→561), code-reviewer + security-reviewer both APPROVE-after-fixes; frontend deferred to U20 by explicit user decision, since Subsystem 2 has no backend/auth wiring at all yet — see DD-24/DD-26. U21/U21a's persona-chat interface design captured as forward notes, not built — see DD-25. **U19 now done, full-stack** — SQL Query Playground (sandbox refresh via staging-schema atomic-rename swap + explicit table allowlist, app-enforced out-of-band query-cancellation timeout, write-statement confirm dialog, S1-FR-14 audit log, full orbynadmin UI) shipped, 658 backend tests passing (561→658), live-verified end-to-end in a real browser (which also surfaced and fixed a real `search_path` UX bug no automated test caught, migration 0017). code-reviewer + security-reviewer both dispatched post-implementation: one HIGH finding (a PL/pgSQL exception handler supposedly defeating the cancel timeout) was investigated empirically against the real dev Postgres instance and found not exploitable as described — corrected the code's own documentation and its regression test rather than building a fix for a non-existent bug, per this session's standing instruction to adapt to empirical evidence over blindly implementing reviewer specs; the other HIGH (multi-statement submissions unprotected against a mid-flight sandbox refresh) was real and fixed via a shared/exclusive Postgres advisory lock — see DD-27. **U20 now done, boundary/backend only** — the Subsystem1↔Subsystem2 API boundary (DD-2): a new internal-service auth credential (`Settings.internal_service_token`), an `httpx.AsyncClient`/`ASGITransport` built once against the running app instance, an AST-based import-boundary checker, a route-inventory allowlist test, and genuine ASGITransport round-trip integration tests. Scope was narrowed at the user's explicit direction — asked first, since an earlier note had conflictingly bundled U18's scenario-builder UI into this unit — to boundary/backend only, matching Phase 2's actual exit criterion; the UI becomes its own not-yet-scoped follow-on unit. A pre-implementation security review (required by the `security-change` workflow) found the original auth design's "read-only for every route" claim was false against Query Playground's own existing routes (they do real work before ever checking the credential's identity) and required a structural fix (a new `reject_service_role` dependency) before any code shipped; the post-implementation review found one more real gap (the route-allowlist test didn't pin the "public, no-auth-at-all" bucket) plus a missing regression test, both fixed. 689 backend tests passing (658→689). Phase 2's own checklist (§5) was fully closed except item 4 (scenario-builder controls UI), left unchecked pending that follow-on unit. **U20a now done, full-stack** — the scenario-builder-UI follow-on unit, scoped via 9 clarifying `AskUserQuestion`s (all answered "Recommended") after the user asked for exhaustive scoping questions before starting: shadcn-dashboard's own independent login/session (mirroring orbynadmin's Unit 8/17a pattern), a real browsable/filterable picker over open exceptions, a formatted narrative/provenance-split preview, and all 7 of U18's scenario lifecycle operations wired in — zero new backend routes. A pre-implementation security review found the original design's admin-only login gate was a bypassable non-boundary (checking role client-side after the cookie was already set) and a cookie-name collision risk with orbynadmin (browsers scope cookies by host+path, not port); both fixed before any code was written. Live-verified end-to-end in a real browser: admin login, Analyst-login rejection with no session ever established, the full scenario lifecycle (create from a real seeded open exception → edit ground truth → approve → activate, plus a separate regenerate → cancel run), and logout. Post-implementation code review found one real HIGH — a Server Component can't clear a cookie during render, so the admin-gate's redirect on a stale/expired/forged session left the cookie attached and the presence-only middleware bounced `/sign-in` straight back to `/dashboard`, an unrecoverable loop guaranteed to eventually hit every session since the cookie outlives the 8-hour backend JWT — fixed via a new `/api/session-expired` route that clears the cookie and redirects in one response, live-verified by forging an invalid cookie and confirming a clean single redirect with no loop. Also fixed along the way: `components/ui/sonner.tsx` was missing `"use client"` (crashed any page rendering the toast provider) and `nav-user.tsx`'s "Log out" was a dead link that never actually cleared the session. Post-implementation security review: APPROVE, independently confirmed all 5 pre-implementation fixes. No backend changes; backend's 689 tests unaffected. **Final Phase 2 review (2026-09-03), before committing:** re-ran the full backend suite (689/689), both frontends' production builds (`next build`, clean), and confirmed zero test-data leakage. Also caught and fixed a real PRD inconsistency in the process — see B11: §10's Phase 2 checklist item 8 had accidentally picked up a persona-composer/AI-sufficiency-check clause from the messaging-feature PRD amendment (B8/DD-19), contradicting that amendment's own decision that Phase 2 stays AI-free; corrected back to the original wording, confirmed via `AskUserQuestion`. Phase 2 committed to git as one whole — see §1 (`277b817`). **Phase 3 now underway.** Per B8's own deferral, U21a (chat delivery infrastructure) was formally scoped via harness-os at the start of this phase — `security-change` workflow (pre-implementation security review, implementation, finalize, decisions 1576-1579, all approved). **U21a now done, backend-only** — new `chat` Postgres schema (migration 0018), WebSocket ticket-auth (short-lived single-use ticket minted over REST, since the browser WS API can't set an `Authorization` header and the session lives in an httpOnly cookie), a `BEFORE UPDATE/DELETE/TRUNCATE` immutability trigger (empirically verified live against the schema-owning role itself, since REVOKE is a no-op against a table owner), sandbox-role exclusion mirroring migration 0001's pattern, and full REST+WS chat delivery (threads, messages, real-time broadcast). Both code-reviewer and security-reviewer dispatched post-implementation found real issues, all fixed — see DD-30 for the full list (async-route event-loop-blocking bug, WS task-cancellation-on-outer-cancellation gap, a fragile test-teardown transaction that had caused a genuine flake in an unrelated test file). 745/745 backend tests passing (689→745), 0 skipped. No UI yet — U21 (the Analyst inbox / Builder composer) is next. **U21 now done, full-stack** — scoped via 3 `AskUserQuestion` decisions (chat-UI-without-AI-composer now, a new `chat_thread_read_state` table for unread badges, file attachments deferred). Backend gained the read-state/unread-badge addition (migration 0019, `mark_thread_read`/`list_threads_with_unread`, 13 new tests, 758/758 passing); both frontends shipped their chat UI (orbynadmin's new Chat page, shadcn-dashboard's Mail page rewritten from its fake-email template) with the browser connecting directly to the backend WebSocket via a server-minted ticket, since neither app's own API proxy can hold a live upstream connection open. code-reviewer and security-reviewer both dispatched post-implementation: code-reviewer found the backend addition clean and one frontend HIGH (an unhandled WS-reconnect failure path that could permanently kill live delivery) plus 2 MEDIUM (silent draft loss on a failed send; a stale refetch race against the optimistic mark-read badge), all fixed; security-reviewer found 0 CRITICAL/HIGH and one MEDIUM (no rate limiting on the chat surface, amplified by this unit's own auto-mark-read — fixed with a client-side debounce) plus 4 LOW, resolved or confirmed non-issues — see DD-31. Live-verified end-to-end in real browsers after every fix, including cross-tab real-time delivery with zero console errors. **U22 now done, backend-only** — Claude scenario-narrative generation wired into `regenerate_scenario` (PRD 6.4/9.2), scoped via one `AskUserQuestion` (extend regenerate with a full overwrite of mechanical facts + AI narrative on every call; Claude returns schema-validated structured JSON, not prose). New `app.domain.scenario_generation` module reuses the existing (previously-idle) `GENERATION_TEMPLATE` and implements PRD 9.2's exactly-one-automatic-retry; `regenerate_scenario` now requires a `ClaudeClient` and a new DB-fact referenced-id check both to succeed before `ground_truth` is ever reassigned, deliberately superseding U18's own merge-not-replace code-review fix (the narrative it protected didn't exist to merge against until this unit). API layer 503s cleanly with no Claude client configured (unchanged — still Phase 4/B3). code-reviewer (APPROVE, 1 MEDIUM + 1 LOW, both addressed) and security-reviewer (0 CRITICAL/HIGH, 2 MEDIUM + 2 LOW + 1 informational) both dispatched post-implementation; the 2 LOW findings (a `RecursionError` that could escape JSON-schema-error handling on deeply-nested input, and an unbounded narrative-list length) were fixed with new regression tests, and both MEDIUM findings (no timeout on the `ClaudeClient` Protocol combined with the DB session being held open across the call; the referenced-id check only validates a self-reported manifest for global existence, not scenario-scoped relevance) were documented in-code as known limitations deferred to Phase 4's real adapter and Unit 30's edge-case-catalog sweep respectively, matching this project's own established deferral precedent rather than building speculative fixes now — see DD-32. 813/813 backend tests passing (758→813). **U23 now done, backend-only** — scoped via one consolidated `AskUserQuestion` (four sub-decisions, all "Recommended": a fixed attitude preset list; a redacted known_cause+evidence projection of the scenario's ground_truth for persona "known information," not a new per-persona schema; pushback-only AI suggestion, the opening message stays Builder-typed; structured JSON sufficiency-check output, ephemeral/no DB write). New `app.domain.persona_chat` module (PRD 6.5 persona priorities/style transcribed as a static mapping, attitude presets, an allow-list redaction of ground_truth for the roleplay prompt, PRD 9.2's one-retry orchestration implemented independently of U22's near-identical loop rather than prematurely extracted into a shared helper) and `app.services.persona_chat` module (both public functions read-only — no DB write; both require a prior Analyst message and a non-cancelled scenario). Two new Builder-only (`require_admin`) routes added to `app.api.chat` — suggest-pushback and sufficiency-check — a stricter bucket than every other chat route's `reject_service_role`, since the ground truth must never reach the Analyst; a small `get_claude_client` FastAPI dependency was extracted out of `admin_scenarios.py` into a shared `app.core.claude` module once a second real caller needed it. code-reviewer (APPROVE, 1 MEDIUM — a real bug where the Analyst's latest message was rendered twice in the roleplay prompt, fixed — + 2 LOW, both fixed) and security-reviewer (0 CRITICAL/HIGH, 3 LOW — a prompt-hardening gap in the new sufficiency-check template fixed, two documented as known limitations) both dispatched post-implementation; the core access-control property (the Analyst role can never reach either route or the ground truth) was independently verified end-to-end and confirmed to hold — see DD-33. 890/890 backend tests passing (813→890). No frontend changes — the Builder-facing composer UI for these two actions remains a follow-on concern.
 
 | Phase | Status |
 |---|---|
 | Phase 1 — Foundation | **Done** (U1-U12 + U12a/U12b/U12c, 11/11 checklist items — see §4). U12b's decision (1546) is `pending_approval`, a critical-risk human-ack formality per B5, not an implementation gap |
 | Phase 2 — Operational System | **Done — U13-U20 + U20a, checklist (§5) fully closed 10/10** (see §5/DD-29). Decisions 1550/1552/1555/1557 (see §2 B5 table) are `pending_approval`, same B5 human-ack formality. U17's own decision (1559) is `pending_approval` too, but is medium-risk, not critical — it isn't in the B5 table since B5 only tracks critical-risk human-ack. U20's decisions (1569/1570) and U20a's decisions (1573/1574/1575) are also `pending_approval` (same formality) |
-| Phase 3 — Full Simulation Loop | **Underway.** U21a (chat delivery infrastructure) done, backend-only — see §6/DD-30. U21 (chat inbox/composer, full-stack) done — see §6/DD-31. U22 (Claude scenario generation + validation pipeline) done, backend-only — see §6/DD-32. Decisions 1576/1577/1578/1579/1580/1581 (see below) all `approved`. Remaining: U23-U30 |
+| Phase 3 — Full Simulation Loop | **Complete — all 13 units done, exit criterion satisfied 2026-09-13.** U21a (chat delivery infrastructure) done, backend-only — see §6/DD-30. U21 (chat inbox/composer, full-stack) done — see §6/DD-31. U22 (Claude scenario generation + validation pipeline) done, backend-only — see §6/DD-32. U23 (persona-roleplay pushback suggestion + AI sufficiency check) done, backend-only — see §6/DD-33. U24 (Decision & Event Ledger full lifecycle wiring + callback lookup, full-stack) done — see §6/DD-34. U25 (AI evaluation framework + adaptive difficulty engine, backend-only) done — see §6/DD-35. U26 (human review workflow mechanism + portfolio export, backend-only) done — see §6/DD-36. U27 (warehouse transfers + carrier variability, backend-only) done — see §6/DD-37. U28 (admin SQL query history view, full-stack) done — see §6/DD-38. U29 (QA test-analyst harness, test-only) done — see §6/DD-39. U30 (edge case catalog implementation sweep, backend-only) done — see §8/DD-40. U30a (chat notifications + deadline tracking, full-stack) done — see §6/DD-41. U30b (chat composer draft persistence, full-stack) done — see §6/DD-42. U30c (chat file attachments, full-stack) done — see §6/DD-43. Decisions 1576/1577/1578/1579/1580/1581/1582/1583/1584/1585/1586/1587/1588/1589/1590/1591/1592/1593/1594/1595/1596/1597/1598/1599/1602/1603/1604/1606/1607/1614/1615/1616/1617/1618/1619/1621/1622/1623/1624/1625/1626 (see below) all `approved` (1614/1615 supersede mis-scoped 1612/1613, same project_path correction noted in DD-40). B12 fully closed — all three follow-on units done. B1 (deployment target) and B2 (backup/restore drill) closed 2026-09-13, closing catalog row 32 — the edge-case catalog is now 32/32 and **every §6 checklist line is `[x]`. Phase 3's exit criterion is satisfied.** |
 | Phase 4 — Hardening & Delivery | Not started |
 
 ---
@@ -135,17 +135,19 @@ and security explicitly, before a step counts as done. "It runs" is not "done."
 
 | ID | Item | Why it's blocked | Status |
 |---|---|---|---|
-| B1 | Deployment target (PRD 8.2) — small always-on host (Railway/Render/Fly.io) + managed Postgres (Supabase/Neon/Railway PG) | Needs a user account/choice + credentials; cannot self-provision | Open |
-| B2 | Backup/restore drill (PRD 8.6, 9.3) | Depends on B1's managed Postgres instance existing | Open |
+| B1 | Deployment target (PRD 8.2) — small always-on host (Railway/Render/Fly.io) + managed Postgres (Supabase/Neon/Railway PG) | Needs a user account/choice + credentials; cannot self-provision | **Closed 2026-09-13.** User created a Railway Hobby account + Neon free-tier Postgres project and supplied both a Neon DSN and a Railway project token (2026-09-13). Deployed: `backend/Dockerfile` + `backend/railway.toml` written (none existed before); Alembic migrated to head (0026) against Neon; all three one-off bootstrap seeds run (`seed_initial_users`, `seed_master_data`, `seed_initial_world_state_and_clock`); app deployed via `railway up` and live at `https://meadowops-production.up.railway.app` (`/health` → 200). **Found and fixed a genuine portability bug** while migrating: `alembic/versions/0001_create_schemas_and_sandbox_role.py` and `app/services/sandbox_refresh.py` hardcoded `ALTER DEFAULT PRIVILEGES FOR ROLE meadowops`, assuming the DB owner role is always literally named `meadowops` (true only for local Docker Compose) — migration failed on Neon with `role "meadowops" does not exist`. Fixed by switching all three occurrences to `FOR ROLE CURRENT_USER` (verified valid Postgres syntax against Neon directly before editing; all 38 local sandbox tests still pass against Docker Compose afterward, confirming the change is behavior-preserving, not Neon-specific). Also found `settings.scheduler_enabled` defaults to `False` (opt-in) and wasn't set — the scheduler silently never ticked on the first deploy; fixed by setting `MEADOWOPS_SCHEDULER_ENABLED=true`. **Verified the actual requirement, not just that the process booted:** watched `live.simulation_clock.simulation_date` advance from 2026-01-01 to 2026-01-02 with a real row appearing in `live.scheduled_tick`, confirming the always-on host is genuinely keeping the scheduler alive against the live Neon instance, not just serving `/health`. **One residual, non-blocking item**: the Railway service came pre-connected (by Railway itself, before any of this session's actions) to the user's GitHub repo at the monorepo root with no Dockerfile there — every config change re-triggers a broken auto-build from that connection (3 failed auto-builds observed; the live deployment itself is unaffected since it was shipped via `railway up` file upload, a separate path). Disconnecting requires the user's own dashboard access — the project-scoped Railway token this session used returned "Bad Access" on `service source disconnect`, a genuine token-scope limit, not something to work around. **User must disconnect it by hand**: Railway dashboard → MeadowOps service → Settings → Source → Disconnect. **Post-closure operational finding (2026-09-13, caught by advisor review, not the original deployment work):** leaving `MEADOWOPS_SCHEDULER_ENABLED=true` at its default 60s tick interval keeps Neon's compute permanently awake, defeating the scale-to-zero behavior that makes its free tier viable — at an always-on minimum compute size this projects to roughly 180 CU-hours/month against Neon's 100 CU-hour free allowance, i.e. it would have started incurring charges or throttling within weeks. Since PRD 8.2's always-on requirement was already verified above (the clock-advance check) and Phase 4's U32 hasn't formally claimed this deployment yet, the user chose (AskUserQuestion, 2026-09-13) to disable the scheduler now (`MEADOWOPS_SCHEDULER_ENABLED=false`, applied via `railway redeploy` — restarts the existing image, does not touch the broken git-connected build source above) rather than run it continuously; re-enable when U32 formally owns the deployment. Separately noted but not acted on: `attachment_storage_dir` (U30c's chat attachments) resolves to a path on the container's local filesystem, which Railway does not persist across redeploys — any uploaded attachment is lost on the next deploy. This is a real gap in this ad hoc deployment, out of scope for B1 to fix (it belongs to whichever unit formally productionizes storage), and is called out again in §9's deployment-parity note. |
+| B2 | Backup/restore drill (PRD 8.6, 9.3) | Depends on B1's managed Postgres instance existing | **Closed 2026-09-13.** Drill performed against the live Neon instance with the user's explicit go-ahead (AskUserQuestion, given it deliberately destroys live data as part of the drill) — full detail in §8 catalog row 32. `pg_dump` backup taken and verified restorable, all three operational schemas (`live`/`engine`/`reporting`) genuinely dropped, restored via `pg_restore`, zero data loss confirmed against a pre-drill row-count baseline, sandbox security boundary confirmed intact post-restore. Closes catalog row 32, the last open item in §8's edge-case catalog (32/32 now closed). |
 | B3 | Claude API key | Not present in environment (verified). Scenario engine is built against a **mocked Claude client** per PRD 9.1; live smoke tests deferred to Phase 4 and flagged here | Open — build proceeds unblocked via mock |
 | B4 | No git remote configured | Local commits only for now | Open — not urgent |
 | B5 | harness-os units classified risk=critical require `human-ack` (`harness approve`), which this non-interactive session cannot run | Tracked per-unit as they arise | See table below |
 | B6 | harness-os's `tests`-stage auto-capture never fires for Python units — `~/.local/bin/pytest` resolves to an unrelated project's (`ApexTrade`) venv, missing MeadowOps' deps | User decision 2026-09-01 (harness-os decision id 1516): leave shared tooling alone. See §0.1 "Known limitation." | Accepted, won't fix |
-| B7 | Unit decomposition (U1-U33) was never validated item-by-item against each phase's own checklist (§4/§5/§6/§7) — it has gaps in 3 of 4 phases. Discriminator: every unit's spec-id prefix is backend-typed (INFRA/DATA/DOM/DOMAIN/API/PROD/QA/HARDEN) except `MEADOWOPS-UI-001` (U21) — the only UI-typed unit in the whole 33-unit plan — and U8, made full-stack by an explicit advisor-consulted exception. Any checklist item that requires an actually-rendered, wired page has no unit behind it unless U21 or U8 covers it. **Phase 1** (3 of 11 items): Appendix D pages wired to the real API; simulation-clock skeleton (`advance_simulation()` deferred at U4, initial `world_state`/`simulation_clock` seed row deferred at U5, neither picked up since); control-tower dashboard skeleton. **Phase 2** (3 of 10 items): item 4 dashboard drill-down (U16 is `API-003`, "endpoints" only); item 8 scenario builder controls (U18 is `DOMAIN-009`, Builder-facing UI with no UI-typed unit); item 9 Query Playground full functionality — editor/results/confirm dialog (U19 is `DOMAIN-010`, and this is Phase 2's own exit criterion). **Phase 3** (1 of 10 items): item 6 admin SQL query history view (U28 is `API-005`, same "titled a view, spec'd as endpoints" pattern as U16). Phase 4 checked clean — no rendered-page-dependent item lacks a covering unit. See DD-17 for the full per-item pass and reasoning. | **Decided 2026-09-02.** (1) New units U12a/U12b/U12c scope the 3 actionable Phase 1 items — see §4. (2) Confirmed: no new sibling units for the Phase 2/3 items — **U16** (dashboard drill-down, not U14 — U14 is the KPI-calculation dependency, U16 is the unit that owns the page) will be built full-stack, and likewise U18 (scenario builder controls), U19 (Query Playground), U28 (admin query-history view), when each is scoped in its own phase. Applies going forward: the same spec-id-prefix check runs before any future unit is scoped. | Phase 1 portion **done** (U12a/b/c — see §4, 11/11 checklist items closed); Phase 2/3 portion recorded as a standing correction, applied when those units are reached |
+| B7 | Unit decomposition (U1-U33) was never validated item-by-item against each phase's own checklist (§4/§5/§6/§7) — it has gaps in 3 of 4 phases. Discriminator: every unit's spec-id prefix is backend-typed (INFRA/DATA/DOM/DOMAIN/API/PROD/QA/HARDEN) except `MEADOWOPS-UI-001` (U21) — the only UI-typed unit in the whole 33-unit plan — and U8, made full-stack by an explicit advisor-consulted exception. Any checklist item that requires an actually-rendered, wired page has no unit behind it unless U21 or U8 covers it. **Phase 1** (3 of 11 items): Appendix D pages wired to the real API; simulation-clock skeleton (`advance_simulation()` deferred at U4, initial `world_state`/`simulation_clock` seed row deferred at U5, neither picked up since); control-tower dashboard skeleton. **Phase 2** (3 of 10 items): item 4 dashboard drill-down (U16 is `API-003`, "endpoints" only); item 8 scenario builder controls (U18 is `DOMAIN-009`, Builder-facing UI with no UI-typed unit); item 9 Query Playground full functionality — editor/results/confirm dialog (U19 is `DOMAIN-010`, and this is Phase 2's own exit criterion). **Phase 3** (1 of 10 items): item 6 admin SQL query history view (U28 is `API-005`, same "titled a view, spec'd as endpoints" pattern as U16). Phase 4 checked clean — no rendered-page-dependent item lacks a covering unit. See DD-17 for the full per-item pass and reasoning. | **Decided 2026-09-02.** (1) New units U12a/U12b/U12c scope the 3 actionable Phase 1 items — see §4. (2) Confirmed: no new sibling units for the Phase 2/3 items — **U16** (dashboard drill-down, not U14 — U14 is the KPI-calculation dependency, U16 is the unit that owns the page) will be built full-stack, and likewise U18 (scenario builder controls), U19 (Query Playground), U28 (admin query-history view), when each is scoped in its own phase. Applies going forward: the same spec-id-prefix check runs before any future unit is scoped. | Phase 1 portion **done** (U12a/b/c — see §4, 11/11 checklist items closed); Phase 2 portion **done** (U16/U18/U19 all built full-stack per this correction); Phase 3 portion **done** (U28 built full-stack — see §6/DD-38) |
 | B8 | Per the user's standing instruction to pause after Phase 1 for a PRD discussion before touching Phase 2, the Builder↔Analyst live persona-chat feature (real-time, Messenger-style, one thread per stakeholder persona, Builder-composed via an on-demand AI sufficiency check, Analyst-side file attachments) was discussed and folded into `prd/MeadowOps_PRD_FINAL.md` (§6.1/6.4/6.6/6.13, §7, §8.4, §5.1/5.4, Appendix B/D, §10, §13 — all revised in place, not a bolt-on appendix). This expands scope beyond the original 33-unit plan: U21 needed a description correction (its Analyst-facing half moved from Subsystem 2 to Subsystem 1), U23 gained the AI-sufficiency-check responsibility, and a wholly new unit (U21a, placeholder) is needed for chat delivery infrastructure (data model, websocket layer, the new §7 cross-subsystem exception) that no existing unit covers | **Decided 2026-09-02.** PRD amendment done now (see DD-19). Formal harness-os scoping of U21a deliberately deferred to when Phase 3 begins, not scoped ahead of Phase 2 — same discipline as B7's "when scoped" deferral for U16/U18/U19/U28. U18 (Phase 2, "no AI yet") is explicitly unaffected — the AI-dependent pieces of this feature (composer's AI-suggested message, sufficiency check) can't be usefully built until Phase 3 wires in live AI anyway | **Closed 2026-09-03.** U21a scoped and built at the start of Phase 3 — see §6/DD-30. U21 (the UI half) remains the next unit |
 | B9 | `app.services.kpi_engine.compute_and_snapshot_kpis` (Unit 14) has no caller anywhere in the running system — `app.domain.scheduler._run_tick` (Unit 13) advances the clock and runs `run_scheduled_tick` only; it never calls the KPI engine. So `kpi_snapshot`/`days_of_supply_snapshot` are never populated by normal operation today, only by tests calling the function directly. Found while scoping U15 (the exception engine needs days-of-supply values); advisor-consulted decision was **not** to fix this as a drive-by inside U15 — see U15's own row in §5 for why (querying `sql/kpi/days_of_supply.sql` directly, the same way `kpi_engine._run_days_of_supply` does, is what U15 actually needs, and doesn't require the snapshot table to be populated at all) | **Closed 2026-09-02 at U16** (see DD-20 point 1) — both `compute_and_snapshot_kpis` (this row) and `app.services.exception_engine.evaluate_exceptions` (U15's own identical gap, discovered to be part of the same problem when U16's advisor consult widened the scope) are now called from `_run_tick`, right after `run_scheduled_tick`, inside the same try/except | **Closed** |
 | B10 | Discovered while live-verifying U16's dashboard: no world-state reset/clean-baseline utility exists yet (PRD S1-FR-7 — snapshot/reset/injected-state operations), so live-verifying any scheduler-touching behavior against the shared dev database (not `ZZTEST-`-prefixed, isolated API-test fixtures) leaves the **singleton** `simulation_clock` row advanced and every operational table populated — state several *other* units' tests assert starts empty. See DD-20 point 7 for the full incident (36 tests broke, manually reset, re-verified green) | Not yet decided whether this needs its own unit ahead of S1-FR-7's natural place in the plan, or whether "reset it by hand afterward, as documented in DD-20" stays the standing procedure until S1-FR-7 is actually scoped — no user decision needed yet since nothing is currently blocked by it (this session's own incident was already fully resolved by manual cleanup) | Open — recorded as a standing caution for whoever next live-verifying scheduler-touching behavior; not blocking |
 | B11 | Discovered during U20a's final-review pass, before committing Phase 2: PRD §10's Phase 2 checklist item 8 (`prd/MeadowOps_PRD_FINAL.md` line 512) read "Scenario builder controls working (select/inject/preview/approve), **including the persona composer and AI sufficiency check** (6.4/6.13, added 2026-09-02)" — the added clause directly contradicted B8/DD-19's own written decision ("U18 (Phase 2, 'no AI yet') is explicitly unaffected — the AI-dependent pieces of this feature... can't be usefully built until Phase 3 wires in live AI anyway") and duplicated Phase 3's own checklist item 1, which already separately owns "composer/thread monitor." Root cause: the B8/DD-19 PRD amendment's §6.4 sentence ("Amended 2026-09-02: also includes the live persona composer and the on-demand AI sufficiency check") appears to have been mechanically echoed into the unrelated §10 checklist line for Phase 2's exit item, never caught until this final review asked "is everything discussed, including messaging, actually tested" and the answer required checking the checklist text against the amendment's own decision record | **Decided 2026-09-03 (AskUserQuestion).** Confirmed as a drafting artifact, not a deliberate re-scope — corrected `prd/MeadowOps_PRD_FINAL.md` line 512 back to "Scenario builder controls working (select/inject/preview/approve)", matching the original Phase 2 scope and B8/DD-19's explicit intent. The persona composer and AI sufficiency check remain Phase 3 scope only (U21/U21a/U23), blocked on live AI wiring (Blocker B3) same as always | **Closed** — PRD line fixed; Phase 2's own §5 checklist already matched the corrected wording, no further doc changes needed there |
+| B12 | Discovered 2026-09-09 during the pre-U30 Phase 3 exit-criterion audit (per the user's explicit instruction that Phase 3 isn't finished until every §6 checklist line is genuinely checked): checklist item 1 ("In-app work interface complete... notifications, drafting, deadlines, file attachments," from B8/DD-19's chat PRD amendment) only had its inbox/composer core built (U21/U21a) — notifications, draft persistence, and deadline tracking were never built or even scoped as their own unit, and file attachments had only an informal deferral note in U21 (DD-31) with no follow-on unit ever created. Five other §6 checklist lines (full multi-round loop, personas, ledger lifecycle, difficulty engine, human review ER-1–ER-6) were also found to be already genuinely satisfied by U23/U24/U25/U26/U29 but had simply never been checked off — a documentation gap, not a scope gap, corrected in the same pass | **Decided 2026-09-09 (AskUserQuestion).** Keep U30 scoped to the 9.2 edge case catalog sweep as originally planned, not expanded to cover these four sub-features. Split checklist item 1 into two lines (inbox/composer checked done; the four sub-features left unchecked and explicitly deferred here, not silently dropped). Three new Phase 3 units added so they stay tracked, required scope: **U30a** (notifications + deadline tracking — MEADOWOPS-UI-003), **U30b** (draft persistence — MEADOWOPS-UI-004), **U30c** (file attachments, S1-FR-15/PRD 380 — MEADOWOPS-UI-005). Phase 3's exit-criterion paragraph (§6) updated to state the phase isn't finished until U30/U30a/U30b/U30c are all done | **Closed 2026-09-09.** All three follow-on units done — U30a (see §6/DD-41), U30b (see §6/DD-42), U30c (see §6/DD-43). Checklist item 1 is now fully satisfied. The separate, unrelated gap this left open (catalog row 32, blocked on B1/B2) was itself closed 2026-09-13 (see §2 B1/B2, §8 row 32) — **Phase 3's exit criterion is now fully satisfied** |
+| B13 | Discovered 2026-09-09 while implementing U30's catalog row 19 ("only one scenario active at a time"): `app.domain.scenario.VALID_TRANSITIONS` has no `active`→anything transition — activation was deliberately left as U18's own lifecycle terminus pending "U21/U21a's delivery infrastructure" (that module's own comment), and no later unit ever added the follow-on transition even though U21/U21a have long since shipped. So every scenario that has ever been activated stays `status=active` forever; there is no genuine "completed"/"archived" terminal state distinct from "active." A DB-level partial-unique-index enforcement of row 19 (migration 0023's first draft, `ux_scenario_single_active`) was tried and reverted specifically because of this: it enforced "at most one row with status=active, **ever**, across all history," which is far stronger than the PRD's actual "at a time" and broke real, correct multi-scenario history (`app.services.evaluation_service`'s difficulty-tier lookups, the QA harness's callback scenario — both legitimately rely on many past scenarios coexisting at `status=active`) | **Not fixed in U30** — out of the hardening sweep's scope (a real fix needs a new `ScenarioStatus.COMPLETED`-equivalent terminal status: new enum value, migration, a new transition edge, and a write from `app.services.chat`/`app.services.evaluation`'s thread-completion path into a different aggregate — a behavior change to two already-reviewed units, not a hardening-sweep-sized change). U30 instead enforces row 19 app-side in `activate_scenario` (`app.services.scenario_service`) against a proxy signal — "another ACTIVE scenario with no completed `chat.chat_thread`" — documented in that function's own docstring as a single-writer-assumption check, not race-safe, pending this row's real fix | Open — no unit scoped yet; raise with the user if/when Phase 4 hardening or a future Phase 3 follow-on unit is being planned |
 
 **Critical-risk units awaiting human-ack:**
 | Unit | Spec ID | Decision ID | Notes |
@@ -2081,6 +2083,1743 @@ defaults, KPI SQL specifics — are appended here as each unit lands.)*
       backend-only by its own nature (an admin API action's server-side
       generation pipeline, no new UI surface).
 
+- **DD-33 (Unit 23 — persona-roleplay pushback suggestion + AI sufficiency
+  check, backend-only, 2026-09-05):**
+  1. **Scoped via one consolidated `AskUserQuestion`** (four sub-questions,
+     all answered "Recommended") after the user asked for a walkthrough of
+     what "new scoping decisions" meant, since none of the four gaps below
+     were resolvable from the PRD text alone: (a) **attitude** — PRD 6.13
+     names the concept twice with zero elaboration either time; built as a
+     fixed preset list (`Attitude` enum: neutral/frustrated/urgent/
+     skeptical/appreciative), layered on top of a persona's fixed 6.5 style
+     as a tone modifier, not free text; (b) **persona "known information"**
+     (6.5's information asymmetry) — reuse a *redacted projection* of the
+     scenario's existing `ground_truth` (`known_cause` + `evidence` only),
+     not a new per-persona knowledge schema; (c) **AI-suggestion scope** —
+     pushback-only (6.6 steps 5-7); the opening message (step 2) stays
+     Builder-typed only, even though 6.6's own text allows an AI-suggested
+     opening message too, since that variant needs a template shape with no
+     prior `analyst_message` to react to — a real design question deferred
+     rather than answered as a drive-by; (d) **sufficiency check output** —
+     structured JSON (`{"verdict": ..., "suggested_pushback": ...}`),
+     schema-validated the same way U22's narrative is, ephemeral only (no
+     DB write — that stays U25's evaluation-record job). harness-os
+     `new-feature` workflow run 139 scoped it (`create_spec`
+     `MEADOWOPS-DOMAIN-012`/content id `MEADOWOPS-DOM-017`, `assess_risk` →
+     **medium**, `requiredGates: [spec, tests, review:code]`) — the risk
+     stage this time was called only after `workflow_status` confirmed the
+     run had actually entered "risk" (DD-32 point 2's timestamp gotcha,
+     avoided cleanly on the first try).
+  2. **B6 bookkeeping gap, same workaround as every prior unit**: RED phases
+     were host-observed manually via Bash (`uv run pytest`) rather than
+     through harness's own auto-capture — for genuinely new modules, a
+     temporary `git stash`/file-move was used to force a real failing
+     collection (`ModuleNotFoundError`/`ImportError`) before restoring the
+     implementation, since domain and tests were written together rather
+     than strictly test-first this time and a real RED needed to be
+     reconstructed after the fact rather than skipped. Closed out via
+     `record_decision` (id 1582, `approved`) instead of waiting on
+     `workflow_status` to self-advance past "tests," per the same B6
+     precedent as DD-30/31/32.
+  3. **New `app.domain.persona_chat` module**: `Attitude` enum (5 fixed
+     presets); `PERSONA_PROFILES` — a static `dict[StakeholderPersona,
+     PersonaProfile]` transcribed directly from PRD 6.5's table (Builder-
+     authored, version-controlled content, not an admin-editable entity or
+     new DB table, the same "who mutates it and when" reasoning as DD-14/
+     DD-15's KPI SQL and `baseline_data.py`'s fixed catalog content) —
+     answers `StakeholderPersona`'s own enum docstring, which named this
+     unit as the one that would need to build it; `build_known_information`
+     — an **allow-list** projection (`known_cause`/`evidence` only, fails
+     closed if a future unit adds a new `ground_truth` key) rather than a
+     deny-list of grading fields to exclude; `build_pushback_prompt` renders
+     the existing, frozen `STAKEHOLDER_ROLEPLAY_TEMPLATE` as-is (ER-6:
+     never silently rewritten) with the attitude description appended as an
+     unversioned suffix, the identical discipline U22 established for
+     `GENERATION_TEMPLATE`; `suggest_pushback_message`/`run_sufficiency_
+     check` each implement PRD 9.2's exactly-one-automatic-retry
+     independently — **not** extracted into a shared retry helper with
+     `scenario_generation.py`'s near-identical loop, a deliberate choice
+     (two callers with different retryable-exception tuples and terminal
+     exception types isn't a real abstraction yet, and touching U22's
+     already-reviewed code for a two-occurrence pattern wasn't worth the
+     risk) — documented as a comment noting a third occurrence (e.g. U25)
+     would tip the balance. New `SUFFICIENCY_CHECK_TEMPLATE` registered in
+     `app.domain.prompt_templates` (`ALL_TEMPLATES` now 4, not 3) — unlike
+     the roleplay template, this one is brand new at this unit, so its own
+     JSON-response-format instructions live directly in the template text
+     rather than an unversioned suffix (no prior frozen version to avoid
+     disturbing).
+  4. **New `app.services.persona_chat` module**: `suggest_thread_pushback`/
+     `check_thread_sufficiency` are both **read-only** — no DB write, no
+     commit (a suggestion is not a send; the sufficiency check is "a
+     recommendation only" per PRD 6.13, never an evaluation record). Both
+     require a prior Analyst message in the thread (`NoAnalystMessageYetError`,
+     409) — this is what makes "pushback-only" an enforced code invariant,
+     not just a UI affordance, since `STAKEHOLDER_ROLEPLAY_TEMPLATE`'s
+     `analyst_message` context needs a real message to exist. Both also
+     refuse to run against a **cancelled** scenario (`ScenarioCancelledError`,
+     409) — deliberately the only status guard added; draft/approved/active
+     are all still allowed, since nothing else in the existing chat layer
+     (`get_or_create_thread`, `send_message`) gates on scenario status, and
+     a stricter requirement had no PRD rule to back it.
+  5. **API layer** (`app.api.chat`): two new routes, `POST /threads/
+     {thread_id}/suggest-pushback` and `POST /threads/{thread_id}/
+     sufficiency-check` — both gated `require_admin` (Builder-only), the
+     first `require_admin` routes on this router besides thread creation,
+     and a *stricter* bucket than every other chat route's
+     `reject_service_role` (which still lets the Analyst through): the
+     ground truth (redacted for one route, in full for the other) must
+     never reach the Analyst role. Pinned in
+     `tests/architecture/test_subsystem_boundary.py`'s existing chat-route
+     allowlist test (both added as `admin_only` in that closed-set
+     assertion). A small `app.core.claude.get_claude_client` dependency was
+     **extracted** out of `app.api.admin_scenarios` (where it lived
+     privately since U22) — a second real caller justifies the DRY move;
+     `admin_scenarios.py` now imports the shared copy instead of keeping
+     its own.
+  6. **code-reviewer dispatched post-implementation: APPROVE**, 1 MEDIUM +
+     2 LOW.
+     - MEDIUM (fixed, a real bug): the Analyst's latest message was rendered
+       **twice** in the pushback prompt — once as the tail of
+       `conversation_history` (which included every message in the thread)
+       and again as `analyst_message` (the same message, fetched
+       separately). Reproduced with a new RED test asserting a unique
+       marker string appears exactly once in the rendered prompt (it
+       appeared twice); fixed by excluding the message being reacted to
+       from `conversation_history`.
+     - LOW (fixed): the schema-layer `Attitude` Literal (`app.schemas.
+       chat`) and the domain `Attitude` enum had no test tying them
+       together, unlike `StakeholderPersona`/`PERSONA_PROFILES` — a drift
+       between the two would 422 at validation but then raise an unhandled
+       `ValueError` → 500 at the route (`Attitude(payload.attitude)` runs
+       outside the route's own try/except). Added a guard test pinning the
+       two value sets equal, the same pattern already used for personas.
+     - LOW (fixed): a test-only `_EchoClient` helper (used to prove
+       redaction survives the full route→service→domain call chain) had
+       `call_log` as a mutable class attribute rather than instance state —
+       harmless in its single current use, fixed by moving it into
+       `__init__`.
+  7. **security-reviewer dispatched post-implementation: 0 CRITICAL/HIGH**,
+     3 LOW. The central property under review — the Analyst role can never
+     reach either route or the ground truth through any code path — was
+     independently verified end-to-end (auth gating, the redaction
+     surviving the full call chain, error messages carrying no ground-truth
+     content) and confirmed to hold.
+     - LOW (fixed): `SUFFICIENCY_CHECK_TEMPLATE` gave Claude no instruction
+       constraining what `suggested_pushback` may contain, even though that
+       field is generated with the *full*, unredacted ground truth in
+       context and is meant to seed a message a Builder may paste straight
+       into the Analyst-visible thread (PRD 6.6 step 5) — an honest,
+       non-adversarial model answer could naturally cite a specific
+       grading-only fact in its suggested nudge text. Fixed by adding an
+       explicit instruction to the template text ("Never state a specific
+       ground-truth fact... directly in suggested_pushback... phrase it
+       only as a Socratic nudge").
+     - LOW (documented, not fixed): neither new route catches
+       `PromptRenderError` — unreachable today (both call sites always
+       supply full `required_context`, pinned by
+       `test_prompt_templates.py`'s own placeholder-consistency test), so
+       adding a handler would be error handling for a case that can't
+       happen. Documented on the module's own docstring.
+     - LOW (documented, not fixed): `_conversation_history_text` has no cap
+       on how many messages accumulate in a thread (each individual body is
+       already bounded by `MAX_MESSAGE_BODY_LENGTH`) — a token-growth/cost
+       consideration on a Builder-only route, not a security defect, with
+       no PRD rule setting a round-count limit. Documented on
+       `app.services.persona_chat`'s own docstring.
+  8. **Final regression pass**: full backend suite 890/890 passing (813
+     pre-unit → 887 after initial implementation → 890 after the review
+     fixes' 3 new regression tests). No frontend changes — U23 is
+     backend-only; the Builder-facing "suggest"/"sufficiency check" UI
+     controls in orbynadmin's chat composer remain a follow-on concern, not
+     built this unit (mirrors U22's own admin-API-only scope).
+
+- **DD-34 (Unit 24 — Decision & Event Ledger full lifecycle wiring +
+  callback mechanism, full-stack, 2026-09-08):**
+  1. **Scope decided by the advisor's structural read, not an
+     `AskUserQuestion`** (unlike U23): the unit's own title splits cleanly
+     into two halves with different dependency profiles. "Full lifecycle
+     wiring" (service layer over the already-existing `DecisionEvent`
+     ORM/`validate_transition` state machine, Unit 3; API layer; scheduler
+     stale-flagging; the orbynadmin Activity view — U13's own unit-table
+     entry had explicitly deferred this view to U24 from early in the
+     project) has zero unbuilt dependencies and was built in full. "Callback
+     mechanism" depends on U25 (draft AI evaluation, PRD 6.6 step 10 ties
+     decision *recording* to it, not built) — only the lookup capability
+     (`find_callback_candidates` + the Subsystem-2 HTTP client) was built;
+     injecting a candidate into `app.domain.scenario_generation`'s frozen
+     `GENERATION_TEMPLATE` (PRD 6.11 ER-6) was deliberately deferred, since
+     it has no way to be end-to-end-verified until U25 exists to produce a
+     real decision to call back to. A pre-existing minor inaccuracy from
+     U23's own docstring (`app.api.chat` claimed "no thread work-state
+     lifecycle (U24)") was corrected in passing — U24 is the Ledger, not
+     thread-completion; that PRD 6.6 step-8 concern has no owning unit in
+     the table today, flagged here rather than silently left wrong.
+  2. **harness-os `assess_risk` auto-classified this **critical**** — a
+     keyword false positive on the word "ledger" against
+     `CONST-ARCH-001`/DD-5's same policy (an eighth occurrence of this
+     project's recurring keyword-match pattern, per U13's own "order"
+     false positive). This is a decision/event audit ledger, nothing
+     monetary — but the critical tier's `requiredGates` include
+     `human-ack`, unlike every prior unit's medium/low risk (closed via a
+     self-authored `record_decision`, e.g. DD-33's decision 1582). `new-
+     feature` workflow run 140 (spec `MEADOWOPS-DOMAIN-013`/content id
+     `MEADOWOPS-DOM-018`, risk assessment id 286) is parked awaiting
+     genuine user acknowledgment before it can be recorded as approved —
+     not something this session can self-certify the way it has for every
+     prior unit's risk tier.
+  3. **New `app.services.ledger` module**: `propose_decision`/
+     `request_clarification`/`resubmit_decision`/`accept_decision`/
+     `reject_decision`/`mark_implemented`/`mark_partially_implemented`/
+     `record_outcome` each follow the exact shape `app.services.
+     scenario_service`'s transition helpers established (fetch → run the
+     domain state machine → stamp PRD 4.4's own timestamp(s) for that
+     transition → flush); `InvalidTransitionError` (domain) is re-raised as
+     this module's own `DecisionTransitionError` (service), same
+     domain-error-becomes-API-friendly-error convention as
+     `ScenarioTransitionError`. `propose_decision` always inserts a new row
+     even when `supersedes_id` links it to an earlier one (PRD 9.2: two
+     conflicting-outcome decisions on the same entity both preserved, never
+     a silent overwrite). `flag_stale`/`find_callback_candidates` both
+     filter on `record_type == DECISION` (code review, HIGH — see point 6).
+     New `app.domain.ledger.is_decision_stale` pure predicate (age
+     comparison only; the DB query lives in the service layer, same split
+     as `app.domain.scheduled_flow.is_below_reorder_point`).
+  4. **New API layer** (`app.api.ledger`, `/api/v1/ledger/*`): write routes
+     (`propose`/`request-clarification`/`resubmit`/`accept`/`reject`/
+     `implement`/`partially-implement`/`outcome`) are `require_admin` (PRD
+     376). Read routes (`list`, `get-by-id`, and a new `GET /entities/
+     {entity_type}/{entity_id}/callback-candidates`) are
+     `require_authenticated`, **not** admin-only — the inverse of U23's
+     access pattern, since nothing on the ledger is Analyst-secret and the
+     callback-candidates route must be reachable by Subsystem 2's
+     internal-service credential (the whole point of the callback
+     mechanism). `decided_by` on accept/reject is taken from the caller's
+     own verified identity, never the request body, same convention as
+     `created_by` in `admin_scenarios.py`. `decided_by` on accept/reject is
+     the caller's real UUID string — no free-text role name accepted from
+     the client. All 10 routes pinned in a new closed-set test
+     (`test_every_ledger_route_is_explicitly_classified`,
+     `tests/architecture/test_subsystem_boundary.py`), and the 3 read
+     routes added to that file's existing `EXPECTED_SERVICE_ALLOWED_ROUTES`
+     allowlist.
+  5. **First real consumer of Unit 20's cross-subsystem HTTP boundary**: new
+     `app.services.subsystem2.ledger_client.fetch_callback_candidates` — the
+     first non-empty file ever written in `app.services.subsystem2`
+     (scaffolded since U20, unused until now). `app.db.ledger` is in
+     `FORBIDDEN_MODULES`, so this reaches Subsystem 1's ledger data only via
+     an HTTP round trip on `request.app.state.subsystem2_client`, never a
+     direct ORM import — proven against the real running app (2 new tests
+     in `tests/integration/test_subsystem2_boundary.py`: the
+     callback-candidates route returns a real 200/empty-list, not a 404, for
+     an entity with no decisions — PRD 9.2 row 12's own requirement; and the
+     internal-service credential is rejected by every ledger *write* route).
+  6. **code-reviewer dispatched post-implementation: WARN**, 2 HIGH + 2
+     MEDIUM, all fixed.
+     - HIGH (fixed): `supersedes_id` is a real hard FK
+       (`live.decision_event.id`) but only UUID-*format*-validated by the
+       schema, not existence-checked — a well-formed but unknown id reached
+       an unhandled `IntegrityError` → 500. Fixed with the same
+       `IntegrityError`/`ForeignKeyViolation` → 409 pattern
+       `admin_scenarios.create_scenario_route` already established for its
+       own `created_by` FK; new regression tests at both the service and API
+       layers.
+     - HIGH (fixed): `record_type` was accepted by the propose schema
+       (`"operational_event"` or `"decision"`) but never used to scope the
+       lifecycle machinery — `app.db.ledger`'s own docstring says "only
+       decisions carry the full lifecycle in status," yet neither
+       `flag_stale` nor `find_callback_candidates` filtered on it, so an
+       `operational_event` row could be stale-flagged or surfaced as a
+       callback candidate. Fixed two ways: the propose *route* now only
+       accepts `Literal["decision"]` (no creation path for operational
+       events exists yet anyway), and both service-layer queries add a
+       `record_type == DECISION` filter defensively, in case a future
+       direct caller ever creates one.
+     - MEDIUM (fixed): one of the domain state machine's 14 edges —
+       `clarification_requested → proposed` ("clarification answered, back
+       on the table") — had no service function or route wiring it, an
+       incomplete "full lifecycle wiring" for a unit whose whole job is
+       that. Fixed with a new `resubmit_decision` function + `POST
+       .../resubmit` route, deliberately not re-stamping `proposed_at` (the
+       staleness clock measures original-proposal age, not
+       last-status-change age).
+     - MEDIUM (fixed): `ledger_client.py` built the callback-candidates URL
+       via raw f-string interpolation of `entity_id` with no encoding — a
+       value containing `/` (nothing constrains master-data ids beyond
+       `min_length=1`) would split across the route's single path segment
+       and 404 instead of returning "no candidates." Fixed with
+       `urllib.parse.quote(..., safe="")`, new regression test confirming
+       percent-encoding.
+  7. **security-reviewer dispatched post-implementation: PASS**, 1 MEDIUM +
+     1 LOW, both fixed; several other angles (SSRF/injection in the
+     Subsystem-2 client's URL construction, subsystem-boundary bypass,
+     error-detail leakage, rollback correctness, the harness's own critical
+     auto-classification) explicitly checked and confirmed non-issues rather
+     than assumed safe.
+     - MEDIUM (fixed): no row-level locking on any ledger transition — on
+       Postgres READ COMMITTED, two concurrent writers (e.g. an admin's
+       `accept_decision` racing the scheduler's own `flag_stale`, which runs
+       on its own independent `Session`) could both read the
+       pre-transition status, both pass `validate_transition`, and both
+       write, silently producing a self-contradictory audit row. Fixed with
+       `SELECT ... FOR UPDATE` on every transition's row fetch
+       (`_get_decision_for_transition`) and `FOR UPDATE SKIP LOCKED` on
+       `flag_stale`'s batch scan (so a row an admin request is mid-transition
+       on is simply skipped that tick, not raced).
+     - LOW (fixed): `Settings.stale_decision_after_days` allowed `0`
+       (`ge=0`), which would mass-flag every open decision as stale on the
+       very next scheduler tick. Changed to `ge=1`.
+  8. **orbynadmin's Activity page wired to the real API** (full-stack,
+     unlike U22/U23's backend-only scope — Appendix D.1 explicitly maps this
+     page to the Ledger, and unlike those two units there's no absent
+     Claude-adapter blocker gating it): new `types/ledger.ts`,
+     `lib/ledger-api.ts` (server-side proxy, same `cookies()`-forwarded-
+     Bearer-token convention as `dashboard-api.ts`), `components/
+     decisions-table.tsx` (read-only — no write-action column, since
+     propose/accept/reject have no UI entry point yet), replacing Unit 21's
+     `EmptyState`-only placeholder. Structural tests only
+     (`tests/frontend/test_activity_page.py`, same DD-17 convention — no JS
+     unit test runner in this repo); `npm run build` (the real correctness
+     gate) clean.
+  9. **Final regression pass**: full backend suite 959/959 passing (947 →
+     959, +12 from the review-fix regression tests), orbynadmin `npm run
+     build` clean. User explicitly confirmed human-ack on the critical-risk
+     classification (point 2 above) after being shown the false-positive
+     explanation and the full review-fix summary; closed via
+     `record_decision` (id 1583, `approved`) rather than waiting on
+     `workflow_status` to self-advance past "tests" — same B6 bookkeeping
+     gap as every prior unit (DD-30/31/32/33).
+
+- **DD-35 (Unit 25 — AI evaluation framework + adaptive difficulty engine,
+  backend-only, 2026-09-08):**
+  1. **Scope narrowed via the advisor consult, not an `AskUserQuestion`**
+     (Auto Mode active this session — bias toward proceeding on a
+     reasonable call over stopping to ask). The Phase 3 unit table itself
+     already settles the biggest fork: **U26**, not U25, owns the human
+     review mechanism (ER-1–ER-6) and portfolio export (6.9/6.10) — U25
+     stops at producing an `Evaluation` row plus a tier recommendation, it
+     never records a reviewer verdict or builds the `Human Review` table
+     PRD line 628 names. PRD 6.1's 9-state `ChatThread` work-state lifecycle
+     is likewise **not** built in full: only two states, `open`/`completed`
+     (new `ChatThreadStatus` enum) — the deadline/notification-driven
+     intermediate states (`Awaiting Analyst`, `Deadline Approaching`,
+     `Overdue`) have no owning unit anywhere in the table and are left
+     unbuilt, flagged here rather than silently absorbed. No persisted
+     "Under AI Evaluation" state either — evaluation generation runs
+     synchronously inside the one `/complete` request/transaction (the same
+     shape `regenerate_scenario`, Unit 22, already established for a Claude
+     call inside a route); on failure after the one automatic retry,
+     neither the thread's status nor an `Evaluation` row changes, so a
+     thread can never be observed "stuck" mid-evaluation — the Builder just
+     retries the whole action.
+  2. **The `outcome` context slot** (`EVALUATION_TEMPLATE`'s
+     `required_context`, unused since Unit 11) has no obvious data source —
+     PRD 6.8 lists ground truth, evidence, stakeholder context, expected
+     cluster behaviors, the Analyst's responses, *and* the outcome as six
+     separate inputs, but nothing in the codebase produces a scenario
+     "outcome" distinct from its `ground_truth`, and `DecisionEvent.outcome`
+     (Unit 24's Ledger) is chronologically wrong — PRD 6.6 orders step 10
+     (Ledger recording) *after* step 9 (evaluation), so a real-world ledger
+     outcome cannot be an input to the evaluation that precedes it. Resolved
+     as an explicit projection of `Scenario.ground_truth`'s own
+     resolution/conclusion keys (`acceptable_conclusions`,
+     `unacceptable_conclusions`, `uncertainty`) — distinct from
+     `ground_truth_package` (the full raw dict, same meaning
+     `run_sufficiency_check` already established for that context key) and
+     `evidence_package` (the redacted `known_cause`+`evidence` projection
+     `app.domain.persona_chat.build_known_information` already builds,
+     reused rather than reimplemented). `Scenario.prompt_version` (PRD line
+     130, DD-14/DD-15's deferred promotion) was checked and confirmed still
+     absent from the `Scenario` table — the promotion-to-a-table question
+     those DDs deferred "once the Evaluation table exists to attach to"
+     stays explicitly out of scope here too, a second concern not absorbed
+     as a drive-by.
+  3. **New `engine.evaluation` table** (migration 0020): mirrors
+     `engine.scenario`'s schema placement, and reuses `chat.chat_message`'s
+     exact immutability-trigger shape (migration 0018) for PRD ER-6
+     ("historical evaluation records never silently rewritten") — a
+     `BEFORE UPDATE/DELETE/TRUNCATE` trigger, since table-owner connections
+     bypass plain `REVOKE`. `thread_id` is a hard FK to `chat.chat_thread`,
+     unique (one Evaluation per thread — PRD 6.6's "final submission" then
+     "draft evaluation" is a single per-thread transition, not repeatable),
+     which is also the concurrency backstop point 6 below relies on. No
+     `status` column — every row is implicitly DRAFT/NOT AUTHORITATIVE
+     (ER-1) until U26's Human Review table exists to attach a verdict
+     without ever mutating the row itself.
+  4. **New `app.domain.evaluation`/`app.domain.difficulty_engine` modules**:
+     `generate_evaluation` mirrors `app.domain.persona_chat`'s exact
+     one-automatic-retry shape (PRD 9.2) against a new JSON response format
+     appended as an unversioned suffix to the frozen v1 `EVALUATION_TEMPLATE`
+     (ER-6: the template text itself is never edited — same precedent
+     `scenario_generation`/`persona_chat` already established for their own
+     templates). `resolve_cluster_tier` (pure function, no DB access) is the
+     adaptive difficulty engine: requires `MINIMUM_OBSERVATIONS = 2`
+     agreeing recent recommendations to recommend a tier (PRD 6.7: "evidence
+     across multiple relevant interactions, not one response" — 2 is the
+     literal minimum satisfying "multiple," same no-PRD-specified-number
+     style as Unit 24's `stale_decision_after_days`), else returns `HOLD`
+     for either insufficient evidence (edge case #27) or disagreement among
+     the sample (edge case #28, a defined trend rule — unanimous agreement
+     required — not ad hoc judgment).
+  5. **New `app.services.evaluation` module**:
+     `complete_thread_and_generate_evaluation` requires the thread not
+     already `COMPLETED` and its latest message to be from the Analyst (PRD
+     6.6 step 8: "the Analyst's most recent message is the submission of
+     record"), then both writes (thread status → `COMPLETED`, insert the
+     `Evaluation` row) happen atomically after generation succeeds.
+     `resolve_difficulty_for_cluster` joins `Evaluation` → `ChatThread` →
+     `Scenario` on `competency_cluster`, most-recent-first, capped at 5
+     (same magnitude as Unit 24's `find_callback_candidates` default limit),
+     and hands that history to the pure engine.
+  6. **New API surface**: `POST /api/v1/chat/threads/{id}/complete`
+     (`app.api.chat`, `require_admin`, same Builder-only reasoning as U23's
+     suggest-pushback/sufficiency-check routes) and a new
+     `app.api.evaluation` router — `GET /threads/{id}` and `GET
+     /clusters/{cluster}/difficulty-recommendation`, **both** `require_admin`
+     rather than `require_authenticated` (stricter than Unit 24's ledger
+     reads) — PRD **ER-5**: "tier and evaluation trend hidden during normal
+     use, revealed only at monthly review," so the Analyst role must never
+     reach either route. All 3 routes pinned in new closed-set
+     architecture-boundary tests. `EvaluationRead` deliberately excludes
+     `raw_response` from every response body.
+  7. **harness-os `assess_risk` self-inflicted false positive on the first
+     call** (id 287): my own risk-description text said "no changes to
+     payments, financial transactions" while explaining what was *not* in
+     scope — tripped the same `CONST-ARCH-001` auto-critical keyword rule
+     as U11's "no secrets" false positive (DD-5). Re-ran without the
+     negating clause (id 288): **medium**, gates `[spec, tests,
+     review:code]`, no `human-ack` required this time.
+  8. **code-reviewer dispatched post-implementation: WARN**, 1 HIGH + 1 LOW,
+     both fixed.
+     - HIGH (fixed): `Evaluation.thread_id`'s unique constraint is the real
+       backstop against two concurrent `/complete` calls both passing the
+       in-memory `ThreadAlreadyCompletedError` check before either commits
+       (a plausible Builder double-click, not just a contrived race) — but
+       the resulting `IntegrityError` wasn't caught, surfacing a raw 500
+       instead of 409. Fixed by mirroring `create_thread_route`'s existing
+       `IntegrityError`→409 pattern; new regression test simulates the race
+       by resetting the thread to `OPEN` after a first successful
+       completion, then completing it again.
+     - LOW (fixed): `_analyst_responses_text` re-queried a thread's messages
+       the caller had already fetched for its own latest-message check —
+       refactored to take the already-fetched list.
+  9. **security-reviewer dispatched post-implementation: PASS**, 2 MEDIUM +
+     2 LOW addressed; auth-boundary closure verified against the real
+     FastAPI dependency graph (not just route decoration, not just tests),
+     redaction reuse confirmed to have no drift from Unit 23's already-
+     reviewed allow-list, and no live Claude/network/secret surface exists
+     yet to review (Phase 4 blocker B3, mock-only).
+     - MEDIUM (fixed): `senior_analyst_pushback` — Builder-pasteable text a
+       Builder may copy straight into the thread the Analyst reads, same
+       leak shape as U23's `suggest_pushback` — is generated against the
+       **full**, unredacted `ground_truth_package`, and had no instruction
+       against restating a specific ground-truth fact directly in it. Fixed
+       by mirroring `SUFFICIENCY_CHECK_TEMPLATE`'s own already-reviewed
+       anti-leak clause into `EVALUATION_TEMPLATE`'s unversioned response-
+       format suffix; new regression test.
+     - MEDIUM (fixed): no test proved `engine.evaluation`'s immutability
+       trigger actually fires on the shared dev database (only "fires
+       unconditionally when enabled" was implicitly assumed) — added
+       `tests/data/test_evaluation_schema.py`, mirroring
+       `test_chat_schema.py`'s exact shape (update/delete/truncate
+       rejection + a direct `pg_trigger.tgenabled` check).
+     - LOW (fixed): a bare `assert scenario is not None` (strips under
+       `python -O`, turning into an unhandled `AttributeError` → 500
+       instead of a clean error) replaced with the same `ScenarioNotFoundError`
+       raise `app.services.persona_chat` already established as precedent.
+     - LOW (fixed): no guard stopped a new chat message from being sent to
+       an already-`COMPLETED` thread, letting the audit trail silently
+       outrun the message the evaluation was actually graded against. New
+       `ThreadCompletedError` (409) in `app.services.chat.send_message`.
+     - Explicitly deferred, not fixed, flagged rather than silently
+       dropped: `resolve_difficulty_for_cluster` has no trainee/user
+       scoping (fine with one Analyst account today; needs a real schema
+       decision before a multi-trainee rollout aggregates across different
+       people's evaluations) — a future unit's concern. The 502 path's
+       error `detail` passes `str(last_error)` verbatim to the Builder,
+       immaterial while only `MockClaudeClient` exists but will reflect a
+       real provider's error body once Phase 4's live adapter lands.
+  10. **Post-review advisor consult (decision id 1586), one blocking gap
+      found and fixed after both mandatory reviews had already approved**:
+      `complete_thread_and_generate_evaluation` had no guard against a
+      `CANCELLED` scenario, unlike `app.services.persona_chat._load_thread_
+      and_active_scenario` (this module's own explicit model) which already
+      refuses one. More severe here than there: `persona_chat`'s calls are
+      read-only, so skipping the check just wastes a Claude call, but this
+      function writes an `engine.evaluation` row the migration-0020 trigger
+      makes **permanently immutable** — a cancelled scenario's evaluation
+      could never be retracted once written, and `resolve_difficulty_for_
+      cluster` would count it toward the Analyst's tier forever with no way
+      to undo it. Fixed by raising the same `ScenarioCancelledError`
+      (reused from `persona_chat`, not redefined) before `generate_
+      evaluation` runs, mapped to 409 in the `/complete` route alongside
+      the two existing 409 causes; new regression tests at both the service
+      layer (`test_evaluation_service.py`) and the API layer
+      (`test_chat_api.py::TestCompleteThreadRoute`). Same pass also fixed a
+      LOW type-annotation gap: `_analyst_responses_text` was typed as a
+      bare `list`, not `list[ChatMessage]`.
+  11. **Final regression pass**: full backend suite 1041/1041 passing
+      (1029 → 1039 across the two mandatory review rounds, → 1041 after the
+      post-review advisor fix). No frontend changes to any *existing*
+      surface, but note for a future frontend unit: `POST /threads/{id}/
+      messages`'s contract did change — it now returns 409 once a thread is
+      `COMPLETED` — currently unreachable since no UI calls `/complete` yet,
+      which is why nothing broke, but a future Builder-facing chat UI needs
+      to handle that response. No orbynadmin UI was requested or built for
+      this unit's admin-API-only surface (unlike U24's Activity page); a
+      Builder-facing "mark thread Completed" control and an evaluation
+      detail view remain a follow-on concern, same category as U23's
+      still-unbuilt composer UI. Closed via `record_decision` ids 1584
+      (code-reviewer, approved), 1585 (security-reviewer, approved,
+      `related_decision_id` 1584), and 1586 (post-review advisor consult,
+      approved, `related_decision_id` 1585) rather than waiting on
+      `workflow_status` to self-advance past "tests" — same B6 bookkeeping
+      gap as every prior unit (DD-30/31/32/33/34).
+  12. **Two more flagged-not-fixed gaps from the same advisor consult**,
+      recorded rather than silently dropped: (a) nothing can reopen a
+      `COMPLETED` `ChatThread` — no route, no owning unit — a deliberate
+      absence given PRD 6.6's framing of completion as final, but worth
+      naming explicitly in case a future unit needs a correction path; (b)
+      `_PROMPT_VERSION` (`"draft_evaluation/v1"`) records only the frozen
+      template's own name/version, so it cannot distinguish evaluations
+      generated before vs. after the anti-leak clause was appended to
+      `_RESPONSE_FORMAT_INSTRUCTIONS` (point 9 above) — the unversioned-
+      suffix pattern (ER-6: never edit the frozen template itself) has no
+      mechanism to version the suffix text separately, a gap already latent
+      in the `scenario_generation`/`persona_chat` precedent this unit
+      copied, not new to U25.
+
+- **DD-36 (Unit 26 — human review workflow mechanism + portfolio export,
+  backend-only, 2026-09-08):**
+  1. **PRD 6.1-vs-6.6 state-ordering tension, resolved in favor of 6.6.**
+     PRD 6.1's 9-state `ChatThread` lifecycle literally lists "...Under AI
+     Evaluation → Pending Human Review → Completed," implying Human Review
+     precedes Completed, but PRD 6.6's more detailed, more recently amended
+     (2026-09-02) numbered step list orders step 8 (mark Completed) → step 9
+     (draft evaluation) → step 10 (ledger) → step 11 (human review, monthly,
+     Active-Use-only) → step 12 (portfolio update) — Human Review happens
+     *after* Completed, asynchronously and on a monthly sample, not as a
+     blocking pre-completion state. Resolved in favor of 6.6, grounded in
+     two pre-existing DD-35 docstrings that anticipated exactly this design
+     (`app/db/enums.py`'s `ChatThreadStatus` and `app/db/evaluation.py`'s own
+     "no other value exists until U26's Human Review table attaches an
+     authoritative verdict... without ever mutating the row itself"). No new
+     `ChatThreadStatus` value added; `engine.human_review` attaches post-hoc
+     to an already-`COMPLETED` thread's `Evaluation` row via a hard,
+     unique FK.
+  2. **New `engine.human_review` table** (migration 0021): sibling of
+     `engine.evaluation`, not a column on it — same immutability-trigger
+     shape (`BEFORE UPDATE/DELETE/TRUNCATE`), reasoning extended from ER-6
+     ("historical evaluation records") to ER-3's framing of a reviewer
+     disagreement as a permanent "learning artifact," the same durability
+     `Evaluation`/`ChatMessage` already have. `verdict`/
+     `overridden_recommendation` pairing (edge case #29) enforced at three
+     independent layers — Pydantic `model_validator`, a service-layer
+     re-check (`InvalidVerdictPairingError`), and a DB `CHECK` constraint —
+     verified by the security reviewer to be genuinely non-bypassable
+     because `verdict` is `NOT NULL` (rules out a SQL three-valued-logic
+     NULL bypass of the `CHECK`). `overridden_recommendation` reuses
+     `engine.difficulty_recommendation` (migration 0020) via
+     `postgresql.ENUM(..., create_type=False)`, not generic `sa.Enum` —
+     empirically confirmed the generic type silently drops `create_type`
+     (`getattr(e, 'create_type', 'NOATTR')` returns `'NOATTR'`), which made
+     the first `alembic upgrade head` attempt fail with `DuplicateObject`
+     when `CreateTable`'s DDL compilation re-issued `CREATE TYPE` for a type
+     migration 0020 already created; the failed attempt rolled back cleanly
+     (Alembic wraps each migration in a transaction). `reviewer_name` stays
+     free text, not a FK to `live.user` — PRD 14's Open Items list the
+     External Human Reviewer as having no account/login this phase, so the
+     Builder stands in structurally (same role she plays for QA
+     test-analyst runs).
+  3. **New `engine.portfolio_artifact` table** (migration 0021, same
+     immutability shape): a **DRY naming-vs-content split**, per advisor
+     consult — table *named* `portfolio_artifact` to match PRD Appendix B's
+     data-dictionary entry exactly, but its columns hold only the Analyst's
+     7-question reflection, **not** a duplicate snapshot of the scenario
+     trigger, chat messages, draft evaluation, or reviewer notes PRD 6.10
+     also names as part of "the artifact" — those already live in
+     `engine.scenario`/`chat.chat_message`/`engine.evaluation`/
+     `engine.human_review`, compiled on demand by
+     `app.services.portfolio.get_portfolio_export` instead. Mirrors DD-35's
+     own DRY reasoning for `outcome` sourcing from `Scenario.ground_truth`
+     rather than a duplicate field. Documented explicitly in the table's own
+     docstring so the naming/content mismatch is intentional, not
+     accidental.
+  4. **Auth-boundary split across the two new API surfaces.** Human-review
+     routes (both POST and GET, `app.api.evaluation`) are `require_admin`
+     (ER-5: no External Human Reviewer account exists this phase, so the
+     Builder stands in — same reasoning as point 2). The portfolio
+     reflection POST route (`app.api.portfolio`) is deliberately
+     `reject_service_role`, **not** `require_admin`, so both Admin and
+     Analyst can author it — PRD 6.10's reflection is explicitly written in
+     the Analyst's own first-person voice ("what I initially thought",
+     "what I missed"), the same write-access split
+     `app.services.chat.send_message` already grants the Analyst for her
+     own replies; `PortfolioReflectionRead` carries zero evaluation/tier
+     data, so this leaks nothing ER-5 protects. The portfolio export GET
+     route stays `require_admin` since the compiled document embeds the
+     full evaluation including `difficulty_recommendation`.
+  5. **`assess_risk` self-inflicted false positives (twice)** before a clean
+     **medium** on the third call: "order" (critical, id 289) and
+     "auth"/"authentication" (high, id 290) in my own negating scope-
+     description clauses — same recurring class as U11/U25 (DD-5/DD-35),
+     fixed by rewording to avoid the trigger words entirely rather than
+     negating them.
+  6. **A genuine regression, caught by the full suite, not proactively**:
+     adding `human_review`'s FK to `engine.evaluation` broke the
+     pre-existing, previously-passing U25 test
+     `test_evaluation_cannot_be_truncated` —
+     `TRUNCATE engine.evaluation` alone now fails outright with
+     `psycopg.errors.FeatureNotSupported` ("cannot truncate a table
+     referenced in a foreign key constraint"), a check Postgres runs
+     *before* any `BEFORE TRUNCATE` trigger fires. Confirmed via a manual
+     psycopg script that naming both tables in one `TRUNCATE` statement lets
+     Postgres proceed far enough to fire the trigger the test actually means
+     to prove. Fixed the test accordingly, with an explanatory comment.
+  7. **FK-teardown-cascade risk, addressed proactively this time** (per
+     advisor's explicit warning, in contrast to discovering the equivalent
+     gap reactively during U25): every fixture that deletes a parent row
+     (`engine.evaluation`, `chat.chat_thread`) now also cleans up the new
+     child tables (`engine.human_review`, `engine.portfolio_artifact`) first,
+     in FK order, using the same trigger-disable/delete/re-enable dance
+     already established for `engine.evaluation`/`chat.chat_message` —
+     applied to both `tests/api/test_evaluation_api.py`'s and the new
+     `tests/api/test_portfolio_api.py`'s `scenario_id` fixtures.
+  8. **RED phase established via the same `git stash` technique as U25**:
+     stashed the 12 new/modified production files (test files left in
+     place), observed a genuine `ImportError: cannot import name
+     'ChatThreadStatus'` (stashing `enums.py` reverts it to its
+     pre-Phase-3 committed state, not just this unit's diff — accepted side
+     effect since nothing in Phase 3 is committed yet), then `git stash
+     pop`.
+  9. **code-reviewer dispatched post-implementation: 1 MEDIUM, fixed.** Both
+     new write routes' `IntegrityError` handlers caught the bare exception
+     unconditionally instead of narrowing via
+     `isinstance(exc.orig, pg_errors.UniqueViolation)`, diverging from
+     `app/api/chat.py`'s established precedent — not currently exploitable,
+     but would have silently misclassified any future non-`UniqueViolation`
+     constraint failure as a 409 instead of a 500. Fixed identically in
+     both `app/api/evaluation.py` and `app/api/portfolio.py`.
+  10. **security-reviewer dispatched post-implementation: 2 MEDIUM + 3 LOW.**
+      - MEDIUM (fixed): neither new table recorded which authenticated
+        account operated its write route despite the identity being
+        available at both (`require_admin` for `/human-review`,
+        `reject_service_role` — either role — for `/reflection`). Fixed by
+        amending migration 0021 **in place** (never applied beyond this
+        machine — `alembic downgrade -1`, edit, `alembic upgrade head`,
+        re-verified with a full round-trip) to add a non-nullable
+        `submitted_by_user_id` FK to `live.user.id` on both tables, wired
+        from `uuid.UUID(identity["user_id"])` at both routes (same idiom as
+        `app/api/chat.py`'s `sender_user_id`) through the service layer.
+        Distinct from `human_review.reviewer_name` (the external reviewer's
+        own name, still free text per point 2) — both columns kept, each
+        documented in its table's own docstring. A first pass added service-
+        layer assertions only; an advisor re-check caught that nothing
+        actually proved the *routes* wired the identity through rather than
+        the service layer merely accepting the parameter, so DB-level
+        assertions were added querying the row directly in both
+        `tests/api/test_evaluation_api.py::TestHumanReviewRoutes` and
+        `tests/api/test_portfolio_api.py::TestRecordReflectionRoute`
+        (analyst- and admin-authored cases both).
+      - MEDIUM (documented, not fixed — deliberate): immutability plus a
+        one-row-per-parent unique constraint gives no correction path for a
+        human-entered mistake (e.g. a reviewer-name typo), unlike
+        `engine.evaluation` where immutability is justified as
+        evidence-preservation for *machine* output. Resolved to keep the
+        constraint as-is: PRD 6.6 step 11 is a single verdict per sampled
+        evaluation, and DD-25's one-thread-per-scenario already makes
+        one-reflection-per-thread the correct shape — relaxing either to
+        support a hypothetical typo-correction path, during a phase where
+        PRD 14 says no real External Reviewer exists yet, would trade away
+        an intentional invariant for one nothing currently needs. Remediation
+        for a genuine data-entry mistake is an owner-DSN manual correction
+        (documented here, not built) — the same class of escape hatch this
+        codebase already uses for the immutability triggers themselves
+        (`ALTER TABLE ... DISABLE TRIGGER`, already exercised by this unit's
+        own fixture teardowns).
+      - LOW (documented, not fixed): `reviewer_name`/`tier_assessment_notes`/
+        `reflection_*` lengths are enforced only at the Pydantic layer
+        (`MAX_REVIEWER_NAME_LENGTH` etc.), not backed by a DB `CHECK` —
+        every reachable write path goes through the schema layer today, so
+        this is a defense-in-depth gap, not a live one.
+      - LOW (documented, not fixed): reviewer/reflection text is persisted
+        and rendered verbatim — no XSS risk today (no non-JSON/React
+        consumer exists yet), flagged for whenever one is built.
+      - LOW (documented, not fixed): no rate limiting on either new POST
+        route — consistent with every other write route in this codebase
+        today, not a regression introduced by this unit.
+  11. **Final regression pass**: full backend suite 1108/1108 passing
+      (stable across both review-fix rounds and the `submitted_by_user_id`
+      migration amendment; migration 0021 round-tripped downgrade/upgrade
+      cleanly both before and after that amendment). Closed via
+      `record_decision` ids 1587 (code-reviewer, approved), 1588
+      (security-reviewer, approved), and 1589 (RED/GREEN bookkeeping,
+      approved, `related_decision_id` 1588) rather than waiting on
+      `workflow_status` to self-advance past "tests" — same B6 bookkeeping
+      gap as every prior unit (DD-30 through DD-35). No frontend UI was
+      requested or built for either new surface (admin-API-only, same
+      category as U25/U23's still-unbuilt UI follow-ons).
+
+- **DD-37 (Unit 27 — Warehouse transfers + carrier variability,
+  MEADOWOPS-DOMAIN-016/MEADOWOPS-DOM-021, PRD 3.4/5.2):**
+  1. **Pre-implementation scope consult (advisor):** every schema element
+     this unit needed already existed from Phase 1 with zero production
+     references — `WarehouseTransfer`/`TransferStatus`,
+     `InventoryTransactionType.TRANSFER_IN`/`TRANSFER_OUT`,
+     `Carrier.variability`/`reliability_pct`, `ShipmentStatus.EXCEPTION` —
+     so this unit ships **zero migrations**, purely activating existing
+     schema inside the scheduled-tick simulation. Advisor-settled design
+     forks, all held to: (a) jitter the shipment's *actual* delivery, never
+     the promise — `promised_delivery_date` stays the existing
+     `round((min+max)/2)` average; only the actual arrival date diverges,
+     which is what makes Unit 15's `evaluate_late_shipment` reachable for
+     the first time (structurally dead until now, since actual delivery
+     was previously always set to exactly the tick's `simulation_date` the
+     moment it passed the promise). (b) `reliability_pct` → probability of
+     on-time arrival, not a symmetric jitter (matches the PRD carrier
+     table's own "~91% on-time" framing) — `ShipmentStatus.EXCEPTION` left
+     deliberately unused (using it would re-flag a shipment as late on
+     every tick forever with no resolution path under
+     `evaluate_late_shipment`'s current status handling). (c) transfers
+     created before POs each tick, with symmetric guards
+     (`_has_open_purchase_order`/`_has_open_inbound_transfer`) so the two
+     mechanisms never double-replenish the same (product, warehouse)
+     shortfall, and a network with no surplus anywhere still falls through
+     to a PO. (d) a transfer donor is capped at its own unallocated surplus
+     above its own reorder threshold, never at raw on-hand position.
+  2. **Domain layer** (`app/domain/scheduled_flow.py`): extracted the
+     existing inline `{LOW:1, MEDIUM:3, HIGH:6}` day-spread mapping (was
+     local to `jittered_lead_time_days`) into a shared
+     `_VARIABILITY_SPREAD_DAYS` module constant, reused by both it and the
+     new `carrier_actual_transit_days(promised_transit_days, variability,
+     reliability_pct, rng)` — a `reliability_pct`-gated roll: on-time with
+     probability `reliability_pct`, else late by 1..spread days, never
+     early. Refactored `is_below_reorder_point` to share a new
+     `_reorder_threshold` helper with two new sibling functions:
+     `warehouse_deficit` (ceil'd shortfall below the threshold — same
+     threshold formula, exposed as a magnitude rather than a boolean) and
+     `transferable_surplus` (floored spare stock above a donor's own
+     threshold, net of its own allocated quantity). `pick_transfer_donor`
+     picks the candidate with the greatest surplus, tie-broken by lowest
+     warehouse id for determinism.
+  3. **Service layer** (`app/services/scheduled_flow.py`):
+     `_create_warehouse_transfers_if_needed` computes per-product
+     position/allocated/demand snapshots across all active warehouses
+     once, then for each deficient recipient (guarded against an already-
+     open PO or inbound transfer) picks the best donor and writes a
+     `PENDING` `WarehouseTransfer` plus an immediate `TRANSFER_OUT`
+     `InventoryTransaction` at the donor — debiting the local snapshot
+     dict as each transfer is created so a *second* recipient warehouse
+     considered later in the same tick sees the donor's already-committed
+     surplus, not a stale pre-tick figure (this exact double-donation
+     scenario is a dedicated regression test, not just an assertion of
+     intent). `_progress_warehouse_transfers` advances
+     `PENDING`→`IN_TRANSIT`→`COMPLETED` over a new fixed
+     `WAREHOUSE_TRANSFER_TRANSIT_DAYS = 2` constant (`WarehouseTransfer`
+     has no `carrier_id` — it's an internal warehouse-to-warehouse move,
+     not Carrier-mediated — so a single fixed duration stands in for a
+     per-pair distance model the PRD's "lightweight operation" framing
+     doesn't ask for), writing `TRANSFER_IN` on completion.
+     `_create_purchase_orders_if_needed` gained the symmetric
+     `_has_open_inbound_transfer` guard. `_progress_shipments` now
+     recomputes `carrier_actual_transit_days` from
+     `_rng(shipment.ship_date, f"carrier_transit:{shipment.id}")` every
+     tick rather than persisting the result — both inputs are stable once
+     the shipment exists, so the same value comes back every time without
+     a new column. `run_scheduled_tick`'s call order: progress transfers,
+     create transfers, create POs, progress/create SOs+shipments.
+  4. **Risk assessment false positive (DD-5 pattern, again):** `assess_risk`
+     (id 292) auto-classified this **critical** on the word "order" in the
+     scope description (referring to the existing PO-creation guard the
+     new transfer-creation guard mirrors) — no financial/trading/payment
+     logic is actually involved. Accepted per standing policy rather than
+     reworded around; `record_decision` id 1590 constitutes the human-ack
+     gate this triggers.
+  5. **RED/GREEN discipline:** both new/extended test modules
+     (`tests/domain/test_scheduled_flow_domain.py`,
+     `tests/services/test_scheduled_flow.py`) genuinely failed collection
+     with `ImportError` for not-yet-defined symbols
+     (`carrier_actual_transit_days`, `WAREHOUSE_TRANSFER_TRANSIT_DAYS`)
+     before any implementation was written — host-observed RED, not
+     narrated. `workflow_status` (run 144) stayed parked at
+     `tests`/`establish_red_phase` regardless — same B6 bookkeeping gap as
+     every prior unit (DD-30 through DD-36), acknowledged via
+     `record_decision` id 1593 rather than chased further.
+  6. **code-reviewer** (decision 1591, approved): 1 HIGH — the `warehouses`
+     query in `_create_warehouse_transfers_if_needed` had no `ORDER BY`,
+     and since donor allocation across recipients mutates a shared,
+     per-tick surplus pool, unspecified Postgres row order could make
+     which recipient receives a partial allocation non-deterministic
+     across identical re-runs of the same `simulation_date` — contradicting
+     the module's own documented tick-reproducibility contract; fixed via
+     `.order_by(Warehouse.id)`. 1 MEDIUM — the original shipment-lateness
+     regression test asserted only a wide date window that would pass
+     identically whether or not `carrier_actual_transit_days` was actually
+     being consulted; fixed by adding two tests — one that monkeypatches
+     it to a value (999 days) only reachable through that function, and
+     one that independently recomputes the expected date from the same
+     `_rng(ship_date, purpose)` seed convention and confirms several
+     intervening progression calls on different dates don't perturb the
+     eventual result (would catch a regression keying the seed off the
+     moving `simulation_date` instead of the stable `ship_date`). 2 LOW —
+     added the one untested direction of the double-replenishment guard
+     (`test_does_not_open_a_second_transfer_while_one_is_already_open`) and
+     reflowed two lines exceeding the surrounding files' established line
+     length. Reviewer explicitly confirmed as correct with no action
+     needed: the per-product donor-debiting fix, the symmetric PO/transfer
+     guard, and `carrier_actual_transit_days`'s own RNG determinism.
+  7. **security-reviewer** (decision 1592, approved): 0
+     CRITICAL/HIGH/MEDIUM. Verified no raw SQL interpolation anywhere in
+     the new code; donor≠recipient and quantity>0 are both structurally
+     unreachable-otherwise (candidate list excludes the recipient itself,
+     `pick_transfer_donor` filters to positive surplus before `min(deficit,
+     surplus)` is computed); the `WarehouseTransfer` `CHECK` constraints
+     (`quantity > 0`, `from_warehouse_id != to_warehouse_id`) can never be
+     violated by the application logic; added per-tick query volume is not
+     a genuine DoS concern and isn't attacker-controllable (products/
+     warehouses are admin-CRUD-gated, tick cadence is fixed server config);
+     `run_scheduled_tick`'s existing rollback+`FAILED`-row+re-raise pattern
+     correctly still wraps the new calls, no new silent-swallow path; and
+     the unit has no HTTP-reachable entrypoint of its own — the only
+     admin-writable inputs feeding the new arithmetic
+     (`reliability_pct`/`variability`/`transit_days_min/max`) are already
+     bounded by pre-existing Pydantic/DB constraints. 2 INFO, documented
+     not fixed: an admin `PATCH` to a carrier retroactively changes the
+     computed arrival date of that carrier's still-in-flight shipments
+     (bounded blast radius — already-`DELIVERED` shipments are frozen;
+     requires admin credentials); `_allocated_quantity` only protects
+     `ALLOCATED`/`PARTIALLY_SHIPPED` sales-order lines at a donor, not
+     `SUBMITTED` ones (a fill-rate behavior note, not a data-integrity
+     risk — the later shipment step re-reads live position before shipping
+     and can never go negative).
+  8. **Final regression pass**: full backend suite 1135/1135 passing (1108
+     pre-unit → 1132 at first GREEN → 1135 after the code-review test
+     additions), re-run clean after every fix round. Backend-only scope —
+     this unit is pure scheduler/domain logic with no new API routes and
+     no frontend surface to wire.
+
+- **DD-38 (Unit 28 — Admin SQL query history view,
+  MEADOWOPS-API-005, PRD 6.12/S1-FR-14):**
+  1. **Pre-implementation scope research + advisor consult:** research
+     confirmed Unit 19 (Phase 2, already done) built the entire query
+     execution/timeout/row-limit/logging pipeline and the Analyst's own
+     self-scoped `GET /api/v1/query/history` — this unit's own module
+     docstring (`app.db.query_log`) explicitly named PRD 328/§6.12/Unit 28
+     as the reason `live.query_log` wasn't schema-isolated, confirming the
+     admin-side cross-user view was deliberately deferred rather than
+     overlapping. Advisor-settled design forks: (a) a genuinely new
+     `require_admin` route and a new response schema, not the existing
+     `reject_service_role` self-scoped route widened with an admin branch —
+     keeps that route's safety a property of its dependency, not a runtime
+     conditional, and keeps `user_email` out of a schema the Analyst's own
+     history response also uses; (b) order by `(submitted_at DESC, id
+     DESC)`, not `submitted_at` alone — `QueryLog.submitted_at` defaults to
+     `func.now()`, which Postgres freezes per transaction, so rows inserted
+     together (a burst of activity, or a test fixture) can tie; `id` is the
+     tiebreaker keeping the ordering (and pagination) a total order; (c)
+     test assertions by containment/attribution, not exact counts — this
+     route reads a shared table that already has real prior rows in it,
+     `assert len(items) == 3` would be fine today and flaky later; (d) this
+     unit is full-stack per the standing B7/DD-17/DD-18 correction (U28 was
+     flagged as a "titled a view, spec'd as endpoints" gap, same pattern as
+     U16), unlike the five backend-only units immediately before it
+     (U22/U23/U25/U26/U27).
+  2. **First `api`-typed harness-os spec in Phase 3:** every prior Phase 3
+     unit (U22-U27) registered a `domain`-typed spec; U28's business id
+     (`MEADOWOPS-API-005`, not `MEADOWOPS-DOMAIN-0XX`) signaled a different
+     spec type was likely needed. Probed fresh via `validate_spec` the same
+     way the minimal `domain` schema was discovered during U27 — the `api`
+     schema turned out to be `{id, title, endpoints: [{path, method,
+     description}]}`, also `additionalProperties: false` throughout.
+     Registered as spec id 223, `create_spec` succeeded on the second
+     attempt once `description` was added to the one endpoint object.
+  3. **Backend**: new `app/api/admin_query_log.py` — `GET
+     /api/v1/admin/query-log`, `require_admin`, joins `live.user` for
+     `email`, `limit`/`offset` query params via FastAPI `Query(ge=1,
+     le=500)`/`Query(ge=0)` (same convention as `app.api.dashboard`'s
+     existing paginated routes). New `AdminQueryLogRead(QueryLogRead)`
+     schema in `app/schemas/query_playground.py`, adding only `user_email`.
+     New migration 0022 — a composite btree index on
+     `live.query_log(submitted_at, id)`, added post-code-review: Unit 19's
+     own history route stays cheap regardless (`WHERE user_id = :id LIMIT
+     50`), but this unit's admin route does an unfiltered full-table
+     `JOIN`+sort+paginate (limit up to 500) over a table that only grows: a
+     plain ascending index serves the `DESC`/`DESC` ordering via a backward
+     index scan, no descending index or op class needed.
+  4. **Frontend** (orbynadmin): new admin-only page at `/admin/query-log`
+     (`src/app/(app)/admin/query-log/page.tsx`), new `AdminQueryLogTable`
+     client component reusing the established `DataTable`/`ColumnDef`
+     pattern (Unit 8's master-data pages) with a click-to-expand `Dialog`
+     for the full query text — the one UI capability that didn't exist
+     anywhere yet, even in the Analyst's own history tab, which only
+     CSS-truncates with no expand affordance. New `NavItem.adminOnly` flag
+     (`src/config/nav.ts`) and `AppSidebar` filtering by a `role` prop now
+     threaded down from `(app)/layout.tsx`'s own server-side
+     `getCurrentRole()` call — documented explicitly as cosmetic-only; the
+     real boundary stays the backend's `require_admin`, and the page itself
+     re-checks `getCurrentRole()` and renders a clean "you don't have
+     access" message rather than trusting the nav hiding or forwarding
+     whatever the backend's 403 produces. Page copy includes the PRD's own
+     framing ("a coaching signal, not a surveillance one," Principle 7) —
+     a PRD-literal requirement, not decoration.
+  5. **Risk assessment false positive (DD-5 pattern, again):** `assess_risk`
+     auto-classified this **critical** twice (ids 293, 294) on the word
+     "order" in "ordered by (submitted_at desc, id desc)" — an
+     access-control unit's honest description also happens to contain
+     in-scope vocabulary ("admin," "authorization") that could have tripped
+     the same rule; accepted per standing policy rather than reworded
+     around either way. Human-ack recorded via `record_decision` ids 1594
+     (first assessment), then 1597 (`pending_approval`) and 1598 (linked
+     approval) for the second, after a fresh `assess_risk` call was needed
+     mid-implementation.
+  6. **RED/GREEN discipline:** `tests/api/test_admin_query_log_api.py`
+     genuinely 404'd against the not-yet-registered route before any
+     implementation existed (host-observed RED, not narrated) — 5 of 6
+     tests failed on the missing route, the sixth (self-scoped history
+     non-leak) passed immediately since it only exercises Unit 19's
+     existing route. `workflow_status` (run 146) stayed parked at stage
+     `risk`/directive `assess_risk` regardless of the risk assessment,
+     human-ack, and both dual-review approvals all being recorded — same
+     B6-category bookkeeping gap as every prior unit, but at the `risk`
+     stage rather than the usual `tests` stage this time; tried passing
+     `decision_id` as both the `record_decision` id and the `assess_risk`
+     id per the tool's own guidance, neither advanced it. Acknowledged via
+     `record_decision` id 1599 rather than chased further.
+  7. **code-reviewer** (decision 1595, approved): 3 MEDIUM, all fixed. (a)
+     the client-side proxy route `src/app/api/admin/query-log/route.ts` had
+     zero callers — the page fetches server-side and `DataTable` paginates
+     in-memory over the initial batch — deleted as dead code. (b) the
+     page's own doc-comment overclaimed that re-checking the role also
+     solves fetch-failure UX, when both the `getCurrentRole()`-collapses-
+     every-failure-mode contract (Unit 17a) and the `response.ok ? ... :
+     []` fallback match the existing pattern in every other admin list page
+     (e.g. `settings/products/page.tsx`) — comment corrected to stop
+     overclaiming rather than building bespoke error-surfacing UI that
+     would diverge from that established convention. (c) missing index —
+     see migration 0022 above. 1 LOW not addressed (badge-variant fallback
+     for an unmapped `statement_type`/`result_status` string) — speculative,
+     no reproducing case; the existing lookup maps already cover every
+     value the DB enum can produce.
+  8. **security-reviewer** (decision 1596, approved): 0
+     CRITICAL/HIGH/MEDIUM. Authorization chain verified sound end-to-end
+     (`require_admin` correctly wired, no alternate path to the data,
+     frontend role-recheck is UX-only and cannot create a bypass); no SQL
+     injection (SQLAlchemy Core construction throughout); no XSS
+     (`query_text`/`error_message` rendered via JSX `{}` interpolation
+     only, no `dangerouslySetInnerHTML`); no over-exposure via the `User`
+     join (only `email` selected, never `password_hash`); pagination bounds
+     confirmed present and effective. 1 LOW noted against the
+     since-deleted proxy route (a non-numeric `limit`/`offset` would have
+     passed `NaN` through to the backend, which still correctly 422'd it
+     before touching the DB) — moot once that route was deleted per the
+     code-reviewer's dead-code finding, since the remaining path
+     (`page.tsx` calling `getAdminQueryLog` with a hardcoded `limit=500,
+     offset=0`) has no user-controlled `limit`/`offset` input at all.
+  9. **Live verification (Playwright, real browser):** logged in as the
+     seeded admin, ran a marker query through the existing Query page, and
+     confirmed it appeared in the new admin view alongside real historical
+     rows submitted by the seeded Analyst account, each correctly
+     attributed by email — proving genuine cross-user visibility, not just
+     the caller's own rows. Clicked a row's expand button and confirmed the
+     dialog renders the full, untruncated query text plus submitter/
+     timestamp. Logged in as the seeded Analyst and confirmed both that the
+     "Query Log" nav entry is absent and that navigating to
+     `/admin/query-log` directly renders the clean "you don't have access"
+     message rather than an error page or partial data.
+  10. **Final regression pass**: full backend suite 1141/1141 passing
+      (1135→1141), plus `tsc --noEmit`, `eslint`, and a clean production
+      `next build` on every new/touched orbynadmin file — this unit's own
+      B7/DD-17/DD-18 commitment to close the "backend-only where full-stack
+      was scoped" gap pattern, so the frontend close-out ritual (typecheck/
+      lint/build/live-verify) ran in full rather than stopping at the
+      backend suite the way the five backend-only units immediately before
+      it did.
+
+- **DD-39 (Unit 29 — QA test-analyst harness, MEADOWOPS-QA-001,
+  PRD 6.2/6.6/9.1/Appendix C):**
+  1. **Pre-implementation research + advisor consult:** confirmed this is
+     fundamentally a test-writing unit, not a new feature — PRD 9.1's
+     testing-strategy text names it explicitly ("end-to-end tests via a QA
+     test-analyst harness"). Research (one `Explore` agent pass across
+     scenario/chat/evaluation/ledger) established every mechanism PRD 6.6's
+     12-step loop needs already exists and is independently tested at the
+     single-layer level: no new production code was required. Key
+     architectural finding: no callback field or API exists anywhere on
+     `Scenario` — `app.services.subsystem2.ledger_client`'s own docstring
+     states that wiring `find_callback_candidates` into scenario generation
+     was deliberately deferred to "a later unit's job." Advisor-settled: (a)
+     that wiring stays out of scope here — touching
+     `app.domain.scenario_generation` would make a `QA`-prefixed unit
+     production-code-bearing against its own naming; the callback scenario
+     is instead hand-assembled by the harness itself (advance a decision to
+     `outcome_observed`, confirm `callback-candidates` surfaces it, then
+     hand-author a second scenario referencing it); (b) the multi-step REST
+     driver (`tests/support/qa_harness.py`) is the one thing in this test
+     suite that should NOT be duplicated per-file, unlike fixtures — it's
+     the actual deliverable, used 7 times; (c) PRD 6.6 steps 11-12 (human
+     review, learning record) are out of scope — already covered by
+     `tests/api/test_evaluation_api.py::TestHumanReviewRoutes`, and PRD 6.6
+     itself calls both "validated structurally... without requiring a real
+     reviewer"; (d) resolved a PRD wording tension (§6.2's heading says
+     "cover at least 5 of 6" scenario types, but §9.1/§9.3/§10 all say "each
+     of the 6... at least once") in favor of all 6, the more specific and
+     more frequently repeated framing, and the one every downstream
+     acceptance checklist and exit criterion actually states.
+  2. **No `QA`-prefixed harness-os spec type exists:** the five spec
+     `type`s (`product`/`domain`/`api`/`data`/`infra`) each require their
+     spec `id` to match a fixed type-specific infix pattern
+     (`-PROD-`/`-DOM-`/`-API-`/`-DATA-`/`-INFRA-`) — confirmed by probing
+     `validate_spec` against all five with an empty-ish payload; none
+     accept `-QA-`. Registered as an `api`-typed spec instead
+     (`MEADOWOPS-API-029`, harness-os spec id 224) listing the 17 existing
+     endpoints the harness exercises (`{id, title, endpoints: [{method,
+     path, description, authRequired}]}`) — the most honest fit, since the
+     spec's actual job is documenting the API surface under test, not a
+     domain model or a business-id-matching prefix. Noted here since this
+     breaks the per-unit business-id/spec-id prefix correspondence every
+     prior unit had.
+  3. **New test-only files** (no production code changed):
+     `backend/tests/support/qa_harness.py` (shared REST-driver helper:
+     `create_and_activate_scenario`, `open_persona_thread`, `post_message`,
+     `run_pushback_round`, `complete_thread`, `propose_and_accept_decision`,
+     `advance_decision_to_outcome_observed`, `ground_truth_updates_for`),
+     `backend/tests/e2e/test_qa_scenario_types.py` (one full PRD 6.6
+     loop — create→ground-truth→approve→activate→chat with multi-round
+     pushback→complete→evaluation fetch→ledger propose+accept — per PRD
+     6.2 scenario type, all 6), and `backend/tests/e2e/test_qa_callback_
+     scenario.py` (the simulated callback run: a `supplier_vendor_decision`
+     scenario's decision advanced through `accept`→`implement`→`outcome`,
+     confirmed via `GET .../callback-candidates`, then a second scenario
+     hand-authored to reference that observed outcome, run through the same
+     loop). `tests/e2e/` is a new test directory (no `__init__.py` needed,
+     matching every other `tests/*` subdirectory).
+  4. **Ground truth hand-authored, not Claude-regenerated:** the harness
+     uses `PATCH .../ground-truth` for the narrative fields rather than
+     `POST .../regenerate`, since scenario-narrative generation already has
+     its own dedicated coverage (`tests/api/test_admin_scenarios.py`) —
+     re-exercising it here would test the same code path twice rather than
+     add new loop coverage. `MockClaudeClient` is still scripted for the
+     two points PRD 6.6 actually requires an AI in the loop: thread
+     completion (evaluation generation), same convention as
+     `tests/api/test_evaluation_api.py`'s own `_complete_thread`.
+  5. **Risk assessment false positive (DD-5 pattern, again):** `assess_risk`
+     auto-classified this **critical** (id 295) on the word "ledger"
+     (CONST-ARCH-001) — MeadowOps' Decision & Event Ledger (PRD 4.4) is an
+     operational recommendation/decision log, not a financial or trading
+     ledger. Accepted per standing policy; human-ack recorded via
+     `record_decision` id 1602.
+  6. **Host-observed RED/GREEN, for real this time:** the harness caught a
+     genuine bug on its first run — the callback test's two `ExceptionFlag`
+     rows both used `(category="low_stock_days_of_supply", product_id=
+     "SKU-COR-001", warehouse_id="WH-EAST")`, colliding on the
+     `ux_exception_flag_open_entity` unique index. First attempts at
+     capturing this as a host-observed RED failed silently: `enforce-gate.
+     sh`'s test-command matcher requires the literal Bash command string to
+     start with the configured `pytest` command (`parse-tool-call.mjs`'s
+     `trimmed.startsWith(entry.command + ' ')` check) — a `(cd backend &&
+     pytest ...)` subshell wrapper never matches, and running `pytest` with
+     cwd already at `backend/` fails the *other* way, since
+     `matchConfiguredTestCommand` reads `.claude/harness.config.json`
+     relative to the project root only. Fix: invoke
+     `pytest -c backend/pyproject.toml --rootdir=backend backend/tests/...`
+     as a bare, unwrapped command from the project root — matches the
+     command-prefix check and resolves backend's own pytest config/
+     pythonpath correctly in one shot. Reverted the fix, ran that exact
+     command (genuine RED, exit 1, `workflow_status` run 148 advanced
+     `tests`→`implement`), reapplied the fix (distinct `product_id` for the
+     callback scenario's second flag), ran it again (genuine GREEN).
+  7. **code-reviewer** (decision 1603, approved): 0 CRITICAL/HIGH, 2 MEDIUM
+     fixed, 2 LOW addressed. (a) `advance_decision_to_outcome_observed`'s
+     return value was discarded at its one call site, so the callback test
+     could only prove `_CALLBACK_ELIGIBLE_STATUSES` membership
+     (`implemented`/`partially_implemented`/`outcome_observed` are all
+     eligible), not that the decision specifically reached
+     `outcome_observed` — fixed by capturing and asserting the returned
+     `status`/`outcome` directly. (b) the six scenario-type tests never
+     asserted which `scenario_type`/`competency_cluster` was actually
+     created, so a route that silently ignored those fields would still
+     pass all six — fixed by asserting both fields on the create and
+     activate response bodies inside `create_and_activate_scenario`. (c)
+     LOW: a byte-identical `_ground_truth_updates` helper duplicated across
+     both test files — consolidated into `qa_harness.py`'s
+     `ground_truth_updates_for`. (d) LOW: six near-identical test methods
+     suggested as `@pytest.mark.parametrize` candidates — left as distinct
+     named methods, a judgment call, since PRD 9.1/9.3 frame each of the 6
+     scenario types as individually demonstrable.
+  8. **security-reviewer** (decision 1604, approved): 0
+     CRITICAL/HIGH/MEDIUM/LOW. Confirmed no hardcoded real secrets (test
+     constants match existing approved conventions byte-for-byte); all raw
+     psycopg teardown SQL parameterized; no privilege-boundary confusion
+     (every route call uses the auth role that route actually requires,
+     verified route-by-route against `require_admin`/`reject_service_role`/
+     `require_authenticated`); test data isolation confirmed clean
+     (`zztest-*` email convention, full teardown chain, no writes to
+     `human_review`/`portfolio_artifact` since those routes are never
+     called); `MockClaudeClient` correctly isolates the AI boundary. One
+     informational note (not a finding): the `autocommit`+`DISABLE
+     TRIGGER`+`try/finally` teardown pattern is inherited from
+     `test_chat_api.py`/`test_evaluation_api.py`/`test_portfolio_api.py`,
+     not introduced by this unit.
+  9. **Final regression pass**: full backend suite 1148/1148 passing
+     (1141→1148), re-run clean after the code-review fixes. Test-only,
+     backend-only scope — no frontend surface, no migrations, no new
+     production routes.
+
+- **DD-40 (Unit 30 — edge case catalog implementation sweep,
+  MEADOWOPS-HARDEN-001, harness-os spec MEADOWOPS-DOM-030, PRD 9.2):**
+  1. **Spec-type discovery:** no `-HARDEN-` infix exists among the 5 fixed
+     harness-os spec types (`product`/`domain`/`api`/`data`/`infra`), so
+     (per advisor guidance, unlike U29's QA harness which did need to probe
+     all 5) this registered directly as a `domain`-typed spec
+     (`MEADOWOPS-DOM-030`) without a fresh type search. Risk assessment id
+     296, **critical** — the same DD-5 self-inflicted "order" keyword false
+     positive (CONST-ARCH-001) every prior unit has hit; accepted per
+     standing policy, human-ack via `record_decision` id 1607.
+     `workflow_status` again stuck reporting stage `risk` despite the real
+     assessment and human-ack both being genuinely recorded — the
+     established B6 bookkeeping gap, not chased further.
+  2. **Pre-implementation research + advisor consults** established: row 1
+     is structurally unreachable (no DELETE endpoint exists anywhere in the
+     API, confirmed by a full-codebase grep) rather than a real gap; row 7
+     genuinely needed `Scenario.world_state_id` (PRD 4.2 line 130), not
+     speculative YAGNI; row 12 needed only a confirmatory test, not new
+     production logic; rows 15/30(notification half)/31 were out of U30's
+     own scope and needed formal deferral, not silent expansion.
+  3. **Mid-unit blocker discovered and formally deferred (B12):** the
+     pre-U30 Phase 3 exit-criterion audit (per the user's own standing
+     instruction that the phase isn't finished until every §6 checklist
+     line is genuinely checked) found checklist item 1 only had its
+     inbox/composer core built — notifications, draft persistence, and
+     deadline tracking were never built or scoped, and file attachments had
+     only an informal U21 deferral note with no follow-on unit. Per the
+     user's explicit 2026-09-09 decision (AskUserQuestion): U30 stayed
+     scoped to the 9.2 catalog sweep; three new Phase 3 units were added
+     instead — **U30a** (notifications + deadlines, MEADOWOPS-UI-003),
+     **U30b** (draft persistence, MEADOWOPS-UI-004), **U30c** (file
+     attachments, MEADOWOPS-UI-005) — and §6's checklist item 1 was split
+     into a done inbox/composer line and an explicitly-deferred line citing
+     B12, rather than silently dropped. Five other §6 checklist lines were
+     found already genuinely satisfied by U23-U26/U29 but never marked —
+     corrected in the same pass (documentation gap, not scope gap).
+  4. **Design conflict discovered and reverted mid-implementation (B13):**
+     row 19 ("only one scenario active at a time") was first implemented
+     as `ux_scenario_single_active`, a DB-level partial unique index on
+     `engine.scenario.status WHERE status='active'` (migration 0023).
+     Applying it broke 5 pre-existing tests
+     (`test_evaluation_service.py::TestResolveDifficultyForCluster` ×4,
+     `test_qa_callback_scenario.py` ×1) with `UniqueViolation` errors.
+     Root-cause investigation of `app.domain.scenario.VALID_TRANSITIONS`
+     found `ScenarioStatus` has no transition out of `active` anywhere in
+     the codebase — activation was deliberately left as U18's own
+     lifecycle terminus pending "U21/U21a's delivery infrastructure," which
+     has long since shipped with no follow-on transition ever added. Every
+     scenario ever activated stays `status=active` forever, so a blanket
+     "at most one row, ever, across all history" constraint was strictly
+     stronger than the PRD's actual "at a time" and broke real,
+     legitimate multi-scenario history. Advisor-consulted fix: dropped the
+     index (migration 0023 now adds only `world_state_id`), and
+     `activate_scenario` (`app.services.scenario_service`) instead blocks
+     on "another scenario is ACTIVE **and** has no completed
+     `chat.chat_thread`" — a proxy for "still in flight" that tolerates
+     scenarios whose work is actually done. A real fix (a genuine
+     `COMPLETED`-equivalent terminal status) is out of this hardening
+     sweep's scope — recorded as blocker **B13**, not silently punted.
+     Verified against all three legitimate multi-scenario-history callers
+     (`TestResolveDifficultyForCluster`, the QA callback test, the QA
+     6-scenario-types test) plus two new discriminating tests
+     (`tests/services/test_evaluation_service.py::
+     TestActivateScenarioSingleActiveGuard` — still blocks on an open
+     thread, now allows once completed).
+  5. **32 catalog rows closed to 29/32** (see §8 for the full per-row
+     breakdown): 7 rows newly built this unit (2 duplicate-PO detection,
+     4 partial PO receipt, 7 world_state pinning, 9 master-data-edit
+     immunity confirmatory test, 12 callback-entity-deactivation
+     confirmatory test, 16 whitespace-body rejection, 17 max-pushback-
+     rounds cap — the last a genuine new behavior closing a gap U23's own
+     security review flagged but left open at the time); 10 rows found
+     already fully built and passing but never reflected in this table
+     (6, 8, 14, 18, 20, 21-25 — a documentation-only correction, not new
+     code); row 1 closed N/A (structurally unreachable); row 5 closed with
+     its period-calculation half marked N/A (no period-bounded KPI design
+     exists for that half to apply to); row 30 split (clock-recovery half
+     passing, notification half deferred to U30a per B12). Remaining 3:
+     rows 15/31 formally deferred to U30a/U30b (B12), row 32 blocked on
+     B1/B2 (unchanged, pre-existing).
+  6. **New migration 0023** (`world_state_id` only, per point 4 above) and
+     a new `duplicate_purchase_order` row added to
+     `EXCEPTION_RULE_THRESHOLDS`, seeded into the real dev DB directly
+     (same no-CLI-seed-script precedent as U17).
+  7. **code-reviewer** (decision 1614, approved, 0 CRITICAL/HIGH — originally
+     recorded as decision 1612, but that id was mistakenly written under
+     project_path `.../MeadowOps/backend` instead of the project root,
+     splitting it from this project's otherwise-unbroken audit trail;
+     re-recorded at the correct root as 1614, trace 497, superseding 1612):
+     2 MEDIUM, both fixed.
+     (a) the duplicate-PO grouping key omitted `product_id` — since
+     `assign_supplier` is deterministic per `ProductCategory` and a
+     low-variability supplier's delivery-date jitter is drawn from only 3
+     values, two genuinely distinct products reordering at the same
+     warehouse on the same day had a real chance of a false-positive
+     duplicate flag; fixed by joining `PurchaseOrderLine` and adding
+     `product_id` to the grouping key, with a new discriminating test
+     (`test_does_not_flag_two_pos_for_different_products_on_the_same_date`)
+     and the `_purchase_order` test helper updated to create a real line
+     (matching production's own one-line-per-PO invariant). (b) a PO that
+     rolls partial on two consecutive ticks (`PARTIALLY_RECEIVED` →
+     `PARTIALLY_RECEIVED`) still logged a `PurchaseOrderLifecycleEvent`
+     self-transition and inflated the tick's event count as if a real
+     status change occurred; fixed by skipping the event write (and the
+     count increment) when `from_status == to_status`, with a new
+     discriminating test
+     (`test_staying_partially_received_across_two_ticks_does_not_log_a_
+     self_transition`). Two LOW notes, both left as-is per the reviewer's
+     own judgment: `activate_scenario`'s documented check-then-write race
+     (see point 4) is an acceptable, already-disclosed tradeoff, not a
+     functional bug; `MAX_PUSHBACK_ROUNDS`'s name slightly overstates
+     (it counts the Analyst's opening reply too, so 5 permits 4 real
+     pushback rounds) — a naming nit, not worth a behavior change.
+  8. **security-reviewer** (decision 1615, approved, 0 CRITICAL/HIGH —
+     originally recorded as decision 1613, same mis-scoped-project_path
+     issue as point 7 above; re-recorded at the correct root as 1615,
+     trace 498, superseding 1613): 1 MEDIUM
+     (informational-leaning), non-blocking — `activate_scenario`'s
+     check-then-write TOCTOU is judged acceptable given the invariant it
+     protects is already soft by design (many rows legitimately sit at
+     `status=active` forever) and the failure mode it permits (two
+     scenarios briefly in flight instead of one) is exactly the state the
+     data model already tolerates elsewhere; recommended (not required) a
+     `pg_advisory_xact_lock` wrap, matching `evaluate_exceptions`'s own
+     existing pattern, deferred alongside B13 rather than applied as a
+     drive-by. 2 LOW notes: `MAX_PUSHBACK_ROUNDS` bounds conversation
+     rounds (and the linear token growth of `_conversation_history_text`)
+     but not raw Claude API calls within one round, since the read-only
+     suggestion endpoint doesn't itself advance the counter — worth an
+     app-layer rate limit if cost becomes a concern, not a security
+     defect given `require_admin` gating; the duplicate-PO query has no
+     `LIMIT` and groups in Python, a resource-growth note worth watching,
+     not fixing now. Confirmed no injection risk (fully parameterized
+     SQLAlchemy throughout) and no crypto-relevant RNG usage (the seeded
+     `random.Random` is for simulation determinism only).
+  9. **Final regression pass**: full backend suite 1172/1172 passing
+     (1148→1172), including the 2 code-review-driven fixes' own new tests.
+     Backend-only scope — no frontend surface, no new production routes
+     beyond the existing `suggest-pushback` route's new 409 case.
+
+- **DD-41 (Unit 30a — chat notifications + deadline tracking,
+  MEADOWOPS-UI-003, harness-os spec MEADOWOPS-DOM-031, PRD 6.1/6.13, B12
+  follow-on to U30):**
+  1. **Scope cut via advisor consult before implementation:** an initial
+     design covered 5 notification kinds and frontend wiring into 4
+     surfaces; cut to exactly what B12 chartered — 2 kinds
+     (`DEADLINE_APPROACHING`, `DEADLINE_MISSED`) with real testable
+     producers, closing catalog row 15 + row 30's notification half. A
+     kind like "monthly review available" would have had no producer and
+     no test to exercise it — deliberately not built.
+  2. **`ChatThreadStatus` deliberately not expanded:** "approaching"/
+     "overdue" are derived conditions over a new `ChatThread.deadline_at`
+     timestamp, not new persisted enum states — verified via grep that no
+     code depends on `OPEN` being the only non-terminal status before
+     committing to this, preserving `send_message`'s `status == COMPLETED`
+     guard and every existing `status == OPEN` filter untouched.
+  3. **Idempotency via reset-on-every-send flags:**
+     `deadline_approaching_notified`/`overdue_notified` each fire at most
+     once per `deadline_at` value and reset to `False` whenever
+     `deadline_at` changes (i.e. on every message send) — proves catalog
+     row 30's "scheduler downtime recovers cleanly" claim: a sweep re-run
+     against unchanged state is a no-op, directly tested.
+  4. **Recipient resolution via `UserRole`:** `DEADLINE_MISSED` notifies
+     every active Builder (`ADMIN` — PRD 6.1 "Late handling... Builder
+     notified"); `DEADLINE_APPROACHING` notifies every active Analyst
+     (`ANALYST` — whose turn it is to act). Role-wide rather than
+     thread-participant-scoped — accepted at this project's current
+     single-Builder/single-Analyst scale (security-reviewer LOW, not
+     fixed, documented in `app.services.notifications`'s own docstring).
+  5. **Settings threaded as explicit args, not imported into services:**
+     new `Settings.chat_response_window_days` (default 4) and
+     `Settings.chat_deadline_approaching_within_hours` (default 24) are
+     read only at the API/scheduler-wiring boundary and passed through as
+     function arguments — matching the existing
+     `reporting_lag_days`/`stale_decision_after_days` convention in
+     `app.domain.scheduler`.
+  6. **PRD Appendix D.1 page-mapping conflict discovered and resolved
+     before frontend work:** orbynadmin's (Subsystem 1's) `/notifications`
+     page is documented as "Admin-side exception alert feed... Separate
+     from the Analyst's notifications in Subsystem 2" — a different,
+     unbuilt feature (an operational exception-flag feed, not chat
+     deadlines). An initial draft had already wired a `NotificationFeed`
+     component and two new proxy routes into that page before this was
+     caught (advisor consult); both were deleted, and
+     `listNotifications`/`markNotificationRead` were removed from
+     subsystem_1's `chat-api.ts` as unused. PRD 6.1's actual notifications
+     surface — "Home page: Open Threads, Company Status, **Notifications**,
+     Completed Work" — is Subsystem 2's dashboard, whose own CLAUDE.md
+     already documented that page's real content as "deferred to a later
+     unit"; this is that unit.
+  7. **Frontend split by subsystem, each getting the surface PRD 6.1
+     actually names for it:**
+     - **Both subsystems' chat thread-view** gained a `DeadlineBanner` on
+       the open thread (PRD 6.1's literal "surfaced as a deadline banner
+       on the open thread"), computed purely from `deadline_at`/
+       `is_overdue` — never recomputed client-side, can go briefly stale
+       between polls without disagreeing with the server about what
+       "overdue" means.
+     - **Subsystem 1's thread-list** gained a `DeadlineIndicator` icon
+       (approaching/overdue) next to each thread's unread badge — added
+       during the code-review fix pass (see point 8) once the Analyst-side
+       consumer gap was flagged; satisfies PRD 6.1's "unread-thread
+       badges... deadline approaching/missed" language without touching
+       the unrelated exception-alert `/notifications` page.
+     - **Subsystem 2's dashboard Home page** gained a real Notifications
+       section: `listNotifications()`+`listThreads()` server-fetched,
+       joined client-side by `thread_id` to render the persona label
+       (`NotificationRead` carries only `thread_id`, no persona — an
+       unlabeled row would be uninformative to the Builder). Open
+       Work/Company Status/Completed Work remain the pre-existing stub,
+       explicitly out of this unit's chartered scope, documented in a
+       comment so the next reader doesn't mistake the page for finished.
+  8. **code-reviewer** (decision 1616, trace 499): **WARNING → fixed →
+     approved.** 1 MEDIUM + 3 LOW, all fixed before final approval.
+     MEDIUM — `DEADLINE_APPROACHING` was write-only for the Analyst (no
+     consumer surface); fixed via the `DeadlineIndicator` above. LOW —
+     `chat_response_window_days`'s wiring through the API route was
+     untested (its default silently matched `send_message`'s own default,
+     masking a possible dead kwarg); fixed with a settings-override test
+     (`test_chat_response_window_days_setting_is_threaded_through_to_the_
+     deadline`) asserting a non-default window actually changes
+     `deadline_at`. LOW — the approaching-then-missed lifecycle on one
+     `deadline_at` was never exercised (every existing sweep test started
+     from both flags `False`); fixed with
+     `test_a_thread_already_flagged_approaching_still_gets_missed_once_
+     overdue`. LOW — `GET /notifications` had no bound; fixed via
+     `DEFAULT_NOTIFICATION_LIST_LIMIT=100` in `list_notifications_for_user`.
+  9. **security-reviewer** (decision 1617, trace 500): **approved**, 0
+     CRITICAL/HIGH. 1 MEDIUM (the same unbounded-query finding as point 8,
+     same fix) + 2 LOW: role-wide notification fan-out (point 4 above,
+     accepted) and the dashboard's notification/thread fetch failures
+     rendering identically to "no notifications" with no trace — fixed
+     with `console.error` logging on non-2xx responses. Confirmed sound:
+     `mark_notification_read`'s ownership-scoped (id AND user_id) lookup,
+     no SQL injection (parameterized ORM throughout), no XSS surface (no
+     `dangerouslySetInnerHTML` in any new component), no bearer-token/URL
+     leakage via the new proxy routes, `SameSite=Lax` covers the new
+     mark-read POST, and the migration's native Postgres enum type rejects
+     invalid values at the DB level.
+  10. **Post-approval advisor pass caught 2 more issues** both reviewers
+      individually touched but didn't connect: (a) role-wide fan-out
+      (point 4) plus no retention policy means a user's *read* history
+      alone can eventually push `list_notifications_for_user`'s
+      `DEFAULT_NOTIFICATION_LIST_LIMIT` boundary, at which point the
+      newest-first-only ordering from point 8's fix could start silently
+      hiding an old *unread* row behind newer already-read ones —
+      undermining the exact "doesn't silently vanish" guarantee catalog
+      row 15 claims. Fixed by ordering unread-before-read (then
+      newest-first within each group), so the limit can only ever
+      truncate already-seen rows; pinned with
+      `test_the_limit_never_truncates_an_unread_row_behind_read_ones`
+      (`limit=1`, an old unread row must still win over a newer read one).
+      (b) `mark_notification_read` derived `read_at`'s timezone from
+      `notification.created_at.tzinfo` instead of `timezone.utc` directly
+      — harmless today (the function always loads `notification` via a
+      fresh `SELECT`, so `created_at` is always populated) but an
+      unnecessary, fragile dependency on a different column, inconsistent
+      with every other "now" in this module (`_is_overdue`,
+      `sweep_thread_deadlines`'s own `now` param) and with
+      `app.services.chat.mark_thread_read`'s established
+      `func.clock_timestamp()` precedent for this exact "mark as read"
+      semantic; fixed to `datetime.now(timezone.utc)` directly. Documented
+      here rather than as new `record_decision` entries — both are
+      same-unit refinements below the threshold that triggered the
+      original dual review, following the same precedent DD-40/B13 set for
+      an advisor-consulted fix inside an already-reviewed unit. A second,
+      immediate advisor pass on point 10a's own new test caught that
+      `create_notification` twice in one transaction gives both rows an
+      identical `created_at` (Postgres `now()` is transaction-frozen, the
+      same reason `mark_thread_read` needs `func.clock_timestamp()`) — the
+      test still proved the load-bearing claim (unread-first beats the
+      limit) but its docstring's "oldest" framing wasn't actually pinned;
+      fixed by backdating `old_unread.created_at` two days before marking
+      the other row read, so both sort keys are genuinely exercised.
+  11. **Final regression pass**: full backend suite 1200→1203 passing
+      (three new tests total: two from point 8, one from point 10a),
+      re-run 5× across the unit with zero regressions (final re-run after
+      point 10a's own test-precision fix above). Both frontend apps'
+      `tsc --noEmit` and `next build` clean after every change, including
+      both fix passes. One flake noted for the record, not chased:
+      `TestWebSocketConnection::test_connecting_with_a_valid_ticket_
+      succeeds` failed once (`concurrent.futures.CancelledError`) inside a
+      full-file run, passed cleanly both standalone and in every full-suite
+      re-run after — pre-existing WS test-isolation flakiness, not a
+      regression from this unit's changes.
+
+- **DD-42 (Unit 30b — chat composer draft persistence, MEADOWOPS-UI-004,
+  harness-os spec content id MEADOWOPS-DOM-032, PRD 6.1 "Drafting" bullet /
+  PRD 383, catalog row 31, B12 follow-on):**
+  1. **Scope escalation via advisor(), before any code was written.** The
+     first spec draft was client-side-only (a localStorage buffer, no
+     backend change) — an advisor() consultation flagged three converging
+     reasons this was under-scoped: PRD 383's explicit "Reliability
+     (drafts/submissions never lost — verified by the test suite in
+     Section 9, not just asserted)," `assess_risk`'s own `tests` gate being
+     unsatisfiable by a pure-frontend change in a repo with no configured JS
+     test framework, and B12's own deferral note already referencing
+     `ChatThread`/`ChatMessage`. Revised to full-stack before the spec was
+     validated. The advisor also flagged, before any code existed, that a
+     thread_id-only key (client or server) would let the Builder's and
+     Analyst's independent drafts on the same thread collide — resolved via
+     a `(thread_id, user_id)` composite key server-side, directly proven via
+     two real logged-in browser sessions later in this unit and reconfirmed
+     unregressed after every subsequent fix.
+  2. **Explicitly rejected a bespoke-test-tooling approach.** Before settling
+     on the backend-pytest-plus-live-browser-verification pattern, a
+     standalone-tsc-compiled-module-plus-`node:test` approach was explored
+     to get automated frontend unit coverage without adding a dependency —
+     advisor() explicitly rejected this as "a one-time demonstration wearing
+     a test's clothes... not a regression suite" and directed reliance on
+     backend coverage (for the persistence logic) plus live-browser
+     verification (for the pure-frontend behavior), matching every prior
+     full-stack unit's own precedent (U16, U19, U20a, U21, U28) — none of
+     which have a frontend test framework either.
+  3. **Backend:** migration 0025 adds `chat.chat_thread_draft` (composite PK
+     `thread_id`+`user_id`, `body` not-null `Text`, `updated_at`, FKs to
+     `chat.chat_thread`/`live.user`) — deliberately kept as its own table
+     rather than folded into `ChatThreadReadState` despite an identical
+     shape, since read-state and draft text are unrelated concerns that only
+     happen to share a natural key (the same separation-of-concerns
+     reasoning that originally split read-state out of `ChatMessage`).
+     `app.services.chat.save_draft` upserts via
+     `pg_insert(...).on_conflict_do_update(...)` or deletes the row when
+     `body.strip() == ""` ("row exists = unsent text exists" is the whole
+     semantic — deleted, never emptied-in-place); `send_message` deletes any
+     draft row for the sender in the same transaction as the send, right
+     before its final flush. `list_threads_with_unread` gained a
+     `draft_body` outerjoin so thread lists can show/restore per-user drafts
+     without a second round trip. New route `PUT
+     /api/v1/chat/threads/{id}/draft` (`DraftUpdate` schema, no min_length —
+     blank is the valid "clear this draft" signal, max length enforced both
+     at the pydantic layer and again in the service layer as
+     defense-in-depth).
+  4. **Frontend (both subsystem apps, structurally identical per the
+     per-app-boundary duplication convention):** a `composer-draft.ts`
+     module holds `loadDraftBuffer`/`saveDraftBuffer`/`clearDraftBuffer`/
+     `clearAllDraftBuffers`/`syncDraftToServer`; the localStorage buffer is
+     the real defense against a network interruption (writes need no
+     network — this is what PRD 383 is actually asking for), the debounced
+     server PUT is a best-effort periodic sync for cross-session/
+     cross-device durability, not the primary defense — documented in the
+     module's own header and shaping every fix decision below (a failed
+     sync must never break the UI). `thread-view.tsx` restores a thread's
+     draft from the buffer (falling back to the server-synced
+     `thread.draft_body`) whenever the open thread changes, debounces
+     keystroke-driven syncs (500ms, matching `mail.tsx`'s own
+     `markReadDebounced` precedent), and clears both the buffer and (via
+     `send_message`'s own transactional clear) the server row on a
+     successful send.
+  5. **Dual review (code-reviewer + security-reviewer, parallel background
+     dispatch) found real, non-overlapping-in-framing but overlapping-in-root-cause
+     issues — all fixed, all re-verified:**
+     - **HIGH (code-reviewer) / LOW (security-reviewer), same root cause:**
+       collapsing "never saved" and "deliberately cleared to empty" into the
+       same `""` string let a locally-cleared draft be silently resurrected
+       from a stale server copy on next load (code-reviewer: a data-
+       integrity framing; security-reviewer: a sensitive-in-progress-text
+       framing). Fixed by making `loadDraftBuffer` return `string | null`
+       and changing the restore condition from `buffered || thread.draft_body`
+       to `buffered !== null ? buffered : thread.draft_body`. That both
+       reviewers independently found the same underlying bug from different
+       angles was read as confirmation both reviews were doing substantive
+       work, not duplicating a shallow pass.
+     - **HIGH (code-reviewer):** a debounced sync already in flight when
+       Send is clicked could land at the server after `send_message`'s own
+       transactional draft-clear, resurrecting the just-sent text as a
+       stale draft. Mitigated with an `AbortController` (cancels the
+       not-yet-fired timer and aborts the browser-to-proxy fetch leg before
+       calling `onSend`) plus a `pendingSyncRef` tracking any sync args not
+       yet fired. **A follow-up advisor() pass (run before this unit was
+       declared done, per this project's standard closeout pattern) caught
+       that the original in-line comment overclaimed what this fix
+       delivers**: aborting only cancels the browser-to-Next.js-proxy fetch
+       — the proxy route's own downstream fetch to the backend is not wired
+       to that AbortSignal, so a sync that had already reached the proxy by
+       the time Send is clicked can still complete server-side afterward.
+       The residual window is narrow (bounded by the 500ms debounce plus one
+       network hop) and its only effect is a stale *draft* reappearing on
+       next load — the sent message itself is never at risk, since
+       `send_message` and `save_draft` write to entirely separate tables.
+       Rather than thread an `AbortSignal` through the proxy route or add a
+       server-side send-vs-draft ordering guard (both judged disproportionate
+       to a display-only, narrow-window residual at this project's scale),
+       the in-line comment in both apps' `thread-view.tsx` `handleSend` was
+       corrected to describe the actual, narrower mitigation honestly —
+       matching the U22 precedent for documenting an accepted known
+       limitation rather than asserting a fix that isn't fully closed.
+     - **MEDIUM (code-reviewer):** a pending debounced sync was dropped
+       (not flushed) on thread switch or unmount, leaving the server copy
+       one edit stale after a quick switch right after typing. Fixed by
+       flushing (not dropping) via `pendingSyncRef` in the effect cleanup —
+       noting for the record that "flush" fires the fetch on
+       switch/unmount but does not guarantee it completes before a real tab
+       close; not oversold as a stronger guarantee than that in review or
+       here.
+     - **HIGH (security-reviewer):** subsystem_1 (orbynadmin) serves both
+       Admin/Builder and Analyst roles through one shared login page
+       (S1-FR-16), and subsystem_2's sign-in page can also see multiple
+       Builder logins on one shared workstation over time — without a fix,
+       a draft left in localStorage by whoever was last logged in would
+       silently pre-fill the next person's composer on that same browser.
+       Fixed by adding `clearAllDraftBuffers()` (sweeps every
+       `meadowops:composer-draft:*` key, explicitly leaving unrelated
+       device-preference keys like `orbynadmin-theme-config` untouched) and
+       calling it from both apps' `nav-user.tsx` `handleLogOut`, before the
+       logout network call.
+     - **LOW (security-reviewer):** the Next.js proxy route's
+       `request.json()` could throw uncaught on malformed JSON (unhandled
+       500 instead of a clean 400). Fixed with a try/catch plus an explicit
+       `typeof payload.body !== "string"` rejection (400) rather than
+       silently coercing a malformed payload into an empty-string "clear
+       this draft" action.
+     - **LOW (code-reviewer, accepted as-is):** the API test suite only
+       exercises the pydantic-layer length cap, not the service-layer
+       defense-in-depth branch — left undocumented-as-a-code-change since
+       both layers share `MAX_MESSAGE_BODY_LENGTH` and the service-layer
+       branch is genuinely unreachable via the API today, matching this
+       project's existing precedent for similar unreachable-defense-in-depth
+       situations.
+  6. **Verification.** Two full live-browser rounds against real running dev
+     servers (a one-off `run_dev_backend.py` launcher was written this unit
+     since `app.main` only exposes a `create_app()` factory, no module-level
+     `app`) and a real seeded Postgres database, using disposable
+     `livecheck-admin@`/`livecheck-analyst@meadowops.local` accounts created
+     and symmetrically cleaned up via one-off scripts (0 leftovers confirmed
+     both times). Round 1 proved the per-`(thread_id, user_id)`
+     collision-avoidance property with two simultaneous logged-in sessions.
+     Round 2 (after the fix pass) directly proved the null-vs-empty fix
+     (server held a stale draft, buffer held literal `""`, composer
+     rendered empty after reload — not the stale server text) and the
+     clear-on-logout fix (draft key gone from localStorage on the post-
+     logout page, unrelated theme key untouched). `tsc --noEmit` (both
+     apps, verified via the local `tsc` binary directly after `pnpm tsc`
+     itself proved transiently flaky in-shell, unrelated to this change) and
+     `next build` (both apps) clean throughout. Backend suite: 1222/1222
+     passing at final regression, zero regressions.
+  7. **Governance.** Domain spec `MEADOWOPS-UI-004` (content id
+     `MEADOWOPS-DOM-032`, spec DB id 227, version 2 — version 1 was the
+     superseded client-only draft). `assess_risk` hit the recurring DD-5
+     keyword-false-positive pattern twice on this unit's own negating
+     description clauses (ids 298 auto-high, 299 medium with a
+     since-corrected touched-paths list) before the operative **medium**
+     assessment (id 300, `requiredGates: ["spec","tests","review:code"]`).
+     code-reviewer approved (decision 1618, 2 HIGH + 1 MEDIUM found and
+     fixed, 1 LOW accepted as-is). security-reviewer approved (decision
+     1619, 1 HIGH + 2 LOW found and fixed, 0 CRITICAL). A final advisor()
+     pass after both reviews' fixes were verified (this project's standard
+     closeout step) caught the comment-honesty issue in point 5 above,
+     fixed before this unit was declared done — no code behavior changed by
+     that fix, only what the in-line comment claims about it.
+
+- **DD-43 (Unit 30c — chat file attachments, MEADOWOPS-UI-005, harness-os
+  spec content id MEADOWOPS-DOM-033, S1-FR-15/PRD 347/380, B12 follow-on to
+  U21/U30):**
+  1. **Backend.** `app.core.storage.AttachmentStorage` (filesystem-backed
+     object storage, dependency-injected the same way `ClaudeClient` already
+     is), `app.domain.attachment_validation` (an allowlist of jpeg/png/pdf/
+     csv, magic-byte content sniffing so a claimed content-type can't bypass
+     the allowlist), `app.services.chat_attachments` (upload/retrieve,
+     caller-owns-the-transaction like every other service module),
+     migration 0026 (`chat.chat_attachment`, thread-scoped, `message_id`
+     nullable until claimed by a send). Two-phase upload-then-claim flow:
+     Analyst uploads (`require_analyst`, built on `reject_service_role`),
+     gets back an unclaimed `attachment_id`, then references it in a normal
+     `send_message` call which claims it onto that message. Both roles can
+     read/download an attachment once claimed (thread-scoped access, not
+     uploader-scoped) — the Analyst-upload/both-role-read asymmetry PRD
+     347/380 actually describes.
+  2. **Frontend, full-stack (both apps).** orbynadmin (Analyst-facing,
+     subsystem_1) gained the actual upload UI in `thread-view.tsx` (file
+     picker gated to the allowlist via the `accept` attribute — a hint
+     only, never the real boundary — plus a pending-attachment chip cleared
+     on send or manual removal) and a new `uploadAttachment`/`getAttachment`
+     pair in `lib/chat-api.ts`, proxied through two new Next.js route
+     handlers (`/api/chat/threads/[id]/attachments`,
+     `/api/chat/messages/[id]/attachment`) that forward the caller's
+     identity as a Bearer token derived from the httpOnly session cookie,
+     never trusting a client-supplied header. shadcn-dashboard
+     (Builder-facing, subsystem_2) is download-only by design (S1-FR-15:
+     attachments are Analyst-side upload) — `thread-view.tsx` renders a
+     download link when a message carries `attachment_ref`, backed by its
+     own `getAttachment` + proxy route mirroring subsystem_1's. Both apps'
+     `tsc --noEmit` and `next build` clean.
+  3. **Dual review (code-reviewer + security-reviewer, parallel background
+     dispatch with a rich design-context briefing covering the full
+     backend + both frontends' file set), decisions 1621/1622, both
+     approved after fixes:**
+     - **HIGH, independently confirmed by both reviewers:** a non-ASCII
+       `original_filename` crashed the download route's
+       `Content-Disposition` header with an unhandled `UnicodeEncodeError`
+       (Starlette's Latin-1 header encoding) — a permanent 500 on that one
+       attachment forever, since filenames are stored immutably at upload
+       time with no later fix-up path. Fixed with an RFC 6266
+       dual-parameter header (`filename="<ASCII fallback>"` +
+       `filename*=UTF-8''<percent-encoded>`), both halves built from one
+       shared 255-char truncation — a follow-up advisor() pass caught that
+       the first fix truncated only the ASCII fallback, not the encoded
+       parameter, fixed to match. Regression test round-trips a real
+       non-Latin filename (`"评估.jpg"`) through upload and download.
+     - **HIGH/MEDIUM-disputed, resolved as real (security-reviewer):**
+       FastAPI's own body-parsing has no upstream size cap — a route's
+       `await file.read(max_size + 1)` only bounds what the route copies
+       out of an already-fully-parsed `UploadFile`; read directly in the
+       installed Starlette version, `formparsers.py`'s `on_part_data`
+       streams an entire file part into an uncapped `SpooledTemporaryFile`
+       with zero size enforcement before the route ever runs. Fixed with a
+       new `app.core.body_size_limit.MaxBodySizeMiddleware` — pure ASGI
+       (never buffers the body itself), an upfront `Content-Length` check
+       (the common case) plus a mid-stream raise inside a wrapped
+       `receive()` as a backstop for chunked-transfer/no-Content-Length
+       requests. **Verified empirically, both paths, against a running app
+       instance rather than assumed:** the Content-Length fast path
+       genuinely returns a 413 before `receive()` is ever called; the
+       no-Content-Length path's raise genuinely interrupts the stream
+       before the oversized body is fully received, but the response
+       surfaced to the client is FastAPI's own generic `400 "There was an
+       error parsing the body"`, not this middleware's 413 — traced
+       directly in `fastapi/routing.py`: request-body dependency resolution
+       wraps every exception except `HTTPException`/`JSONDecodeError` into
+       that fixed 400 before it can reach any handler this app registers.
+       **`request_body_too_large_handler` is therefore dead code for every
+       route on this API today** (all of them resolve their body through
+       that same FastAPI machinery) — kept registered only as a harmless
+       defensive no-op for a hypothetical future non-form route. This is a
+       **documented, deliberately accepted gap**, not a silent hole: the
+       security property that actually matters (the oversized body is never
+       fully received or spooled to disk) holds in both cases, and only the
+       surfaced status/message differs, only for the uncommon case of a
+       client omitting `Content-Length` altogether. Pinned by a regression
+       test asserting the real 400, not an assumed 413
+       (`tests/integration/test_chat_attachment_body_size.py`).
+     - **MEDIUM (claim race):** two concurrent `send_message` calls claiming
+       the same `attachment_id` could both pass the "not yet claimed" check
+       and last-writer-wins onto the same `ChatAttachment` row (an ordinary
+       `UPDATE` race, never a `UNIQUE` violation, since the constraint is on
+       `message_id` and each writer sets a distinct value). Fixed with
+       `session.get(ChatAttachment, attachment_id, with_for_update=True)`.
+       **Verified the lock genuinely fires, two independent ways, rather
+       than trusting SQLAlchemy's docs:** read `Session._get_impl`'s actual
+       source confirming the identity-map shortcut is unconditionally
+       bypassed whenever `with_for_update` is truthy, then traced real SQL
+       output against a live Postgres instance confirming `FOR UPDATE`
+       fires in both a fresh-session and an already-in-identity-map
+       scenario.
+     - **`get_attachment_for_message` hardened** (defense-in-depth for a
+       state unreachable through today's locked claim path, matching this
+       project's established precedent for similar checks): now also
+       verifies `attachment.message_id == message_id`, not just that
+       `message.attachment_ref` resolves to *some* row.
+       **`AttachmentRecordMissingError` stays unmapped at the API layer
+       (surfaces as a 500) — a deliberate choice, not an oversight:** both
+       raise conditions it covers ("attachment row doesn't exist at all"
+       and "attachment row exists but points at a different message") are
+       genuinely unreachable through `send_message`'s normal locked claim
+       path today, so there is no clean user-facing error to design for a
+       state that can't currently occur; the check itself was widened
+       (from trusting `attachment_ref` alone to also cross-checking
+       `message_id`) specifically so a *future* code path that ever set
+       `attachment_ref` outside the locked claim step would fail loudly
+       instead of silently letting two messages serve the same file.
+     - **Comment-honesty corrections** (this project's established
+       standard, carried forward from U30b): the route's own bounded-read
+       comment overclaimed it was the size-cap backstop (corrected to
+       credit `MaxBodySizeMiddleware`); migration 0026's docstring and
+       `AttachmentAlreadyLinkedError`'s docstring both overclaimed the
+       `UNIQUE(message_id)` constraint as the concurrency backstop
+       (corrected to credit the `FOR UPDATE` lock instead — the constraint
+       is a data-shape guarantee, not a race-safety mechanism).
+     - **Minor (code-reviewer):** `test_oversized_upload_is_rejected` didn't
+       assert its detail string, leaving nothing to distinguish the
+       route's own `AttachmentTooLargeError` 413 from the middleware's
+       fixed-message 413 if the cap or overhead constant ever changed —
+       fixed by asserting the exact detail message.
+  4. **Two accepted risks, documented rather than fixed** (per the user's
+     private security rules requiring rate limiting and input validation as
+     defaults — deliberately deviated from here, with reasoning recorded in
+     both the `security-reviewer` decision (1622) and this entry, not just a
+     code comment, per this project's governance-record standard):
+     - **No upload rate limiting, no orphan-attachment sweep.** An
+       uploaded-but-never-claimed attachment row/file has no TTL or cleanup
+       job. Matches this project's existing posture — no route anywhere in
+       this codebase has rate limiting yet (same as U21/U21a/U30a/U30b) —
+       and orphan accumulation is a storage-hygiene concern bounded by the
+       existing per-file size cap and the `require_analyst` upload gate,
+       not an exploitable vulnerability at this project's current
+       single-Analyst/single-Builder scale.
+     - **No CSV formula/DDE injection sanitization** on uploaded CSV
+       attachment content. This unit stores and serves attachment bytes
+       opaquely (upload/download only) — it never parses, renders, or
+       re-exports CSV content itself, unlike the existing Query Playground
+       CSV export path (a separate, already-shipped concern outside this
+       unit's scope). The risk is realized only if a downstream consumer
+       (a spreadsheet application) opens a downloaded file and executes a
+       formula it contains — a client-side risk inherent to any
+       file-sharing feature, not introduced by this unit's server code.
+  5. **A self-inflicted incident, found and fully resolved before this unit
+     was declared done.** An ad-hoc verification script written to prove
+     the `FOR UPDATE` claim above (point 3) ran real `session.commit()`
+     calls directly against the shared dev database
+     (`MEADOWOPS_DATABASE_URL`, the same database the test suite uses),
+     leaving committed rows behind (an `ExceptionFlag` row colliding with
+     the unique partial index `ux_exception_flag_open_entity`, plus leftover
+     `lockcheck-*` users/scenarios) — the next full suite run broke 32
+     tests + 335 errors across unrelated files. Root-caused directly (not
+     assumed) via the first failure's own traceback, then cleaned up with a
+     targeted raw-SQL deletion script mirroring this project's own existing
+     `cleanup_live_verification.py` pattern, then re-verified via a clean
+     full-suite rerun. Recorded here as a caution for any future ad-hoc
+     verification script in this project: never `commit()` against
+     `MEADOWOPS_DATABASE_URL` without matching teardown, same discipline
+     this project's own test fixtures already follow.
+  6. **A genuine, non-reproducing test flake found and fixed as a real
+     regression, not dismissed.** The chunked-body regression test
+     (point 3's `MaxBodySizeMiddleware` verification) originally lived
+     inside `tests/api/test_chat_api.py`, sharing a module with that file's
+     `TestClient.websocket_connect` tests. One of two clean full-suite runs
+     failed `TestWebSocketConnection::test_connecting_with_a_valid_ticket_
+     succeeds` with `CancelledError` — an advisor() review correctly flagged
+     this as a plausible real interaction (a `pytest.mark.asyncio` test
+     sharing a module with `TestClient`'s own thread/event-loop portal is a
+     known way to produce exactly that error), not a rare flake to shrug
+     off. Fixed by relocating the test to a new, self-contained
+     `tests/integration/test_chat_attachment_body_size.py` (this project's
+     existing home for genuine-async `httpx.AsyncClient`/`ASGITransport`
+     tests, alongside `test_subsystem2_boundary.py`) with its own
+     user/scenario/thread fixtures rather than importing from the api-test
+     module. Two consecutive full-suite runs after the move: **1276/1276,
+     zero flakes, both times.**
+  7. **Verification.** Both frontends' `tsc --noEmit` and `next build`
+     clean (point 2). Live-browser round (magic-byte rejection test,
+     cross-app Builder-side download verification, Analyst-only-upload 403
+     enforcement against a real Admin session) plus the dual-review fix
+     cycle above plus a second advisor() consultation (which surfaced the
+     `FOR UPDATE`/chunked-path/error-message/truncation gaps closed in
+     point 3) plus a third, final advisor() pass confirming both verified
+     claims were sound and directing the test-relocation fix in point 6.
+     Backend suite: 1276/1276 passing, stable across two consecutive full
+     runs with zero flakes.
+  8. **Governance.** Closes B12 entirely — all three follow-on units
+     (U30a/U30b/U30c) scoped by that blocker are now done. code-reviewer
+     approved (decision 1621, 1 HIGH + 1 MEDIUM + comment-honesty fixes, all
+     fixed). security-reviewer approved (decision 1622, 1 HIGH + 1
+     HIGH/MEDIUM-disputed + 1 MEDIUM fixed, 2 risks explicitly accepted per
+     point 4 above, 0 CRITICAL remaining) — the security review's file list
+     explicitly covered both frontend apps' proxy routes and upload/download
+     UI alongside the backend, confirming both Next.js proxy layers forward
+     identity correctly (Bearer token derived from the httpOnly session
+     cookie, never a client-supplied header) with no SSRF surface. **Phase
+     3's §6 checklist item 1 is now fully closed** (inbox/composer,
+     notifications, deadlines, drafts, and file attachments all done) — but
+     **Phase 3 as a whole is not yet complete**: §6's edge-case-catalog
+     checklist line stays unchecked, since catalog row 32 (backup restore)
+     remains genuinely open, blocked on B1/B2 (deployment target + managed
+     Postgres), independent of anything this unit touched.
+
 ---
 
 ## 4. Phase 1 — Foundation
@@ -2161,22 +3900,36 @@ Query Playground including its confirmation flow.
 
 ## 6. Phase 3 — Full Simulation Loop
 
-Mirrors PRD §10 Phase 3 checklist (10 items) + Exit Criterion.
+Mirrors PRD §10 Phase 3 checklist (10 items) + Exit Criterion. Item 1 split
+into two lines 2026-09-09 during the pre-U30 exit-criterion audit — see B12.
 
-- [ ] In-app work interface complete: real-time persona-chat inbox (Subsystem 1) and composer/thread monitor (Subsystem 2), notifications, drafting, deadlines, file attachments (6.1/6.13, added 2026-09-02 — see B8/DD-19)
-- [ ] Full multi-round loop working end-to-end (6.6, steps 1–10), validated via QA test-analyst runs
-- [ ] Stakeholder personas implemented and behaving distinctly
-- [ ] Decision & Event Ledger live with at least one full lifecycle tested (proposed → outcome)
-- [ ] Adaptive difficulty engine live (3 clusters, tier recommendations recorded and testable)
-- [ ] Admin: SQL query history view live (6.12)
-- [ ] Human review workflow built and testable (ER-1 through ER-6 mechanisms functioning, independent of a real reviewer being onboarded yet)
-- [ ] Warehouse transfers and carrier variability implemented
-- [ ] All 6 scenario types exercised at least once via QA test runs, including a simulated callback scenario
-- [ ] Full edge case catalog (9.2) implemented and passing
+- [x] Real-time persona-chat inbox (Subsystem 1) and composer/thread monitor (Subsystem 2) built and wired (6.1/6.13) — U21/U21a, done (see §6/DD-30/DD-31)
+- [x] Notifications, draft persistence, deadline tracking, and file attachments (6.1/6.13, added 2026-09-02 — see B8/DD-19) — **notifications + deadline tracking done** (U30a, MEADOWOPS-UI-003, 2026-09-09 — see §6/DD-41); **draft persistence done** (U30b, MEADOWOPS-UI-004, 2026-09-09 — see §6/DD-42); **file attachments done** (U30c, MEADOWOPS-UI-005, 2026-09-09 — see §6/DD-43). B12 closed
+- [x] Full multi-round loop working end-to-end (6.6, steps 1–10), validated via QA test-analyst runs — U29, done (see §6/DD-39). Checklist line corrected 2026-09-09 — this was already true as of U29 but never marked
+- [x] Stakeholder personas implemented and behaving distinctly — U23, done (see §6/DD-33: fixed attitude presets, distinct priorities/style per persona, redacted ground-truth projection, tested in `tests/domain/test_persona_chat.py`). Checklist line corrected 2026-09-09 — this was already true as of U23 but never marked
+- [x] Decision & Event Ledger live with at least one full lifecycle tested (proposed → outcome) — U24, done (see §6/DD-34); full lifecycle proved by `tests/api/test_ledger_api.py::test_full_lifecycle_through_to_outcome` and corroborated end-to-end by U29's callback test (accepted→implemented→outcome_observed→referenced by a later scenario, see §6/DD-39). Checklist line corrected 2026-09-09 — this was already true as of U24 but never marked
+- [x] Adaptive difficulty engine live (3 clusters, tier recommendations recorded and testable) — U25, done (see §6/DD-35: hold/resolve logic tested across clusters in `tests/domain/test_difficulty_engine.py`). Checklist line corrected 2026-09-09 — this was already true as of U25 but never marked
+- [x] Admin: SQL query history view live (6.12) — U28, done (see §6/DD-38)
+- [x] Human review workflow built and testable (ER-1 through ER-6 mechanisms functioning, independent of a real reviewer being onboarded yet) — U26, done (see §6/DD-36). Verified per-mechanism 2026-09-09: ER-1 (draft label — U11/U25 templates), ER-2 (review mechanism works against any scenario/type — the monthly cadence itself is an Active-Use policy, not a Build&Test mechanism), ER-3/ER-4 (`HumanReviewCreate.verdict`/`tier_assessment_notes`, agree/override pairing enforced app- and DB-side, tested in `tests/api/test_evaluation_api.py`), ER-5 (`require_admin` gating on evaluation/human-review/portfolio routes — Analyst never reaches tier/trend, `app/api/evaluation.py`/`app/api/portfolio.py`), ER-6 (immutability triggers + versioned prompt templates, migrations 0018/0021). Checklist line corrected 2026-09-09 — this was already true as of U26 but never marked
+- [x] Warehouse transfers and carrier variability implemented — U27, done (see §6/DD-37)
+- [x] All 6 scenario types exercised at least once via QA test runs, including a simulated callback scenario — U29, done (see §6/DD-39)
+- [x] Full edge case catalog (9.2) implemented and passing — U30 (2026-09-09) + U30a (2026-09-09) + U30b (2026-09-09) + B2's backup/restore drill (2026-09-13): 32/32 rows closed (see §8 for the full per-row breakdown)
 
 **Exit criterion:** a full scenario can be demoed live start-to-finish via a QA
 test run — request, investigation, response, pushback, revision, draft
-evaluation, ledger recording. A simulated callback scenario has actually run.
+evaluation, ledger recording. A simulated callback scenario has actually run
+(U29, see §6/DD-39). Per the user's explicit 2026-09-09 instruction, Phase 3
+is not finished until every checklist line above is checked — this includes
+U30 (edge case catalog) and the three deferred-scope units U30a/U30b/U30c
+(chat notifications/deadlines, draft persistence, file attachments — see
+B12), not just the scenario-loop demo itself. U30a, U30b, and U30c are now
+all done (see §6/DD-41, §6/DD-42, §6/DD-43) — B12 is fully closed and
+checklist item 1 is fully checked. The last remaining gap, catalog row 32
+(backup restore, blocked on B1/B2), closed 2026-09-13: the user created a
+Railway + Neon deployment target (B1) and gave explicit go-ahead for a real,
+destructive backup/restore drill against it (B2) — full mechanics and
+verification in §8's row 32 and §2's B1/B2 rows. **Every checklist line
+above is now `[x]`. Phase 3's exit criterion is satisfied.**
 
 ### Phase 3 units
 | Unit | Spec ID (planned) | Description | Status |
@@ -2184,14 +3937,17 @@ evaluation, ledger recording. A simulated callback scenario has actually run.
 | U21 | MEADOWOPS-UI-001 | **Corrected 2026-09-02 (see B8/DD-19):** Analyst's persona-chat inbox (Subsystem 1, Appendix D.1's Chat page, S1-FR-15) + Builder's composer/thread monitor (Subsystem 2, Mail page repurposed) — was "Mail-style, Subsystem 2 only," now full-stack across both apps per 6.1/6.13's chat redesign. **Scoped 2026-09-03 (user, 2 AskUserQuestions):** build now as chat-UI-without-AI-composer (plain-text send/receive over U21a's substrate — AI-suggested message/sufficiency check is U23's job, blocked on B3); unread-thread badges get a new `chat.chat_thread_read_state` table (mutable, outside the immutability trigger — S1-FR-15 names them, U21a's schema had no read-tracking); Analyst-side file attachments (S1-FR-15/PRD 380 — allowlist, size cap, object storage, thread-scoped access, own boundary test) explicitly **deferred to a follow-on unit**, same precedent as U18→U20/U20→U20a. | **Done, full-stack — see DD-31.** `new-feature` workflow run 137 (spec `MEADOWOPS-UI-001`, risk assessed — another DD-5 false positive on reused auth keywords, parked at stage "tests" per the known B6 bookkeeping gap, §0.1). Backend read-state addition (migration 0019, `mark_thread_read`/`list_threads_with_unread`) + full frontend (orbynadmin's new Chat page, shadcn-dashboard's Mail page rewritten from its fake-email template) shipped. code-reviewer (backend clean; frontend 1 HIGH + 2 MEDIUM + 1 LOW, all fixed) and security-reviewer (0 CRITICAL/HIGH, 1 MEDIUM + 4 LOW, fixed or confirmed non-issues) both dispatched post-implementation. 758/758 backend tests passing (745→758, 13 new); both frontends' `tsc --noEmit` clean. Live-verified end-to-end in real browsers after every fix: Builder creates a thread and sends a message, Analyst sees an unread badge, opens it, replies, and the reply arrives in the Builder's already-open tab in real time with zero console errors. No AI composer, no file attachments (both explicitly deferred). |
 | U21a | MEADOWOPS-DOM-014 | Chat delivery infrastructure — Chat Thread/Chat Message data model (Appendix B), websocket real-time layer, the §7 named cross-subsystem exception (shared message store, each side still API-only). U21 depends on this existing first. **Interface design from DD-25** (one `ChatThread` per (Scenario, persona) pair locked for life; Builder opens a thread to act as that persona; Analyst has one unified inbox across every persona's thread, replying only as herself) implemented as designed. | **Done, backend-only — see DD-30.** `security-change` workflow run 136 completed (security_review/1576, approval/1577, implement/1578, finalize/1579, all approved). Risk **high** (genuine — new WebSocket auth surface, not a DD-5 false positive). Pre-implementation security review (2 MEDIUM incorporated into the design before any code) + post-implementation code-reviewer (WARNING, 3 MEDIUM + 1 LOW, all fixed) + post-implementation security-reviewer (2 MEDIUM + 4 LOW, both MEDIUMs fixed). 745/745 backend tests passing (689 pre-unit + 56 new), 0 skipped, stable across repeated runs. No UI — U21 (chat inbox/composer) is the separate follow-on unit that builds on this substrate. |
 | U22 | MEADOWOPS-DOMAIN-011 | Claude scenario generation + validation pipeline (6.4) | **Done, backend-only — see DD-32.** `new-feature` workflow run 138 (spec `MEADOWOPS-DOMAIN-011`/content id `MEADOWOPS-DOM-016`, risk assessed **medium**, decision 1581 approved). Scoped via one `AskUserQuestion` (extend `regenerate_scenario` with a full overwrite; Claude returns structured JSON, not prose). New `app.domain.scenario_generation` module (prompt building via the existing `GENERATION_TEMPLATE`, JSON schema validation, exactly-one-automatic-retry per PRD 9.2); `regenerate_scenario` now requires a `ClaudeClient` and only writes `ground_truth` after both AI generation and a new referenced-entity-id DB-fact check succeed — deliberately supersedes U18's own merge-not-replace fix. API layer 503s with no Claude client configured (still true — Phase 4/B3), 502s on a Claude failure, 422s on a bad referenced id. code-reviewer (APPROVE, 1 MEDIUM + 1 LOW, both addressed) and security-reviewer (0 CRITICAL/HIGH, 2 MEDIUM + 2 LOW + 1 informational — the 2 LOW fixed, both MEDIUM documented as known limitations deferred to Phase 4's real adapter and U30 respectively) both dispatched post-implementation. 813/813 backend tests passing (758→813). No frontend changes. |
-| U23 | MEADOWOPS-DOMAIN-012 | Stakeholder persona roleplay + multi-round pushback loop (6.5, 6.6). **Amended 2026-09-02 (see B8/DD-19):** also covers the Builder-invoked AI sufficiency check (6.13) — same AI-wiring moment, same conversational mechanics | Not started |
-| U24 | MEADOWOPS-DOMAIN-013 | Ledger full lifecycle wiring + callback mechanism (4.4) | Not started |
-| U25 | MEADOWOPS-DOMAIN-014 | AI evaluation framework (schema-validated) + adaptive difficulty engine (6.7, 6.8) | Not started |
-| U26 | MEADOWOPS-DOMAIN-015 | Human review workflow mechanism (ER-1–ER-6) + portfolio export (6.9, 6.10) | Not started |
-| U27 | MEADOWOPS-DOMAIN-016 | Warehouse transfers + carrier variability | Not started |
-| U28 | MEADOWOPS-API-005 | Admin SQL query history view (6.12) | Not started |
-| U29 | MEADOWOPS-QA-001 | QA test-analyst harness — all 6 scenario types incl. callback (Appendix C) | Not started |
-| U30 | MEADOWOPS-HARDEN-001 | Edge case catalog implementation sweep (9.2, tracked in §8 below) | Not started |
+| U23 | MEADOWOPS-DOMAIN-012 | Stakeholder persona roleplay + multi-round pushback loop (6.5, 6.6). **Amended 2026-09-02 (see B8/DD-19):** also covers the Builder-invoked AI sufficiency check (6.13) — same AI-wiring moment, same conversational mechanics | **Done, backend-only — see DD-33.** `new-feature` workflow run 139 (spec `MEADOWOPS-DOMAIN-012`/content id `MEADOWOPS-DOM-017`, risk assessed **medium**, decision 1582 approved). Scoped via one consolidated `AskUserQuestion` (4 sub-decisions: fixed attitude preset list; redacted known_cause+evidence projection of ground_truth for persona knowledge, not a new schema; pushback-only AI suggestion, opening message stays Builder-typed; structured JSON sufficiency-check output, ephemeral/no DB write). New `app.domain.persona_chat` module (persona priorities/style transcribed from PRD 6.5, attitude presets, redacted-projection prompt building, PRD 9.2 one-retry orchestration) and `app.services.persona_chat` module (read-only, requires a prior Analyst message and a non-cancelled scenario). Two new Builder-only (`require_admin`) routes on `app.api.chat`: suggest-pushback, sufficiency-check. code-reviewer (APPROVE, 1 MEDIUM — a real prompt-duplication bug, fixed — + 2 LOW, both fixed) and security-reviewer (0 CRITICAL/HIGH, 3 LOW — 1 fixed, 2 documented as known limitations) both dispatched post-implementation; the core access-control property (Analyst can never reach the ground truth via either route) was independently verified end-to-end and confirmed to hold. 890/890 backend tests passing (813→890). No frontend changes — the Builder-facing composer UI for these two actions is a follow-on concern. |
+| U24 | MEADOWOPS-DOMAIN-013 | Ledger full lifecycle wiring + callback mechanism (4.4) | **Done, full-stack — see DD-34.** `new-feature` workflow run 140 (spec `MEADOWOPS-DOMAIN-013`/content id `MEADOWOPS-DOM-018`, risk assessment id 286, **critical** — keyword false positive on "ledger" against CONST-ARCH-001/DD-5, human-ack gate explicitly confirmed by the user, closed via `record_decision` id 1583 `approved` — same B6 bookkeeping-gap workaround as every prior unit, `workflow_status` never self-advances past "tests" for this project). 959/959 backend tests passing (947→959), orbynadmin `npm run build` clean. Both code-reviewer and security-reviewer dispatched post-implementation, all findings fixed (2 HIGH, 2 MEDIUM from code review; 1 MEDIUM, 1 LOW from security review) — see DD-34. |
+| U25 | MEADOWOPS-DOMAIN-014 | AI evaluation framework (schema-validated) + adaptive difficulty engine (6.7, 6.8) | **Done — see DD-35.** `new-feature` workflow run 141 (spec `MEADOWOPS-DOMAIN-014`/content id `MEADOWOPS-DOM-019`, risk assessment id 288, **medium** — first `assess_risk` call (id 287) hit the same self-inflicted keyword false positive as U11's "secret" (my own description said "no changes to payments, financial" — dropped, not gamed), gates `[spec, tests, review:code]`, no human-ack needed). 1041/1041 backend tests passing (1029→1039 across both review rounds, →1041 after a post-review advisor consult found and fixed one blocking gap), closed via `record_decision` ids 1584 (code-reviewer, approved), 1585 (security-reviewer, approved), and 1586 (post-review advisor consult, approved) — same B6 bookkeeping-gap workaround as every prior unit. Backend-only scope (no frontend UI — this unit's routes are Builder/admin-API surface only, no orbynadmin page requested or built). Both code-reviewer and security-reviewer dispatched post-implementation, all findings fixed (1 HIGH, 1 LOW from code review; 2 MEDIUM, 2 LOW from security review); a subsequent advisor consult before closing the unit found one more blocking gap (no cancelled-scenario guard before writing an immutable Evaluation row) — also fixed — see DD-35. |
+| U26 | MEADOWOPS-DOMAIN-015 | Human review workflow mechanism (ER-1–ER-6) + portfolio export (6.9, 6.10) | **Done, backend-only — see DD-36.** `new-feature` workflow run 143 (spec `MEADOWOPS-DOMAIN-015`/content id `MEADOWOPS-DOM-020`, risk assessment id 291, **medium** — two self-inflicted keyword false positives first ("order" critical id 289, "auth"/"authentication" high id 290, both from negating scope-description clauses), gates `[spec, tests, review:code]`, no human-ack needed). New `engine.human_review` + `engine.portfolio_artifact` tables (migration 0021, same immutability-trigger shape as `engine.evaluation`); human-review routes `require_admin`, portfolio reflection POST `reject_service_role` (either Admin or Analyst can author it), portfolio export GET `require_admin`. 1108/1108 backend tests passing, stable across both review rounds and a post-review `submitted_by_user_id` migration amendment (0021 edited in place, never applied beyond this machine — clean downgrade/upgrade round-trip both times). Closed via `record_decision` ids 1587 (code-reviewer, approved), 1588 (security-reviewer, approved), and 1589 (RED/GREEN bookkeeping, approved) — same B6 bookkeeping-gap workaround as every prior unit. Backend-only scope (no frontend UI requested or built). Both code-reviewer (1 MEDIUM, fixed) and security-reviewer (2 MEDIUM — 1 fixed, 1 documented not fixed as a deliberate design call; 3 LOW documented not fixed) dispatched post-implementation — see DD-36. |
+| U27 | MEADOWOPS-DOMAIN-016 | Warehouse transfers + carrier variability | **Done, backend-only — see DD-37.** `new-feature` workflow run 144 (spec `MEADOWOPS-DOMAIN-016`/content id `MEADOWOPS-DOM-021`, risk assessment id 292, **critical** — self-inflicted keyword false positive on "order" from a scope description mentioning the existing PO-creation guard, same DD-5 pattern as prior units, human-ack via `record_decision` id 1590). Activates existing-but-unused Phase 1 schema (`WarehouseTransfer`/`TransferStatus`, `Carrier.variability`/`reliability_pct`) inside the scheduled tick — zero migrations. New domain functions `carrier_actual_transit_days`/`warehouse_deficit`/`transferable_surplus`/`pick_transfer_donor`; new service functions `_create_warehouse_transfers_if_needed`/`_progress_warehouse_transfers`; makes Unit 15's previously-unreachable `evaluate_late_shipment` check reachable for the first time. 1135/1135 backend tests passing (1108→1132 at first GREEN, →1135 after code-review test additions). Closed via `record_decision` ids 1591 (code-reviewer, approved), 1592 (security-reviewer, approved), and 1593 (RED/GREEN bookkeeping, approved) — same B6 bookkeeping-gap workaround as every prior unit. Backend-only scope (no frontend UI requested or built — pure scheduler/domain logic, no new API routes). Both code-reviewer (1 HIGH, 1 MEDIUM, 2 LOW — all fixed) and security-reviewer (0 CRITICAL/HIGH/MEDIUM, 2 INFO documented not fixed) dispatched post-implementation — see DD-37. |
+| U28 | MEADOWOPS-API-005 | Admin SQL query history view (6.12) | **Done, full-stack — see DD-38.** `new-feature` workflow run 146 (spec `MEADOWOPS-API-005`, first `api`-typed spec in Phase 3 — schema shape `{id, title, endpoints: [{path, method, description}]}` probed fresh via `validate_spec`, distinct from the `domain`-typed schema every prior Phase 3 unit used, risk assessment ids 293/294, **critical** both times — self-inflicted keyword false positive on "order" from "ordered by (submitted_at desc, id desc)" in the pagination description, same DD-5 pattern as prior units, human-ack via `record_decision` ids 1594/1597/1598). New `GET /api/v1/admin/query-log` route (`require_admin`, distinct from Unit 19's self-scoped `reject_service_role` `/api/v1/query/history`), new `AdminQueryLogRead` schema (adds `user_email` via a `live.user` join, kept separate from `QueryLogRead` so the Analyst's own history response is never widened), new migration 0022 (composite index on `live.query_log(submitted_at, id)`, added post-code-review since the admin route does an unfiltered full-table sort+paginate the way Unit 19's own user-scoped/`LIMIT 50` route never needed to). New orbynadmin admin-only page (`/admin/query-log`) — nav entry hidden from Analyst via a new `NavItem.adminOnly` flag (cosmetic only; the page itself re-checks `getCurrentRole()` and the real boundary stays server-side `require_admin`), click-to-expand dialog for full query text (the one UI capability that didn't exist anywhere yet, even in Analyst's own history tab), reuses the established `DataTable`/`ColumnDef` pattern from Unit 8's master-data pages. 1141/1141 backend tests passing (1135→1141). Closed via `record_decision` ids 1595 (code-reviewer, approved — 3 MEDIUM, all fixed: dead client-proxy route deleted, an overclaiming doc-comment corrected, the missing index added), 1596 (security-reviewer, approved — 0 CRITICAL/HIGH/MEDIUM, 1 LOW mooted by the dead-code deletion), and 1599 (workflow_status bookkeeping-gap acknowledgment, same B6 pattern as every prior unit — stayed parked at stage `risk` regardless of genuine risk assessment + human-ack + dual review all being satisfied and logged). Live-verified in a real browser (Playwright): admin sees cross-user rows (own + Analyst's, with correct email attribution) and the expand dialog; Analyst gets both the nav entry hidden and a clean "no access" message on direct navigation to the URL. |
+| U29 | MEADOWOPS-QA-001 | QA test-analyst harness — all 6 scenario types incl. callback (Appendix C) | **Done, test-only — see DD-39.** `new-feature` workflow run 148 (spec `MEADOWOPS-API-029`, the second `api`-typed spec in Phase 3 — no `QA`-prefixed spec type exists among the 5 fixed types, so this listed the 17 existing endpoints the harness exercises instead of forcing a `domain`-typed entity model onto a test-writing unit; risk assessment id 295, **critical** — self-inflicted keyword false positive on "ledger" against CONST-ARCH-001/DD-5, human-ack via `record_decision` id 1602). No production code changed: every route PRD 6.6's 12-step loop needs already existed. New `tests/support/qa_harness.py` (shared REST-driver helper) plus `tests/e2e/test_qa_scenario_types.py` (6 tests, one per PRD 6.2 scenario type) and `tests/e2e/test_qa_callback_scenario.py` (1 test: a decision advanced to `outcome_observed`, confirmed via `callback-candidates`, then referenced by a second scenario) — 7 new end-to-end tests. Genuine host-observed RED/GREEN: the harness caught a real bug (two `ExceptionFlag` rows collided on the `ux_exception_flag_open_entity` unique index), fixed. 1148/1148 backend tests passing (1141→1148). Closed via `record_decision` ids 1603 (code-reviewer, approved — 2 MEDIUM fixed, 2 LOW addressed) and 1604 (security-reviewer, approved — 0 CRITICAL/HIGH/MEDIUM/LOW). No frontend changes, no migrations. |
+| U30 | MEADOWOPS-HARDEN-001 | Edge case catalog implementation sweep (9.2, tracked in §8 below) | **Done, backend-only — see §8/DD-40.** 29/32 catalog rows closed at the time (7 newly built, 10 documentation-corrected, row 1 N/A, row 5/30 split N/A/deferred); remaining 3 formally deferred (rows 15/31 to U30a/U30b, row 32 to B1/B2 — all three since closed, catalog now 32/32). Includes a reverted DB-level design (migration 0023's `ux_scenario_single_active`, see B13) replaced with an app-level guard. Risk assessment id 296 (critical, DD-5 false positive), human-ack via `record_decision` id 1607. code-reviewer approved (decision 1614, 2 MEDIUM fixed; supersedes mis-scoped 1612), security-reviewer approved (decision 1615, 0 CRITICAL/HIGH; supersedes mis-scoped 1613). 1148→1172 backend tests passing. |
+| U30a | MEADOWOPS-UI-003 | **Added 2026-09-09 (see B12).** Chat notifications + deadline tracking — closes catalog row 15 (thread deadline/overdue concept) and the notification half of catalog row 30, plus the "notifications"/"deadlines" clauses of Phase 3 checklist item 1 (6.1/6.13) | **Done, full-stack — see DD-41.** Domain spec `MEADOWOPS-UI-003` (content id `MEADOWOPS-DOM-031`, DB id 226), risk assessed **medium** (id 297, `requiredGates: ["spec","tests","review:code"]`). **Backend:** migration 0024 adds `ChatThread.deadline_at`/`deadline_approaching_notified`/`overdue_notified` and `chat.notification` (kind `deadline_approaching`\|`deadline_missed`, native Postgres enum). `app.services.chat.send_message` sets/clears the deadline and resets both idempotency flags on every send (Builder message sets it `response_window_days` out — new `Settings.chat_response_window_days`, default 4 — Analyst reply clears it). New `app.services.notifications` module: `sweep_thread_deadlines` (scheduler-tick-driven, wired into `app.domain.scheduler` alongside `flag_stale` via new `Settings.chat_deadline_approaching_within_hours`, default 24h) is idempotent by construction (`deadline_approaching_notified`/`overdue_notified` each fire at most once per `deadline_at` value — a re-run against unchanged state is a no-op, directly tested) and notifies by role (`DEADLINE_MISSED`→every active Builder/`ADMIN`, `DEADLINE_APPROACHING`→every active Analyst/`ANALYST`); `mark_notification_read` is ownership-scoped (id AND user_id together — a wrong-owner id 404s exactly like an unknown one, matching `get_thread`'s `ThreadNotFoundError` precedent). Two new routes: `GET /api/v1/chat/notifications`, `POST /api/v1/chat/notifications/{id}/read`. `ThreadRead` gained `deadline_at`/`is_overdue` (the latter a moment-of-response computation, never a stored flag — deliberately did not expand `ChatThreadStatus` past its two-state `open`/`completed` model, verified via grep that nothing depends on that invariant). **Frontend:** both subsystems' chat thread-view gained a `DeadlineBanner` on the open thread (PRD 6.1's literal "surfaced as a deadline banner on the open thread"); subsystem_1's thread-list gained a `DeadlineIndicator` icon (approaching/overdue) next to each thread's unread badge — the Analyst's at-a-glance signal without opening every thread (code review fix, see below); subsystem_2's dashboard Home page gained a real Notifications section (`listNotifications()`+`listThreads()` server-fetched, joined client-side by `thread_id` to show the persona label) — the Builder's PRD-named "Open Threads, Company Status, **Notifications**, Completed Work" surface (subsystem_2's own CLAUDE.md: this page's real content was "deferred to a later unit" — this is that unit; Open Work/Company Status/Completed Work remain the pre-existing stub, explicitly out of this unit's chartered scope). Subsystem_1's own `/notifications` page (PRD Appendix D.1: "Admin-side exception alert feed... Separate from the Analyst's notifications in Subsystem 2") was deliberately left untouched — a different, unbuilt feature; an initial draft that wired chat notifications into that page and into new subsystem_1 proxy routes was caught via advisor consultation and reverted before review. code-reviewer: **WARNING → fixed → approved** (decision 1616), 1 MEDIUM + 3 LOW, all fixed — `DEADLINE_APPROACHING` was write-only for the Analyst (no consumer surface) until the `DeadlineIndicator` fix above; `chat_response_window_days`'s wiring through the API route was untested (its default matched `send_message`'s own default, masking a possible dead kwarg) — fixed with a settings-override test; the approaching-then-missed lifecycle on one `deadline_at` was never exercised — fixed with `test_a_thread_already_flagged_approaching_still_gets_missed_once_overdue`; `GET /notifications` had no bound — fixed via `DEFAULT_NOTIFICATION_LIST_LIMIT=100`. security-reviewer: **approved** (decision 1617), 0 CRITICAL/HIGH, 1 MEDIUM (same unbounded-query finding, same fix) + 2 LOW (accepted: role-wide notification fan-out rather than thread-participant-scoped, harmless at current single-Builder/single-Analyst scale, documented in the module's own docstring; fixed: dashboard's notification/thread fetch failures now `console.error` instead of silently rendering as "no notifications"). **Post-approval advisor pass** caught 2 more same-unit refinements (documented, not re-reviewed — see DD-41 point 10): unread-before-read ordering in `list_notifications_for_user` so the LIMIT can never silently hide an unread row behind read ones; `mark_notification_read`'s `read_at` now uses `datetime.now(timezone.utc)` directly instead of deriving tzinfo from `created_at`. Backend suite 1200→1203 (three new tests total), full suite re-run 4× across the unit, zero regressions. Both frontend apps' `tsc --noEmit` and `next build` clean. |
+| U30b | MEADOWOPS-UI-004 | **Added 2026-09-09 (see B12).** Chat draft persistence — closes catalog row 31 and the "drafting" clause of Phase 3 checklist item 1 | **Done, full-stack — see DD-42.** Domain spec `MEADOWOPS-UI-004` (content id `MEADOWOPS-DOM-032`, DB id 227), risk assessed **medium** (id 300, `requiredGates: ["spec","tests","review:code"]`). Full-stack scope was an advisor()-driven escalation from an initially client-only draft (PRD 383's reliability clause + the `tests` gate + B12's own `ChatThread`/`ChatMessage` wording). New `chat.chat_thread_draft` table (migration 0025, composite `(thread_id, user_id)` PK, kept separate from `ChatThreadReadState` on purpose), `app.services.chat.save_draft` (upsert-or-delete-on-blank), `send_message`'s transactional draft-clear, `PUT /api/v1/chat/threads/{id}/draft`. Both frontend apps gained a `composer-draft.ts` localStorage-buffer-as-real-defense / debounced-server-PUT-as-best-effort-sync module and `thread-view.tsx` restore/sync/clear wiring. code-reviewer approved (decision 1618, 2 HIGH + 1 MEDIUM fixed, 1 LOW accepted as unreachable-in-practice). security-reviewer approved (decision 1619, 1 HIGH + 2 LOW fixed, 0 CRITICAL). A follow-up advisor() closeout pass caught that the send/sync-race fix's own in-line comment overclaimed what it delivers (it cancels only the browser-to-proxy fetch leg, not the proxy's downstream fetch to the backend) — corrected to document the real, narrower, accepted residual rather than a false full-fix claim. Two live-browser verification rounds against real running dev servers and a real seeded database proved the Builder/Analyst collision-avoidance property and, after the fix pass, the null-vs-empty-buffer and clear-on-logout fixes. Backend suite 1203→1222 passing, `tsc --noEmit`/`next build` clean on both apps. |
+| U30c | MEADOWOPS-UI-005 | **Added 2026-09-09 (see B12).** Chat file attachments (S1-FR-15/PRD 380) — closes the "file attachments" clause of Phase 3 checklist item 1, informally deferred at U21 (see DD-31) with no follow-on unit created until now | **Done, full-stack — see DD-43.** Domain spec `MEADOWOPS-UI-005` (content id `MEADOWOPS-DOM-033`). Two-phase upload-then-claim attachment flow (`app.core.storage.AttachmentStorage`, `app.domain.attachment_validation` — allowlist + magic-byte content sniffing, `app.services.chat_attachments`, migration 0026's `chat.chat_attachment`); Analyst-only upload (`require_analyst`), both-role thread-scoped read. **Frontend:** orbynadmin (Analyst-facing) gained the real upload UI in `thread-view.tsx` plus `uploadAttachment`/`getAttachment` in `lib/chat-api.ts`, proxied through two new Next.js routes that forward identity as a Bearer token derived from the httpOnly session cookie; shadcn-dashboard (Builder-facing) is download-only by design (S1-FR-15), with its own `getAttachment` + proxy route and a download link in `thread-view.tsx`. code-reviewer approved (decision 1621, 1 HIGH + 1 MEDIUM + comment-honesty fixes, all fixed — a non-ASCII filename crash, an attachment-claim race closed with a verified `FOR UPDATE` row lock). security-reviewer approved (decision 1622, 1 HIGH + 1 HIGH/MEDIUM-disputed gap + 1 MEDIUM fixed — a new `MaxBodySizeMiddleware` closing a real Starlette upload-size gap, its chunked/no-Content-Length edge case verified and documented rather than assumed; both Next.js proxy layers confirmed to forward auth correctly with no SSRF surface; 2 risks explicitly accepted — no upload rate limiting/orphan sweep, no CSV formula-injection sanitization). A self-inflicted dev-database pollution incident from an ad-hoc verification script was found and fully cleaned up mid-unit; a genuine (not dismissed) `CancelledError` test flake was root-caused to two test styles sharing one module and fixed by relocating the regression test to `tests/integration/`. Closes B12 entirely (all three follow-on units done) and fully checks Phase 3 checklist item 1. Backend suite 1222→1276 passing, stable across two consecutive full runs with zero flakes. Both frontend apps' `tsc --noEmit` and `next build` clean. (The last remaining Phase 3 gap at the time, edge-case-catalog row 32, was unrelated to this unit and closed separately 2026-09-13 via B1/B2.) |
 
 ---
 
@@ -2214,8 +3970,8 @@ whenever the Analyst is ready.
 | Unit | Spec ID (planned) | Description | Status |
 |---|---|---|---|
 | U31 | MEADOWOPS-HARDEN-002 | Acceptance checklist pass, docs (schema diagram, data dictionary, data-flow doc, testing report) | Not started |
-| U32 | MEADOWOPS-INFRA-005 | Deployment to target host + managed Postgres (blocked on B1) | Blocked (B1) |
-| U33 | MEADOWOPS-INFRA-006 | Backup automation + restore drill (blocked on B1/B2) | Blocked (B1, B2) |
+| U32 | MEADOWOPS-INFRA-005 | Deployment to target host + managed Postgres (blocked on B1) | **Not started — B1 closed 2026-09-13, no longer blocked.** An ad hoc Railway+Neon deployment already exists (done solely to satisfy Phase 3's B1/B2, see §2), but this unit's own formal scope (proper CI wiring, verifying full parity with Docker Compose, etc.) hasn't been run as a harness-os unit |
+| U33 | MEADOWOPS-INFRA-006 | Backup automation + restore drill (blocked on B1/B2) | **Not started — B1/B2 closed 2026-09-13, no longer blocked.** A manual, one-off restore drill already happened (B2, see §2/§8 row 32) and proved the mechanism works, but this unit's own scope — *automating* backups (a scheduled job), not just a manual proof — hasn't been built |
 
 ---
 
@@ -2228,72 +3984,72 @@ proceeds. Nothing here is optional polish.
 ### Data & Simulation (Subsystem 1) — 9 rows
 | # | Edge case | Expected behavior | Status |
 |---|---|---|---|
-| 1 | Orphaned FK (e.g. Shipment referencing a deleted Sales Order) | Caught by validation, surfaced as a data-quality exception, not a silent null or crash | Not started |
-| 2 | Duplicate records injected (SR-3) | Detected and flagged, not silently deduplicated or accepted | Not started |
+| 1 | Orphaned FK (e.g. Shipment referencing a deleted Sales Order) | Caught by validation, surfaced as a data-quality exception, not a silent null or crash | **N/A** — U30 confirmed via a full-codebase grep that no DELETE endpoint exists anywhere in this system's API (every entity is soft-deleted/status-transitioned — `is_active`/`resolved_at`/status enums — never hard-deleted). "A Shipment referencing a deleted Sales Order" cannot occur through any code path this system exposes, so there is nothing to build a real test against; a synthetic direct-SQL DELETE would be testing Postgres's own FK enforcement, not this system's behavior. |
+| 2 | Duplicate records injected (SR-3) | Detected and flagged, not silently deduplicated or accepted | **Passing** — U30: new `duplicate_purchase_order` exception category (`app.domain.exception_engine.evaluate_duplicate_purchase_order`, `app.services.exception_engine._duplicate_purchase_order_evaluations`) flags >1 open PO sharing supplier/warehouse/expected-delivery-date/**product** (product_id added to the grouping key post-code-review — `assign_supplier` is deterministic per category and delivery-date jitter is drawn from a small fixed set, so two genuinely distinct products could otherwise land on an identical supplier/warehouse/date and false-flag); `tests/domain/test_exception_engine_domain.py::TestEvaluateDuplicatePurchaseOrder`, `tests/services/test_exception_engine.py::TestDuplicatePurchaseOrderFlags` (incl. `test_does_not_flag_two_pos_for_different_products_on_the_same_date`) |
 | 3 | Negative or zero inventory quantities | Rejected at write boundary or flagged as exception, never shown as valid stock | **Passing** — negative rejected at the write boundary via CHECK constraint (`test_inventory_snapshot_rejects_negative_quantity_on_hand`, Unit 2). Zero (or any below-threshold) days-of-supply is now flagged by the exception engine's low-stock rule (Unit 15) whenever it's measurable — an *undefined* ratio (no shipment activity in the trailing 30-day window) is deliberately never flagged nor mistaken for "resolved," per Unit 15's own HIGH security-review fix. |
-| 4 | Partial PO receipt (received ≠ ordered) | Correctly reflected in inventory and OTIF/fill-rate, not "complete" or "missing" | Not started |
-| 5 | Simulation clock crossing a month/year boundary mid-scenario | KPI period calculations remain correct; no off-by-one-period errors | **Date arithmetic passing** (`test_advance_date_crosses_a_month_boundary`, `..._year_boundary`, `..._leap_year_february`, Unit 4). KPI engine (Unit 14) is built but its SQL is all-time-aggregate, not period-bounded (see Unit 14's own MEDIUM fix) — "period calculations" in the period-of-time sense this row means aren't applicable to the current starter KPI design. |
-| 6 | Concurrent snapshot/reset operations | Serialized safely; no corrupted/partial world state | **Not started** — schema supports it (world_state rows are independent inserts, no shared mutable state there), but the locking `advance_simulation()` operation + its concurrency test for the `simulation_clock` singleton row (the one real contended resource) is still open (Unit 4 schema/FSM is done and reviewed; this service-layer operation was deferred out of that unit's scope, not blocked on anything now). |
-| 7 | Reset triggered while a scenario is active | In-flight scenario's own `world_state_id` unaffected | **Schema proxy passing** — `test_world_state_rows_are_never_mutated_by_reset` (Unit 4): world_state rows are append-only, a reset always inserts a new row rather than mutating existing ones. Full test (an actual scenario holding a `world_state_id` across a reset) needs the Scenario table, Phase 3. |
-| 8 | Reporting-layer lag exceeding expected window (simulated scheduler downtime) | Detected and surfaced, not silently masked as normal latency | Not started |
-| 9 | Master-data edit (Warehouse/Supplier/Carrier) applied mid-scenario | Historical scenario data referencing old values unchanged | Not started |
+| 4 | Partial PO receipt (received ≠ ordered) | Correctly reflected in inventory and OTIF/fill-rate, not "complete" or "missing" | **Passing** — U30: `app.domain.scheduled_flow.roll_partial_receipt_fraction` (seeded RNG) plus `app.services.scheduled_flow._progress_purchase_orders` now accumulate `quantity_received` across ticks and set `PurchaseOrderStatus.PARTIALLY_RECEIVED` (not `RECEIVED`) until the full ordered quantity has arrived; `tests/domain/test_scheduled_flow_domain.py::TestRollPartialReceiptFraction`, `tests/services/test_scheduled_flow.py::TestPartialPurchaseOrderReceipt` |
+| 5 | Simulation clock crossing a month/year boundary mid-scenario | KPI period calculations remain correct; no off-by-one-period errors | **Passing (date arithmetic); period-calculation portion N/A** — `test_advance_date_crosses_a_month_boundary`, `..._year_boundary`, `..._leap_year_february` (Unit 4). KPI engine (Unit 14) is all-time-aggregate by design, not period-bounded (Unit 14's own MEDIUM fix) — there is no period-of-time KPI calculation in this system for a month/year boundary to break, so that half of the row has no applicable behavior to test, not an open gap. |
+| 6 | Concurrent snapshot/reset operations | Serialized safely; no corrupted/partial world state | **Passing** — U12a's `test_simulation_clock_ops_concurrency.py` (its own docstring cites "PRD 9.2 row 6" directly) proves `advance_simulation()`'s `SELECT ... FOR UPDATE` lock on the `simulation_clock` singleton row actually serializes two genuinely separate connections/transactions, via both a live two-thread cross-connection test and a cheap unit-level "the statement is compiled with FOR UPDATE" check. Previously mismarked "not started" in this table — a documentation gap, not a code gap. |
+| 7 | Reset triggered while a scenario is active | In-flight scenario's own `world_state_id` unaffected | **Passing** — U30 added `Scenario.world_state_id` (migration 0023, a soft/provenance reference pinned at creation from `SimulationClock.current_world_state_id`) and proved it end-to-end: `tests/services/test_scenario_service.py::TestWorldStatePinning::test_a_scenario_s_world_state_id_survives_a_later_reset` creates a real scenario, runs `reset_simulation` twice, and confirms the scenario's own `world_state_id` is untouched. Builds on Unit 4's `test_world_state_rows_are_never_mutated_by_reset` (world_state rows are append-only). |
+| 8 | Reporting-layer lag exceeding expected window (simulated scheduler downtime) | Detected and surfaced, not silently masked as normal latency | **Passing** — Unit 17's `reporting_lag_stale` exception category (`app.domain.reporting_sync.is_lag_stale`, wired into `evaluate_exceptions` via `app.services.exception_engine`); `tests/services/test_exception_engine.py::test_opens_a_flag_once_the_lag_exceeds_the_configured_window`, `test_never_synced_does_not_open_a_flag`. Previously mismarked "not started" in this table — a documentation gap, not a code gap. |
+| 9 | Master-data edit (Warehouse/Supplier/Carrier) applied mid-scenario | Historical scenario data referencing old values unchanged | **Passing** — U30 confirmatory test: `app.domain.scenario.build_ground_truth_from_exception_flag` snapshots the flag's own column values into `Scenario.ground_truth` (a static JSONB blob) at creation time; nothing ever re-joins it against live `live.warehouse`/`live.supplier` rows afterward. `tests/services/test_scenario_service.py::TestGroundTruthImmuneToLaterMasterDataEdits` edits a real `Warehouse` row after scenario creation and confirms `ground_truth` is byte-for-byte unchanged. |
 
 ### Decision & Event Ledger — 4 rows
 | # | Edge case | Expected behavior | Status |
 |---|---|---|---|
-| 10 | Decision proposed but never approved/rejected | Flagged stale after a defined period, not permanent limbo | **Schema/FSM ready, periodic check pending.** `stale` is a first-class state (`proposed`/`clarification_requested` → `stale` → `accepted`/`rejected`, Unit 3) with a `stale_flagged_at` column. The actual "configurable period" scheduled check is a scheduler-touching unit, not yet built (Phase 2/3, scheduler unit). |
+| 10 | Decision proposed but never approved/rejected | Flagged stale after a defined period, not permanent limbo | **Passing** — Unit 24 wires `app.services.ledger.flag_stale` into the scheduler tick (`app.domain.scheduler._run_tick`, wall-clock `datetime.now(timezone.utc)`), driven by a new `Settings.stale_decision_after_days` (default 30, `ge=1`). Row-locked (`with_for_update(skip_locked=True)`) so a concurrent admin transition on the same row is skipped this tick rather than raced. |
 | 11 | Decision partially implemented, then scenario abandoned | Ledger state reflects "partial," not "complete" or silently dropped | **Passing** — `partially_implemented` is a first-class terminal-reachable state in the FSM (Unit 3, `test_valid_transition_is_accepted[accepted-partially_implemented]` etc.), not a derived/inferred flag. |
-| 12 | Callback scenario referencing a decision whose entity was later deactivated | Handled gracefully — callback still functions, referencing the entity's state at decision time | **Schema ready.** `entity_type`/`entity_id` on `decision_event` (Unit 3) are deliberately plain strings with no FK to master data, so a later soft-deactivation (`is_active=false`) can never orphan or block a ledger row (`test_entity_id_has_no_hard_foreign_key`). Actual callback-scenario behavior is a Phase 3 unit. |
+| 12 | Callback scenario referencing a decision whose entity was later deactivated | Handled gracefully — callback still functions, referencing the entity's state at decision time | **Passing** — U30 confirmatory test: `find_callback_candidates` (Unit 24) queries `DecisionEvent.entity_type`/`entity_id`, which have no hard FK to `live.supplier`/`live.warehouse` (Unit 3) — a later soft-deactivation can never orphan a lookup result. `tests/services/test_ledger_service.py::TestFindCallbackCandidates::test_still_surfaces_a_candidate_after_its_entity_is_deactivated` proves this against a real, seeded `Supplier` row (`is_active=False`), not just a free-standing string id. Injecting a candidate's summary into `app.domain.scenario_generation`'s narrative template to actually *generate* a callback-narrative scenario remains a separate, larger deferred feature (unrelated to this row's own "still functions" claim) — still not built, same as before. |
 | 13 | Two decisions affecting the same entity with conflicting outcomes | Both preserved in ledger; no silent overwrite | **Passing** — `test_two_decisions_on_the_same_entity_are_both_preserved` (Unit 3): no uniqueness constraint on `(entity_type, entity_id)`, real INSERT of two conflicting-outcome rows, both persist. |
 
 ### Scenario Engine (Subsystem 2) — 7 rows
 | # | Edge case | Expected behavior | Status |
 |---|---|---|---|
-| 14 | AI generates a scenario referencing non-existent/stale IDs | Caught by validation, rejected before reaching any user, Builder notified | Not started |
-| 15 | Scenario deadline passes with no response | Marked overdue per defined work states, Builder notified, doesn't vanish | Not started |
-| 16 | Empty or malformed response submitted | Rejected with clear message, not silently accepted | Not started |
-| 17 | Maximum pushback rounds exceeded | Loop concludes gracefully, proceeds to evaluation, doesn't hang | Not started |
-| 18 | Claude API error/timeout during generation, pushback, or evaluation | Retried once automatically; still-failing flagged to Builder, not silent/corrupting | Not started |
-| 19 | Two scenarios attempted active simultaneously | Prevented by default — one active scenario at a time | Not started |
-| 20 | Evaluation call returns malformed/incomplete output | Caught by schema validation, retried or flagged, never accepted as-is | Not started |
+| 14 | AI generates a scenario referencing non-existent/stale IDs | Caught by validation, rejected before reaching any user, Builder notified | **Passing** — Unit 22's `validate_referenced_entity_ids` (`app.services.scenario_service`) runs after every `regenerate_scenario` call; a non-empty error list raises `ScenarioGenerationValidationError` (ground_truth left untouched) and `app.api.admin_scenarios` maps it to a 4xx the Builder sees. `tests/services/test_scenario_service.py::TestValidateReferencedEntityIds` + `TestRegenerateScenario`'s own raise-on-invalid-ids test. Previously mismarked "not started" in this table — a documentation gap, not a code gap. |
+| 15 | Scenario deadline passes with no response | Marked overdue per defined work states, Builder notified, doesn't vanish | **Passing** — U30a/DD-41: `ChatThread.deadline_at` set by `send_message` (`response_window_days` out, default 4), `is_overdue` computed at read time (never a stored status — `ChatThreadStatus` deliberately stays two-state); `sweep_thread_deadlines` notifies every active Builder (`UserRole.ADMIN`) via `NotificationKind.DEADLINE_MISSED` once a thread's deadline passes with no reply, tested in `tests/services/test_notifications_service.py::TestSweepThreadDeadlines` and `tests/api/test_chat_api.py::TestListNotificationsRoute`. |
+| 16 | Empty or malformed response submitted | Rejected with clear message, not silently accepted | **Passing** — U30: `MessageCreate`'s new `_reject_blank_after_strip` Pydantic validator (`app.schemas.chat`) rejects a whitespace-only body with a 422, on top of the pre-existing empty-string/oversized-body checks; `tests/api/test_chat_api.py::test_whitespace_only_body_is_rejected` |
+| 17 | Maximum pushback rounds exceeded | Loop concludes gracefully, proceeds to evaluation, doesn't hang | **Passing** — U30: `app.services.persona_chat.MAX_PUSHBACK_ROUNDS` (5) — `suggest_thread_pushback` raises `MaxPushbackRoundsExceededError` (mapped to 409) once the Analyst has already replied that many times in a thread, so the Builder is steered toward completing/evaluating the thread instead of an unbounded loop. Flagged but deliberately left open at U23's own security review ("no PRD rule sets a round-count limit to enforce here") — row 17 is that PRD rule, closed here. `tests/services/test_persona_chat_service.py::TestSuggestThreadPushback` (both the raise and the one-round-before-the-limit case), `tests/api/test_chat_api.py::TestSuggestPushbackRoute::test_returns_409_once_the_maximum_pushback_rounds_is_reached` |
+| 18 | Claude API error/timeout during generation, pushback, or evaluation | Retried once automatically; still-failing flagged to Builder, not silent/corrupting | **Passing** — the same one-automatic-retry orchestration (PRD 9.2) is implemented independently at all three call sites: `app.domain.scenario_generation` (Unit 22), `app.domain.persona_chat` (Unit 23), `app.domain.evaluation` (Unit 25) — each raises its own terminal `...GenerationFailedError`/`...FailedError` once the retry is exhausted, and each API route (`app.api.admin_scenarios`, `app.api.chat`) maps it to a clean 502 the Builder sees. `tests/domain/test_scenario_generation.py`, `tests/domain/test_persona_chat.py` (`test_retries_once_after_a_claude_api_error_then_succeeds`, `..._a_timeout_then_succeeds`, `test_raises_after_the_retry_is_also_exhausted` ×2 classes), `tests/domain/test_evaluation.py` (same three). Previously mismarked "not started" in this table — a documentation gap, not a code gap. |
+| 19 | Two scenarios attempted active simultaneously | Prevented by default — one active scenario at a time | **Passing** — U30: `activate_scenario` (`app.services.scenario_service`) blocks activating a second scenario while another is `ACTIVE` and has no completed `chat.chat_thread` (i.e. still in flight); once that scenario's thread is completed, activation is allowed even though its own `status` column stays `ACTIVE` forever (see B13 — `ScenarioStatus` has no `active`→anything transition). A first attempt at DB-level enforcement (migration 0023's `ux_scenario_single_active` partial unique index) was built, found to be the wrong mechanism (it enforced "at most one row, ever, across all history," breaking real multi-scenario history in `test_evaluation_service.py`/the QA callback test), and reverted before shipping — see that migration's own docstring. Not race-safe (single-writer assumption, documented in `activate_scenario`'s own docstring) pending B13's real fix. `tests/services/test_evaluation_service.py::TestActivateScenarioSingleActiveGuard` (both the still-blocks and now-allowed cases), `tests/api/test_admin_scenarios.py::TestActivateScenario::test_activating_a_second_scenario_while_one_is_already_active_returns_409` |
+| 20 | Evaluation call returns malformed/incomplete output | Caught by schema validation, retried or flagged, never accepted as-is | **Passing** — same one-automatic-retry-then-terminal-error pattern as row 18, specifically for malformed output: `tests/domain/test_evaluation.py::test_retries_once_after_malformed_output_then_succeeds`, `test_raises_after_the_retry_is_also_exhausted`. Previously mismarked "not started" in this table — a documentation gap, not a code gap. |
 
 ### SQL Query Playground — 6 rows
 | # | Edge case | Expected behavior | Status |
 |---|---|---|---|
-| 21 | Long-running/runaway query | Cut off by statement timeout, clear message | Not started |
-| 22 | Query returning a very large result set | Row-limited/paginated, not rendered in full or crashing browser | Not started |
-| 23 | Multi-statement submission, destructive statement chained after harmless one | Confirmation dialog catches destructive statement regardless of position | Not started |
-| 24 | Malformed SQL / syntax error | Clear, readable error — never a raw stack trace | Not started |
-| 25 | Sandbox refresh triggered mid-query | In-flight query completes against a consistent snapshot or fails cleanly | Not started |
+| 21 | Long-running/runaway query | Cut off by statement timeout, clear message | **Passing** — Unit 19's app-enforced statement timeout on the `meadowops_sandbox` role's own connection, proven immune to the query itself trying to disable it; `tests/services/test_query_execution.py::test_runaway_query_is_cancelled_at_the_app_enforced_timeout`, `test_timeout_is_enforced_even_if_query_tries_to_disable_it`. Previously mismarked "not started" in this table — a documentation gap, not a code gap. |
+| 22 | Query returning a very large result set | Row-limited/paginated, not rendered in full or crashing browser | **Passing** — `app.domain.query_playground.truncate_rows` caps at `MAX_RESULT_ROWS=500` and returns a truncation flag rather than raising; `tests/domain/test_query_playground.py::test_truncates_and_flags_when_over_limit`, `test_exactly_at_limit_is_not_truncated`. Previously mismarked "not started" in this table — a documentation gap, not a code gap. |
+| 23 | Multi-statement submission, destructive statement chained after harmless one | Confirmation dialog catches destructive statement regardless of position | **Passing** — `app.domain.query_classifier.requires_confirmation` classifies every statement in the submission (`any(...)`, position-independent) and `app.domain.query_playground.overall_statement_type` mirrors the same bias for logging; `tests/domain/test_query_classifier.py::test_requires_confirmation_true_when_any_statement_is_write` is this exact scenario, cited directly to PRD line 214. Previously mismarked "not started" in this table — a documentation gap, not a code gap. |
+| 24 | Malformed SQL / syntax error | Clear, readable error — never a raw stack trace | **Passing** — `tests/api/test_query_playground_api.py::test_malformed_sql_returns_clean_error` asserts a 200 with `status="error"` and no `"Traceback"` substring in the surfaced message. Previously mismarked "not started" in this table — a documentation gap, not a code gap. |
+| 25 | Sandbox refresh triggered mid-query | In-flight query completes against a consistent snapshot or fails cleanly | **Passing** — `SANDBOX_ADVISORY_LOCK_KEY` (shared exclusive/shared Postgres advisory lock between `app.services.sandbox_refresh` and `app.services.query_execution`) serializes a refresh against any in-flight submission; `tests/services/test_sandbox_refresh.py::test_in_flight_query_sees_a_consistent_snapshot_across_a_concurrent_refresh`. Previously mismarked "not started" in this table — a documentation gap, not a code gap. |
 | 26 | Attempted write against a table outside the sandbox schema | Rejected at the database permission level — proves the hard boundary | **Passing** — `backend/tests/infra/test_sandbox_boundary.py` (Unit 1), real psycopg INSERT against `live.boundary_probe` as the restricted role, caught `InsufficientPrivilege` |
 
 ### Adaptive Difficulty & Evaluation — 3 rows
 | # | Edge case | Expected behavior | Status |
 |---|---|---|---|
-| 27 | Insufficient observations in a cluster | Explicit "hold, insufficient evidence" result — never a forced tier change | Not started |
-| 28 | Conflicting signals within one cluster across scenarios | A defined trend rule resolves it, not ad hoc judgment | Not started |
-| 29 | Reviewer overrides an AI tier recommendation | Logged distinctly from simple agreement | Not started |
+| 27 | Insufficient observations in a cluster | Explicit "hold, insufficient evidence" result — never a forced tier change | **Passing** — U25/DD-35: `app.domain.difficulty_engine.resolve_cluster_tier` returns `HOLD` for fewer than `MINIMUM_OBSERVATIONS=2` recommendations, `tests/domain/test_difficulty_engine.py` |
+| 28 | Conflicting signals within one cluster across scenarios | A defined trend rule resolves it, not ad hoc judgment | **Passing** — U25/DD-35: `resolve_cluster_tier` requires unanimous agreement across the most recent `MINIMUM_OBSERVATIONS` recommendations, else `HOLD`; `tests/domain/test_difficulty_engine.py` + end-to-end DB-backed coverage in `tests/services/test_evaluation_service.py::TestResolveDifficultyForCluster` |
+| 29 | Reviewer overrides an AI tier recommendation | Logged distinctly from simple agreement | **Passing** — U26/DD-36: `engine.human_review.verdict` (`agree`/`override`) is a distinct column from `overridden_recommendation`, with the pairing enforced at three independent layers (Pydantic `model_validator`, service-layer re-check, DB `CHECK` constraint); `tests/data/test_human_review_schema.py` + `tests/services/test_human_review_service.py` + `tests/api/test_evaluation_api.py::TestHumanReviewRoutes` |
 
 ### Notifications, Scheduler & Deployment — 3 rows
 | # | Edge case | Expected behavior | Status |
 |---|---|---|---|
-| 30 | Scheduler downtime (e.g. server restart) | Simulation clock and pending notifications recover cleanly — no double-fires, no lost events | Not started |
-| 31 | Draft-saving during a network interruption | In-progress text is not lost | Not started |
-| 32 | Backup restore | Actually performed at least once as a test, not just configured | Not started (blocked on B1/B2) |
+| 30 | Scheduler downtime (e.g. server restart) | Simulation clock and pending notifications recover cleanly — no double-fires, no lost events | **Passing — both halves.** The clock half is structural: each tick reads the persisted `simulation_clock` singleton and advances from there (`app.domain.scheduler`'s own docstring: exception-eval/KPI-snapshot are skipped for a half-run tick so the *next* successful tick re-evaluates fresh rather than double-counting), so a process restart can't replay an already-applied advance. The notifications half closed by U30a/DD-41: `sweep_thread_deadlines` is idempotent by construction (`deadline_approaching_notified`/`overdue_notified` each fire at most once per `deadline_at` value), so a scheduler restart re-processing the same tick writes nothing a second time — directly tested (`test_sweeping_an_already_overdue_thread_twice_does_not_double_fire`). |
+| 31 | Draft-saving during a network interruption | In-progress text is not lost | **Passing** — U30b/DD-42: every keystroke writes to a per-thread localStorage buffer (`composer-draft.ts`), which needs no network — this is the actual defense against a network interruption. A debounced `PUT /api/v1/chat/threads/{id}/draft` (`chat.chat_thread_draft`, composite `(thread_id, user_id)` key) provides best-effort cross-session/cross-device durability on top. Directly tested server-side in `tests/services/test_chat_service.py::TestDraftPersistence` and `tests/api/test_chat_api.py::TestSaveDraftRoute`; the client-side buffer/restore/clear-on-logout behavior was live-verified against real running dev servers and a real seeded database (no frontend test framework exists in this repo — matches this project's established full-stack-unit verification pattern, see DD-42 point 2/6). |
+| 32 | Backup restore | Actually performed at least once as a test, not just configured | **Passing — drill performed 2026-09-13, see §2 B2.** `pg_dump` (schema+data, `live`/`engine`/`reporting`, custom format) against the live Neon instance, verified as a genuine restorable archive (`pg_restore -l`: 204 TOC entries, 32/32 `TABLE DATA` entries matching every table then in those schemas) before anything was touched. Baseline row counts recorded per table (1,588 rows). All three schemas then `DROP ... CASCADE`d — genuine, total data loss, not a dry run. Restored via `pg_restore` from the archive; every one of the 32 tables came back, with counts matching the pre-drill baseline per table (the small count increases seen on a few tables post-restore are the live scheduler's own ticks landing during the drill window, not a discrepancy — confirmed by cross-referencing `scheduled_tick` row IDs/timestamps). Row counts alone don't prove content survived, so a direct content spot-check followed: `product`/`customer`/`supplier`/`warehouse`/`carrier` rows read back individually post-restore and checksummed, matching known seed values (e.g. `product.sku`/`name`/`category` triples, customer/supplier/warehouse/carrier names) rather than merely counting them. Confirmed the sandbox security boundary (migration 0001, DD-7) survived intact — `meadowops_sandbox` has neither `USAGE` on `live` nor `SELECT` on `live.customer` post-restore, verified directly via `has_schema_privilege`/`has_table_privilege` rather than assumed; reasoned through *why* (the boundary's SQL is all `REVOKE`s against objects with zero prior grants by Postgres default, so restoring the archive without its `ACL` TOC entries is a no-op for this boundary, not a gap — the only real `GRANT`s live in the untouched `sandbox` schema). Incidentally caught the live app's own behavior mid-drill via Railway logs: the scheduler's tick job hit the dropped tables mid-flight and recorded a clean `status=failed` row rather than crashing the process — the graceful-degradation behavior row 30 already covers. Also surfaced a real, unrelated deployment bug this same drill window: `backend/Dockerfile` never copied `sql/` into the image, so `app.domain.kpi_sql`'s `otif.sql` lookup threw `FileNotFoundError` on every tick; fixed by adding `COPY sql ./sql`, redeployed, confirmed `live.kpi_snapshot` populating and ticks returning to `status=success`. |
 
-**Progress: 3 / 32 fully passing** (#11, #13, #26); **5 more partially covered** (#3, #5, #7, #10, #12 — schema/DB-boundary half done, application/scheduler/later-unit half pending).
+**Progress: 32 / 32 rows closed** (29 fully passing + N/A #1 + #5's date-arithmetic-passing/period-N/A split + #32 above). Edge-case catalog fully closed.
 
 ---
 
 ## 9. Acceptance Testing Checklist (PRD 9.3)
 
 - [ ] Full automated test suite passing (unit, integration, E2E)
-- [ ] Every row in §8's edge case catalog has a passing test (0/32)
-- [ ] QA test-analyst harness has completed all 6 scenario types at least once, including a simulated callback scenario
+- [x] Every row in §8's edge case catalog has a passing test (32/32 — U30+U30a+U30b, 2026-09-09, plus row 32 via B2's drill, 2026-09-13; see §8)
+- [x] QA test-analyst harness has completed all 6 scenario types at least once, including a simulated callback scenario — U29, done (see §6/DD-39)
 - [ ] Zero demo/mock data remains in either frontend template
-- [ ] Backup restore tested and confirmed working
+- [x] Backup restore tested and confirmed working — B2's drill, 2026-09-13 (see §2/§8 row 32): real `pg_dump`/`DROP SCHEMA CASCADE`/`pg_restore` cycle against the live Neon instance, zero data loss, security boundary confirmed intact post-restore
 - [ ] Query Playground's permission boundary tested and confirmed (cannot reach live/ledger tables)
-- [ ] Deployment live, reachable, and matches the Docker Compose local environment
+- [ ] Deployment live, reachable, and matches the Docker Compose local environment — **not yet checked as Phase 4's own item.** An ad hoc deployment exists (Railway + Neon, done 2026-09-13 solely to satisfy Phase 3's B1/B2) and is live and reachable, but Phase 4's U32 (formal deployment unit) hasn't run, and this ad hoc deployment hasn't been verified to match Docker Compose in every respect (e.g. Neon runs Postgres 18, local Compose runs Postgres 16; also, chat attachments are stored on the container's local filesystem, which Railway doesn't persist across redeploys — uploads are lost on every redeploy until U32 gives this durable storage). Background scheduler was also disabled post-drill (see §2 B1) to avoid burning Neon's free-tier CU-hours unattended — re-enable it as part of U32's own scope, not before
 - [ ] Documentation complete (schema diagram, data dictionary, data-flow doc, testing report)
 - [ ] End-to-end live walkthrough deliverable without improvisation, using QA/synthetic data
 
@@ -2304,7 +4060,7 @@ proceeds. Nothing here is optional polish.
 - [ ] Both subsystems fully implemented per spec
 - [ ] Full automated test suite passes — unit, integration, E2E — including every §9.2 edge case
 - [ ] Subsystems integrate seamlessly: Subsystem 2 reads Subsystem 1 only via API; Ledger behaves correctly across full lifecycle; evaluation pipeline runs end-to-end unattended
-- [ ] Full scenario loop exercised via QA test runs across all 6 scenario types at least once each
+- [x] Full scenario loop exercised via QA test runs across all 6 scenario types at least once each — U29, done (see §6/DD-39)
 - [ ] Zero demo/fake/fabricated data from either frontend template
 - [ ] Deployed and reachable per §8.2; backups + migrations verified, restore actually tested
 - [ ] Documentation complete: schema diagram, data dictionary, data-flow doc, testing report

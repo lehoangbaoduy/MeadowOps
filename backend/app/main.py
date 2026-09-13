@@ -3,14 +3,24 @@ from contextlib import asynccontextmanager
 
 from fastapi import Depends, FastAPI
 
+from app.api.admin_query_log import router as admin_query_log_router
 from app.api.admin_scenarios import router as admin_scenarios_router
 from app.api.auth import router as auth_router
 from app.api.chat import router as chat_router
 from app.api.customers import router as customers_router
 from app.api.dashboard import router as dashboard_router
+from app.api.evaluation import router as evaluation_router
+from app.api.ledger import router as ledger_router
 from app.api.master_data import router as master_data_router
+from app.api.portfolio import router as portfolio_router
 from app.api.query_playground import router as query_playground_router
 from app.core.auth import require_authenticated
+from app.core.body_size_limit import (
+    MULTIPART_OVERHEAD_BYTES,
+    MaxBodySizeMiddleware,
+    RequestBodyTooLargeError,
+    request_body_too_large_handler,
+)
 from app.core.chat_registry import ChatConnectionRegistry
 from app.core.config import Settings
 from app.core.internal_client import build_subsystem2_client
@@ -59,6 +69,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 app.state.engine,
                 interval_seconds=settings.scheduler_interval_seconds,
                 reporting_lag_days=settings.reporting_lag_days,
+                stale_decision_after_days=settings.stale_decision_after_days,
+                chat_deadline_approaching_within_hours=settings.chat_deadline_approaching_within_hours,
             )
             scheduler.start()
         yield
@@ -78,6 +90,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         lifespan=lifespan,
     )
     app.state.settings = settings
+    # Unit 30c (MEADOWOPS-UI-005, security review): a global cap ahead of
+    # routing/form-parsing entirely - see app.core.body_size_limit's own
+    # module docstring for why the attachment upload route's own read-bound
+    # can't do this alone. Sized off max_attachment_size_bytes (the largest
+    # legitimate request body on this API) plus a fixed multipart-encoding
+    # margin; every other route's JSON bodies are far smaller, so this costs
+    # them nothing.
+    app.add_middleware(
+        MaxBodySizeMiddleware,
+        max_bytes=settings.max_attachment_size_bytes + MULTIPART_OVERHEAD_BYTES,
+    )
+    app.add_exception_handler(RequestBodyTooLargeError, request_body_too_large_handler)
     # Unit 17a (MEADOWOPS-DOM-010): one instance per app, not a module-level
     # global, so tests constructing independent create_app() calls don't
     # share rate-limit state with each other.
@@ -102,6 +126,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(admin_scenarios_router)
     app.include_router(query_playground_router)
     app.include_router(chat_router)
+    app.include_router(ledger_router)
+    app.include_router(evaluation_router)
+    app.include_router(portfolio_router)
+    app.include_router(admin_query_log_router)
 
     @app.get("/health")
     def health() -> dict[str, str]:

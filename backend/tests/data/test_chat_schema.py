@@ -25,10 +25,18 @@ def test_chat_schema_and_tables_exist(owner_dsn: str) -> None:
         )
         # chat_thread_read_state (migration 0019, Unit 21) added alongside
         # the two Unit 21a originals — unread-thread badge state, S1-FR-15.
+        # notification (migration 0024, Unit 30a) — deadline-tracking
+        # notifications, PRD 6.1/B12. chat_thread_draft (migration 0025,
+        # Unit 30b) — per-(thread, user) composer draft, catalog row 31.
+        # chat_attachment (migration 0026, Unit 30c) — Analyst-uploaded
+        # file metadata, S1-FR-15/PRD 347/380.
         assert {row[0] for row in cur.fetchall()} == {
             "chat_message",
             "chat_thread",
             "chat_thread_read_state",
+            "notification",
+            "chat_thread_draft",
+            "chat_attachment",
         }
 
 
@@ -130,8 +138,16 @@ def test_chat_message_cannot_be_deleted(owner_dsn: str) -> None:
 def test_chat_message_cannot_be_truncated(owner_dsn: str) -> None:
     with psycopg.connect(owner_dsn) as conn, conn.cursor() as cur:
         _ProbeContext(cur)
+        # Unit 30c (MEADOWOPS-UI-005): chat_attachment.message_id now FKs
+        # to chat_message, so a plain (non-CASCADE) TRUNCATE is rejected by
+        # Postgres's own referential-integrity guard ("cannot truncate a
+        # table referenced in a foreign key constraint") before the
+        # statement ever reaches the BEFORE TRUNCATE trigger this test
+        # exists to prove. CASCADE lets the statement past that guard so it
+        # reaches the trigger, which still blocks it exactly as before -
+        # this test is otherwise unchanged.
         with pytest.raises(psycopg.errors.RaiseException, match="immutable"):
-            cur.execute("truncate chat.chat_message")
+            cur.execute("truncate chat.chat_message cascade")
         conn.rollback()
 
 

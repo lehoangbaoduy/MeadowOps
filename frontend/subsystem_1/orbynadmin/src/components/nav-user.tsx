@@ -28,6 +28,7 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from "@/components/ui/sidebar";
+import { clearAllDraftBuffers } from "@/app/(app)/chat/composer-draft";
 
 export function NavUser() {
   const { isMobile } = useSidebar();
@@ -35,6 +36,11 @@ export function NavUser() {
   const router = useRouter();
 
   async function handleLogOut() {
+    // Security review (Unit 30b, HIGH): this app's login page serves both
+    // Admin/Builder and Analyst accounts (S1-FR-16) — without this, a
+    // draft left in localStorage by whoever was last logged in would
+    // silently pre-fill the next person's composer on this same browser.
+    clearAllDraftBuffers();
     await fetch("/api/logout", { method: "POST" });
     router.push("/login");
     router.refresh();
