@@ -54,6 +54,34 @@ def _settings(**overrides: object) -> Settings:
     return Settings(**base)  # type: ignore[arg-type]
 
 
+def _wait_for_chat_registration(client: TestClient, role: str, timeout: float = 2.0) -> None:
+    """Polls the real `ChatConnectionRegistry` (app.core.chat_registry)
+    instead of guessing a fixed sleep duration before exiting a
+    `client.websocket_connect(...)` `with` block. `chat_ws` is server->client
+    push only (app/api/chat.py's own docstring) - there is no message for
+    the client to receive and synchronize on, so a documented, well-known
+    Starlette TestClient race (exiting immediately after connect can race
+    the background ASGI thread before accept()/registry.register() have
+    actually run, under a slower/more contended scheduler) used to be
+    worked around with `time.sleep(0.05)` here. That fixed delay flaked in
+    CI three times regardless (most recently 2026-09-14, unrelated to
+    whatever change was actually being verified that run) - empirical
+    proof a guessed duration doesn't have enough margin under real
+    contention, whatever the number. Polling the registry's actual state
+    waits for the real event instead of a duration, and is `client.app.
+    state.chat_connections` - the identical registry object chat_ws itself
+    populates - not a mock or a copy."""
+    registry = client.app.state.chat_connections
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if registry._connections.get(role):
+            return
+        time.sleep(0.005)
+    raise AssertionError(
+        f"chat_ws never registered a connection for role={role!r} within {timeout}s"
+    )
+
+
 @pytest.fixture
 def client() -> Generator[TestClient, None, None]:
     with TestClient(create_app(settings=_settings())) as c:
@@ -1238,14 +1266,11 @@ class TestWebSocketConnection:
             # the `with` block races the background ASGI thread before
             # chat_ws's own accept()/registry.register()/asyncio.wait have
             # actually run, only surfacing under a slower/more contended CI
-            # scheduler. This is server->client push only (module docstring)
-            # so there is nothing for the client to receive and synchronize
-            # on instead - a brief real sleep is the standard workaround for
-            # this specific, well-documented class of flake, not a product
-            # bug (chat_ws's own logic is exercised further by every other
-            # test in this class, including ones that keep the connection
-            # open and interact with it).
-            time.sleep(0.05)
+            # scheduler. A fixed `time.sleep(0.05)` workaround flaked here
+            # again 2026-09-14 (its third occurrence) - see
+            # _wait_for_chat_registration's own docstring for why this now
+            # polls the real registry state instead of guessing a duration.
+            _wait_for_chat_registration(client, "admin")
             # connecting at all (no exception) is the assertion
 
     def test_a_ticket_can_only_be_used_once(
@@ -1260,7 +1285,7 @@ class TestWebSocketConnection:
             # on. The second connect below doesn't need this: an
             # already-redeemed ticket is rejected before accept() is ever
             # called, so there's no background task to race.
-            time.sleep(0.05)
+            _wait_for_chat_registration(client, "admin")
         with pytest.raises(WebSocketDisconnect) as exc_info:
             with client.websocket_connect(f"/api/v1/chat/ws/chat?ticket={ticket}"):
                 pass
