@@ -1253,7 +1253,14 @@ class TestWebSocketConnection:
     ) -> None:
         ticket = client.post("/api/v1/chat/ws-ticket", headers=admin_auth).json()["ticket"]
         with client.websocket_connect(f"/api/v1/chat/ws/chat?ticket={ticket}"):
-            pass
+            # Same known Starlette TestClient race as
+            # test_connecting_with_a_valid_ticket_succeeds above (its
+            # comment has the full explanation) - this connect also
+            # succeeds and immediately exits with nothing to synchronize
+            # on. The second connect below doesn't need this: an
+            # already-redeemed ticket is rejected before accept() is ever
+            # called, so there's no background task to race.
+            time.sleep(0.05)
         with pytest.raises(WebSocketDisconnect) as exc_info:
             with client.websocket_connect(f"/api/v1/chat/ws/chat?ticket={ticket}"):
                 pass

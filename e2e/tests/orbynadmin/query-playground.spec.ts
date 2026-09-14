@@ -10,15 +10,15 @@ test("running the default read query against seeded product data returns real ro
   await page.goto("/query");
 
   // Default statement in the editor is "select * from product limit 50;"
+  // global-setup.ts already refreshed the sandbox schema once (as the admin
+  // role, right after login) - on a genuinely fresh database the `sandbox`
+  // schema has no tables at all until that runs, which is what a prior
+  // version of this test actually hit on GitHub Actions ("relation does
+  // not exist", surfacing here as the row-count text never appearing - not
+  // the cold-start timeout this test originally assumed).
   await page.getByRole("button", { name: "Run" }).click();
 
-  // A longer timeout than the 5s default: this is the sandbox role's very
-  // first query since the backend just booted (fresh connection pool, cold
-  // query plan), and on GitHub's shared 2-core runners that round trip
-  // consistently took longer than 5s in practice (observed: failed twice,
-  // including after Playwright's own automatic retry, on a run where the
-  // other 12 specs all passed comfortably within the default).
-  await expect(page.getByText(/\d+ row\(s\)/)).toBeVisible({ timeout: 15_000 });
+  await expect(page.getByText(/\d+ row\(s\)/)).toBeVisible();
   await expect(page.locator("table thead th")).toContainText(["sku"]);
 });
 
