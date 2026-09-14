@@ -95,7 +95,18 @@ export function Mail({ threads: initialThreads, scenarios, defaultLayout = [32, 
         body: JSON.stringify({ scenario_id: scenarioId, persona }),
       });
       if (!response.ok) return;
-      const thread: ChatThread = await response.json();
+      // POST /chat/threads proxies the backend's ThreadRead shape, which
+      // has no unread_count/draft_body fields (those are computed only by
+      // the list endpoint's ThreadReadWithUnread) - casting the raw JSON
+      // straight to ChatThread left both undefined on a just-created
+      // thread. Selecting it immediately (below) fed that undefined
+      // draft_body into ThreadView's draft state, which crashed with
+      // "Cannot read properties of undefined (reading 'trim')" the moment
+      // Send was clicked - reproduced live, root-caused to this gap. A
+      // brand-new thread always has 0 unread messages and no draft, so
+      // fill in the same defaults the backend's own list query would.
+      const raw = await response.json();
+      const thread: ChatThread = { ...raw, unread_count: raw.unread_count ?? 0, draft_body: raw.draft_body ?? "" };
       setThreads((prev) => (prev.some((t) => t.id === thread.id) ? prev : [thread, ...prev]));
       await selectThread(thread.id);
     },

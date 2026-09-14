@@ -91,7 +91,7 @@ export function ThreadView({
       return;
     }
     const buffered = loadDraftBuffer(thread.id);
-    setDraft(buffered !== null ? buffered : thread.draft_body);
+    setDraft(buffered !== null ? buffered : thread.draft_body ?? "");
     setError(false);
     return () => {
       if (syncTimerRef.current) {

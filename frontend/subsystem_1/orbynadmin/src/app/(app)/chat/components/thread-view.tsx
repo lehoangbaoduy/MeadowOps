@@ -112,7 +112,7 @@ export function ThreadView({
       return;
     }
     const buffered = loadDraftBuffer(thread.id);
-    setDraft(buffered !== null ? buffered : thread.draft_body);
+    setDraft(buffered !== null ? buffered : thread.draft_body ?? "");
     setError(false);
     // Unit 30c (MEADOWOPS-UI-005): unlike the draft buffer, a pending
     // attachment has no per-thread persistence of its own (it's already
