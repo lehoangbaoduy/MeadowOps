@@ -1231,7 +1231,22 @@ class TestWebSocketConnection:
     ) -> None:
         ticket = client.post("/api/v1/chat/ws-ticket", headers=admin_auth).json()["ticket"]
         with client.websocket_connect(f"/api/v1/chat/ws/chat?ticket={ticket}"):
-            pass  # connecting at all (no exception) is the assertion
+            # Found via a real GitHub Actions failure (CancelledError inside
+            # Starlette TestClient's websocket __exit__), not reproducible
+            # locally across two separate fresh-DB runs: a known Starlette
+            # TestClient limitation where connecting and immediately exiting
+            # the `with` block races the background ASGI thread before
+            # chat_ws's own accept()/registry.register()/asyncio.wait have
+            # actually run, only surfacing under a slower/more contended CI
+            # scheduler. This is server->client push only (module docstring)
+            # so there is nothing for the client to receive and synchronize
+            # on instead - a brief real sleep is the standard workaround for
+            # this specific, well-documented class of flake, not a product
+            # bug (chat_ws's own logic is exercised further by every other
+            # test in this class, including ones that keep the connection
+            # open and interact with it).
+            time.sleep(0.05)
+            # connecting at all (no exception) is the assertion
 
     def test_a_ticket_can_only_be_used_once(
         self, client: TestClient, admin_auth: dict[str, str]
