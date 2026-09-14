@@ -83,11 +83,13 @@ def test_seeding_default_thresholds_is_idempotent(owner_dsn: str) -> None:
     with psycopg.connect(owner_dsn) as conn, conn.cursor() as cur:
         cur.execute("select count(*) from live.exception_rule_threshold")
         (count_before,) = cur.fetchone()
-    # seed_exception_rule_thresholds is exercised for real at migration/seed
-    # time (not here, to avoid a second DB session/engine in a psycopg-only
-    # test file) - this test instead re-runs the same ON CONFLICT DO NOTHING
-    # insert directly and asserts the row count doesn't change on a second
-    # pass, proving the idempotency the seeder module documents.
+    # seed_exception_rule_thresholds itself is exercised for real by
+    # e2e/scripts/start-backend.sh and backend-ci.yml's own bootstrap seed
+    # step (not here, to avoid a second DB session/engine in a
+    # psycopg-only test file) - this test instead re-runs the same ON
+    # CONFLICT DO NOTHING insert directly and asserts the row count
+    # doesn't change on a second pass, proving the idempotency the seeder
+    # module documents.
     with psycopg.connect(owner_dsn, autocommit=True) as conn, conn.cursor() as cur:
         for row in EXCEPTION_RULE_THRESHOLDS:
             cur.execute(

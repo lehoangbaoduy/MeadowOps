@@ -8,6 +8,18 @@ precisely the three categories that engine will evaluate.
 
 Idempotent: ON CONFLICT (id) DO NOTHING, same pattern as
 app/services/baseline_data.py.
+
+Called from the same three places seed_initial_users/seed_master_data/
+seed_initial_world_state_and_clock are (e2e/scripts/start-backend.sh,
+.github/workflows/backend-ci.yml, docs/walkthrough-script.md's Setup
+section) - fixed 2026-09-14 after finding it had never actually been wired
+into any of them, only ever called directly by individual backend unit
+tests as their own fixture setup. A genuinely fresh database (CI's own
+throwaway Postgres, never a long-lived local dev DB seeded once early on)
+had an empty live.exception_rule_threshold as a result - caught via
+e2e/scripts/seed_evaluation_fixture.py's "baseline master data must be
+seeded first" assertion failing on GitHub's actual CI runner, the first
+time those specs ever ran against a truly fresh database.
 """
 
 from sqlalchemy.dialects.postgresql import insert as pg_insert

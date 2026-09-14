@@ -57,6 +57,7 @@ from app.core.config import Settings
 from app.services.auth_seed import seed_initial_users
 from app.services.baseline_data import seed_master_data
 from app.services.simulation_clock_ops import seed_initial_world_state_and_clock
+from app.services.exception_rule_defaults import seed_exception_rule_thresholds
 
 settings = Settings()
 engine = create_engine(settings.database_url)
@@ -64,6 +65,7 @@ with Session(engine) as session:
     seed_initial_users(session, settings)
     seed_master_data(session)
     seed_initial_world_state_and_clock(session)
+    seed_exception_rule_thresholds(session)
     session.commit()
 "
 uv run uvicorn app.main:create_app --factory --reload --port 8000
