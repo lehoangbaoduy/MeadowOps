@@ -40,6 +40,30 @@ export function listThreads(): Promise<Response> {
   return chatFetch("/api/v1/chat/threads");
 }
 
+// Unit 34: app.api.chat's GET /threads has no scenario_id query param (it
+// returns every thread the caller can see, per-viewer unread/draft only) -
+// filtering here client-of-the-backend-side avoids adding a new backend
+// route/query param just to support the scenario detail page's own
+// thread list, and chat_thread's own unique constraint means "several
+// threads per scenario" (one per persona) is the normal case, not a bug.
+export async function listThreadsForScenario(scenarioId: string): Promise<Response> {
+  const response = await listThreads();
+  if (!response.ok) return response;
+  const threads: { scenario_id: string }[] = await response.json();
+  return Response.json(threads.filter((t) => t.scenario_id === scenarioId));
+}
+
+// Unit 34 (PRD 6.8, app.api.chat.complete_thread_route): generates the
+// draft AI evaluation for a completed thread. 503 when no Claude client is
+// configured is a real, expected response in this project's own demo/QA
+// path (docs/walkthrough-script.md) - callers must surface it verbatim,
+// not as a generic "Request failed".
+export function completeThread(threadId: string): Promise<Response> {
+  return chatFetch(`/api/v1/chat/threads/${encodeURIComponent(threadId)}/complete`, {
+    method: "POST",
+  });
+}
+
 export function createThread(scenarioId: string, persona: string): Promise<Response> {
   return chatFetch("/api/v1/chat/threads", {
     method: "POST",

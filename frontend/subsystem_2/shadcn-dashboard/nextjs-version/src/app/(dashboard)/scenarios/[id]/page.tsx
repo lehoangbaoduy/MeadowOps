@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 
+import { listThreadsForScenario } from "@/lib/chat-api";
 import { getScenario } from "@/lib/scenario-api";
 
 import { ScenarioStatusBadge } from "../components/status-badge";
@@ -12,6 +13,8 @@ import {
 import { GroundTruthEditForm } from "./components/ground-truth-edit-form";
 import { GroundTruthPreview } from "./components/ground-truth-preview";
 import { ScenarioActions } from "./components/scenario-actions";
+import { ScenarioThreads } from "./components/scenario-threads";
+import type { ScenarioThread } from "./thread-types";
 
 function label(options: { value: string; label: string }[], value: string): string {
   return options.find((o) => o.value === value)?.label ?? value;
@@ -31,6 +34,8 @@ export default async function ScenarioDetailPage({
     throw new Error("Could not load scenario");
   }
   const scenario: Scenario = await response.json();
+  const threadsResponse = await listThreadsForScenario(scenario.id);
+  const threads: ScenarioThread[] = threadsResponse.ok ? await threadsResponse.json() : [];
 
   return (
     <div className="space-y-6 px-4 lg:px-6">
@@ -54,6 +59,8 @@ export default async function ScenarioDetailPage({
       {scenario.status === "draft" && (
         <GroundTruthEditForm id={scenario.id} groundTruth={scenario.ground_truth} />
       )}
+
+      <ScenarioThreads threads={threads} />
     </div>
   );
 }

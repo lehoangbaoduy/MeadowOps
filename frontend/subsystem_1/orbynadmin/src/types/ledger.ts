@@ -63,3 +63,37 @@ export const DECISION_OUTCOME_LABEL: Record<DecisionOutcome, string> = {
   unintended_consequence: "Unintended Consequence",
   insufficient_evidence: "Insufficient Evidence",
 };
+
+// Unit 34 (write actions): mirrors app/schemas/ledger.py's request bodies.
+export type ApprovalAuthority = "manager" | "procurement_operations" | "informational_only";
+export type EntityType = "supplier" | "warehouse" | "product" | "customer" | "carrier";
+
+export type DecisionProposeRequest = {
+  entity_type: EntityType;
+  entity_id: string;
+  title: string;
+  summary: string;
+  approval_authority?: ApprovalAuthority;
+};
+
+export const ENTITY_TYPE_OPTIONS: { value: EntityType; label: string }[] = [
+  { value: "supplier", label: "Supplier" },
+  { value: "warehouse", label: "Warehouse" },
+  { value: "product", label: "Product" },
+  { value: "customer", label: "Customer" },
+  { value: "carrier", label: "Carrier" },
+];
+
+export const APPROVAL_AUTHORITY_OPTIONS: { value: ApprovalAuthority; label: string }[] = [
+  { value: "manager", label: "Manager" },
+  { value: "procurement_operations", label: "Procurement Operations" },
+  { value: "informational_only", label: "Informational Only" },
+];
+
+export const DECISION_OUTCOME_OPTIONS: { value: DecisionOutcome; label: string }[] = [
+  { value: "succeeded", label: "Succeeded" },
+  { value: "partially_succeeded", label: "Partially Succeeded" },
+  { value: "failed", label: "Failed" },
+  { value: "unintended_consequence", label: "Unintended Consequence" },
+  { value: "insufficient_evidence", label: "Insufficient Evidence" },
+];

@@ -65,6 +65,19 @@ export function mintWsTicket(): Promise<Response> {
   return chatFetch("/api/v1/chat/ws-ticket", { method: "POST" });
 }
 
+// Unit 34 (PRD 6.10): the Analyst's own seven-question reflection on a
+// completed thread. Not routed through app/lib/portfolio - this is the
+// Analyst-voiced write half (app.api.portfolio's reject_service_role
+// route), never the require_admin compiled export the Builder reads in
+// Subsystem 2 (see docs/data-flow.md's own audience split for why those
+// two stay on separate routes/apps).
+export function submitReflection(threadId: string, body: unknown): Promise<Response> {
+  return chatFetch(`/api/v1/portfolio/threads/${encodeURIComponent(threadId)}/reflection`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}
+
 // Unit 30b (MEADOWOPS-UI-004, PRD 6.1 "Drafting" bullet, catalog row 31,
 // B12 follow-on to U30): the Analyst's own not-yet-sent reply for a
 // thread, persisted server-side (per (thread_id, user_id)) so it survives

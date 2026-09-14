@@ -4,6 +4,7 @@ import * as React from "react";
 import { type ColumnDef } from "@tanstack/react-table";
 
 import { DataTable, SortableHeader } from "@/components/data-table";
+import { DecisionActions } from "@/components/decision-actions";
 import { Badge } from "@/components/ui/badge";
 import { formatDateTime } from "@/lib/dashboard-format";
 import { DECISION_STATUS_LABEL, type DecisionEvent, type DecisionEventStatus } from "@/types/ledger";
@@ -20,10 +21,13 @@ const STATUS_BADGE_VARIANT: Record<DecisionEventStatus, "default" | "secondary" 
 };
 
 /** Unit 24 (MEADOWOPS-DOM-018, PRD 4.4/Appendix D.1): the Decision & Event
- * Ledger's Activity view - a read-only timestamped log (Appendix D.1:
- * "Timestamped log pattern fits directly"). No write actions column -
- * propose/accept/reject/etc. have no UI entry point yet (see
- * tests/frontend/test_activity_page.py's own docstring for why). */
+ * Ledger's Activity view - a timestamped log (Appendix D.1: "Timestamped
+ * log pattern fits directly") plus, since Unit 34, an Actions column
+ * driving the decision lifecycle (request-clarification/accept/reject/
+ * resubmit/implement/partially-implement/outcome) via app.api.ledger's
+ * require_admin write routes - DecisionActions derives which buttons to
+ * show from `status` alone, same convention as Subsystem 2's
+ * ScenarioActions.availableActions. */
 export function DecisionsTable({ decisions }: { decisions: DecisionEvent[] }) {
   const columns = React.useMemo<ColumnDef<DecisionEvent>[]>(
     () => [
@@ -59,6 +63,11 @@ export function DecisionsTable({ decisions }: { decisions: DecisionEvent[] }) {
         id: "outcome",
         header: "Outcome",
         cell: ({ row }) => row.original.outcome ?? "—",
+      },
+      {
+        id: "actions",
+        header: "Actions",
+        cell: ({ row }) => <DecisionActions decision={row.original} />,
       },
     ],
     []

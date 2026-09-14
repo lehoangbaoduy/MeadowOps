@@ -16,6 +16,7 @@ import {
   syncDraftToServer,
 } from "../composer-draft";
 import { MAX_MESSAGE_BODY_LENGTH, personaLabel, type ChatMessage, type ChatThread } from "../types";
+import { ReflectionForm } from "./reflection-form";
 
 // Unit 30c (MEADOWOPS-UI-005, S1-FR-15/PRD 347/380, B12 follow-on to U30):
 // mirrors app.domain.attachment_validation.ALLOWED_CONTENT_TYPES exactly -
@@ -279,7 +280,10 @@ export function ThreadView({
         </div>
       </ScrollArea>
       <Separator />
-      <div className="p-4">
+      {thread.status === "completed" ? (
+        <ReflectionForm threadId={threadId} />
+      ) : (
+        <div className="p-4">
         <div className="grid gap-2">
           <Textarea
             value={draft}
@@ -345,6 +349,7 @@ export function ThreadView({
           </div>
         </div>
       </div>
+      )}
     </div>
   );
 }

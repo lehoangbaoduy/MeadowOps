@@ -8,13 +8,15 @@ test_customers_page.py - no rendering, no build (npm run build is this
 unit's actual correctness gate, run separately - DD-17, no JS unit test
 runner in this repo).
 
-Read-only, same reasoning as test_customers_page.py's S1-FR-12 exclusion:
-this view is a log (PRD Appendix D.1: "Timestamped log pattern fits
-directly"), not a place to propose/accept/reject a decision - those write
-actions have no UI entry point yet (PRD 6.6 step 10 ties decision recording
-to the AI evaluation flow, U25, not built yet), so the table must never
-grow a write-shaped action column pointing at an endpoint no caller drives
-yet.
+Unit 34 amends the original Unit 24 read-only scope: PRD 6.6 step 10's
+decision recording now has a real caller (Unit 25's evaluation pipeline,
+via a Builder acting on its output), so the write actions this test
+previously asserted were absent (propose/accept/reject/resubmit/implement/
+partially-implement/outcome) now have a real UI entry point -
+DecisionActions/ProposeDecisionDialog, gated the same way every other
+write route in this app is: the backend's own require_admin
+(app.api.ledger), not client-side role detection (no such mechanism exists
+anywhere else in this app - see thread-view.tsx's own docstring).
 """
 
 from pathlib import Path
@@ -23,12 +25,22 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 SUBSYSTEM_1 = REPO_ROOT / "frontend/subsystem_1/orbynadmin"
 ACTIVITY_PAGE = SUBSYSTEM_1 / "src/app/(app)/activity/page.tsx"
 DECISIONS_TABLE = SUBSYSTEM_1 / "src/components/decisions-table.tsx"
+DECISION_ACTIONS = SUBSYSTEM_1 / "src/components/decision-actions.tsx"
+PROPOSE_DECISION_DIALOG = SUBSYSTEM_1 / "src/components/propose-decision-dialog.tsx"
 LEDGER_API = SUBSYSTEM_1 / "src/lib/ledger-api.ts"
 LEDGER_TYPES = SUBSYSTEM_1 / "src/types/ledger.ts"
 
 
 def test_decisions_table_component_exists() -> None:
     assert DECISIONS_TABLE.is_file()
+
+
+def test_decision_actions_component_exists() -> None:
+    assert DECISION_ACTIONS.is_file()
+
+
+def test_propose_decision_dialog_component_exists() -> None:
+    assert PROPOSE_DECISION_DIALOG.is_file()
 
 
 def test_ledger_api_client_exists() -> None:
@@ -54,7 +66,29 @@ def test_activity_page_still_falls_back_to_empty_state_when_the_ledger_is_empty(
     assert "EmptyState" in text
 
 
-def test_decisions_table_has_no_write_actions() -> None:
+def test_activity_page_can_propose_a_decision() -> None:
+    text = ACTIVITY_PAGE.read_text(encoding="utf-8")
+    assert "ProposeDecisionDialog" in text
+
+
+def test_decisions_table_renders_row_actions() -> None:
     text = DECISIONS_TABLE.read_text(encoding="utf-8")
-    for forbidden in ("proposeDecision", "acceptDecision", "rejectDecision", "onSubmit", "Dialog"):
-        assert forbidden not in text, f"decisions table unexpectedly references {forbidden!r}"
+    assert "DecisionActions" in text
+
+
+def test_decision_actions_drives_every_transition_route() -> None:
+    # Each of app.api.ledger's require_admin transition routes must have a
+    # real UI caller, not just a backend endpoint nothing reaches - same
+    # discipline tests/architecture/test_subsystem_boundary.py's own
+    # route-inventory allowlist enforces at the backend layer.
+    text = DECISION_ACTIONS.read_text(encoding="utf-8")
+    for expected in (
+        "request-clarification",
+        "resubmit",
+        "reject",
+        "implement",
+        "partially-implement",
+        "/accept",
+        "/outcome",
+    ):
+        assert expected in text, f"decision-actions.tsx is missing a caller for {expected!r}"

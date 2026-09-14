@@ -28,10 +28,18 @@ export function personaLabel(persona: string): string {
   return PERSONA_LABELS[persona as Persona] ?? persona;
 }
 
+// Unit 34: mirrors app.schemas.chat.ThreadStatus - a thread never leaves
+// "completed" once app.services.evaluation.complete_thread_and_generate_
+// evaluation has run (the Builder-side /complete action, Subsystem 2's
+// scenario detail page), so the reflection prompt below can key off it
+// directly rather than re-deriving from evaluation/portfolio state itself.
+export type ThreadStatus = "open" | "completed";
+
 export type ChatThread = {
   id: string;
   scenario_id: string;
   persona: Persona;
+  status: ThreadStatus;
   created_at: string;
   // Unit 30a (MEADOWOPS-UI-003, PRD 6.1): mirrors app.schemas.chat.
   // ThreadRead/ThreadReadWithUnread — deadline_at is null once a thread has
