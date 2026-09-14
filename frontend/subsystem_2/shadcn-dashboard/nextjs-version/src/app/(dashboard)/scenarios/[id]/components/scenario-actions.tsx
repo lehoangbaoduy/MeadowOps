@@ -9,6 +9,36 @@ import { Button } from "@/components/ui/button";
 import type { ScenarioStatus } from "../../types";
 
 /**
+ * app.domain.scenario.validate_for_approval raises errors keyed by the
+ * dotted backend field name (e.g. "ground_truth.supporting_signals must be
+ * a non-empty list"). Those don't match this page's own labels (Edit
+ * narrative's "Supporting signals (one per line)", Ground Truth Preview's
+ * "Supporting signals") — a Builder searching the page for an input
+ * literally named "ground_truth.supporting_signals" won't find one, even
+ * though the matching field is right there under a different label. Found
+ * live: a Builder hit exactly this after clicking Approve on a freshly
+ * created scenario without running Regenerate or filling in Edit narrative
+ * first. Translate the backend's field names to this page's own labels
+ * before showing the error.
+ */
+const GROUND_TRUTH_FIELD_LABELS: Record<string, string> = {
+  known_cause: "Known cause",
+  evidence: "Evidence",
+  supporting_signals: "Supporting signals",
+  distractors: "Distractors",
+  expected_considerations: "Expected considerations",
+  acceptable_conclusions: "Acceptable conclusions",
+  unacceptable_conclusions: "Unacceptable conclusions",
+  uncertainty: "Uncertainty",
+};
+
+function humanizeValidationError(error: string): string {
+  return error.replace(/ground_truth\.(\w+)/, (match, field: string) => {
+    return GROUND_TRUTH_FIELD_LABELS[field] ?? match;
+  });
+}
+
+/**
  * The approve route (backend/app/api/admin_scenarios.py) can return
  * `detail` as either a plain string (404/409) or `{errors: [...]}` (422,
  * ScenarioValidationError) — code review of this unit (MEDIUM) flagged
@@ -26,7 +56,9 @@ function extractErrorMessage(body: unknown): string {
       "errors" in detail &&
       Array.isArray((detail as { errors: unknown }).errors)
     ) {
-      return (detail as { errors: string[] }).errors.join("; ");
+      return (detail as { errors: string[] })
+        .errors.map(humanizeValidationError)
+        .join("; ");
     }
   }
   return "Request failed";
