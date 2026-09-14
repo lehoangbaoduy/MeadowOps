@@ -4,7 +4,8 @@ PRD §1.6 / Phase 4 exit criteria: "a testing report summarizing coverage
 and results." Counts below are regenerable, not narrated from memory —
 see the exact command next to each. Snapshot taken 2026-09-13, current
 branch `master`; backend count updated 2026-09-14 (Phase 4 blocker B3's
-Anthropic adapter, 23 new tests).
+Anthropic adapter, 27 new tests total — 23 from the initial adapter, 4
+more from the markdown-fence-stripping fix found via live verification).
 
 ## Suite inventory
 
@@ -53,10 +54,12 @@ outcome lifecycle, plus reject), `e2e/tests/subsystem2/evaluation.spec.ts`
 reflection form, including the 409-as-already-submitted path).
 
 Getting there surfaced a real, previously-unknown finding: `app.main.
-create_app` hardcodes `app.state.claude_client = None` unconditionally
-(Phase 4 blocker B3) — there is currently no code path, even with a real
-`ANTHROPIC_API_KEY` configured, that makes `POST .../complete` succeed
-against a running app. `e2e/scripts/seed_evaluation_fixture.py` works
+create_app` hardcoded `app.state.claude_client = None` unconditionally at
+the time (Phase 4 blocker B3) — no code path, even with a real
+`ANTHROPIC_API_KEY` configured, made `POST .../complete` succeed against a
+running app. **Since fixed — see the "Phase 4 blocker B3" section below**;
+this paragraph is a historical record of what U34 found, not current
+behavior. `e2e/scripts/seed_evaluation_fixture.py` still works
 around this the same way `tests/support/qa_harness.py`'s own
 `complete_thread` already does for the backend suite — scripting the
 Evaluation row directly (plus one ExceptionFlag insert, since no route
@@ -87,23 +90,46 @@ ScenarioGenerationFailedError`'s own pre-existing docstring — that message
 flows straight into an HTTP 502 detail the Builder's browser sees) can only
 be checked against the SDK's real `str(exc)` behavior.
 
-**Not closed**: a genuine live call. `tests/domain/
-test_claude_client_anthropic_smoke.py` is the PRD-line-373 "periodic
-live-call smoke test," `pytest.mark.skipif`-gated behind
-`MEADOWOPS_RUN_LIVE_CLAUDE_SMOKE_TEST=1` so it never runs (or spends money)
-as part of a normal suite run — but running it once by hand, the way this
-report's own discipline requires before claiming something works, failed:
-the repo-root `.env`'s `ANTHROPIC_API_KEY` line is present but **blank**,
-not the real key an earlier session's notes had assumed. That discovery
-also caught a real gap in this unit's own `Settings` validator — an
-`is None`-only check would have let `claude_client_enabled=True` through
-with a blank key, deferring the failure to a cryptic SDK-internal
-`TypeError` at the first live call instead of Settings construction; fixed
-to also reject an empty/whitespace-only key, with its own regression test.
-So the adapter is verified correct against the real SDK's own types and
-error shapes, but **not yet verified against a live model response** — that
-step needs a real, non-blank `ANTHROPIC_API_KEY`, which is outside what
-this session can supply.
+**Closed for real, same day, once the user supplied a genuine
+`ANTHROPIC_API_KEY`.** (Before that: the repo-root `.env`'s key was present
+but **blank**, not the real key an earlier session's notes had assumed —
+caught a real gap in this unit's own `Settings` validator, an `is
+None`-only check would have let `claude_client_enabled=True` through with
+a blank key rather than failing fast at construction; fixed to also reject
+an empty/whitespace-only key, with its own regression test.)
+
+With a real key in place, `tests/domain/test_claude_client_anthropic_smoke.py`
+(the PRD-line-373 "periodic live-call smoke test," still
+`pytest.mark.skipif`-gated behind `MEADOWOPS_RUN_LIVE_CLAUDE_SMOKE_TEST=1`
+so it never runs or spends money as part of a normal suite run) passed
+immediately. But driving the real domain pipelines live — not just a raw
+ping/pong — surfaced a genuine, previously-latent bug: `claude-sonnet-4-5`
+routinely wraps its JSON response in a ` ```json ... ``` ` markdown fence
+despite every one of `scenario_generation`/`evaluation`/`persona_chat`'s
+own prompts explicitly instructing "no markdown fences." `MockClaudeClient`
+never produces this shape, so none of the 23 tests written before a real
+key existed could have caught it — `generate_scenario_narrative`'s first
+live call failed with `response is not valid JSON: Expecting value: line 1
+column 1 (char 0)`. Fixed in one place, `AnthropicClaudeClient.create_message`
+(not in each of the three domain-layer parsers, since this is a real-API
+quirk the domain layer shouldn't need to know about) — conservative by
+construction, only strips a fence wrapping the *entire* response, so
+content that merely mentions a code sample mid-text is untouched. 4 new
+regression tests (27 total for this blocker).
+
+Re-verified live, in order of increasing integration depth, after the fix:
+domain functions directly (`generate_scenario_narrative`,
+`generate_evaluation`, `suggest_pushback_message`, `run_sufficiency_check`
+— all four AI call sites, all parse cleanly), then the actual running app
+booted with `claude_client_enabled=true` and `POST .../regenerate` /
+`POST .../complete` driven for real through the live HTTP routes — both
+returned 200 with genuine Claude-generated content and real DB writes.
+This is the verification PRD §10's "evaluation pipeline runs end-to-end
+unattended" line asks for; see `prd/MeadowOps_progress.md`'s B3 entry for
+the full detail, including a note that the verification's own thread rows
+are now a permanent (harmless) addition to the local dev DB — `chat.
+chat_message`'s immutability trigger blocked cleanup by design, same
+precedent as U34's own E2E fixture-seeding pollution noted below.
 
 **Separately noticed, not fixed here**: the full backend suite currently
 shows 3 pre-existing failures in `tests/services/test_evaluation_service.py

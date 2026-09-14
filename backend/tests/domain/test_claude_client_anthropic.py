@@ -191,3 +191,61 @@ class TestCreateMessageErrorMapping:
         )
         with pytest.raises(ClaudeAPIError):
             client.create_message(model="m", system="s", messages=[], max_tokens=10)
+
+
+class TestMarkdownFenceStripping:
+    """Found live, not hypothetically: claude-sonnet-4-5 wraps JSON
+    responses in a ```json fence despite every prompt's own "no markdown
+    fences" instruction. MockClaudeClient never exercised this shape, so
+    none of this adapter's other tests (or the 23 written before a real key
+    existed) caught it - scenario_generation/persona_chat/evaluation's
+    parse_*_response functions all call json.loads directly on
+    ClaudeResponse.content."""
+
+    def test_strips_a_json_tagged_fence(self) -> None:
+        client = _client()
+        client._client = MagicMock()
+        client._client.messages.create.return_value = SimpleNamespace(
+            content=[_text_block('```json\n{"a": 1}\n```')], stop_reason="end_turn"
+        )
+        result = client.create_message(
+            model="m", system="s", messages=[], max_tokens=10
+        )
+        assert result.content == '{"a": 1}'
+
+    def test_strips_a_bare_fence(self) -> None:
+        client = _client()
+        client._client = MagicMock()
+        client._client.messages.create.return_value = SimpleNamespace(
+            content=[_text_block('```\n{"a": 1}\n```')], stop_reason="end_turn"
+        )
+        result = client.create_message(
+            model="m", system="s", messages=[], max_tokens=10
+        )
+        assert result.content == '{"a": 1}'
+
+    def test_passes_unfenced_content_through_unchanged(self) -> None:
+        client = _client()
+        client._client = MagicMock()
+        client._client.messages.create.return_value = SimpleNamespace(
+            content=[_text_block('{"a": 1}')], stop_reason="end_turn"
+        )
+        result = client.create_message(
+            model="m", system="s", messages=[], max_tokens=10
+        )
+        assert result.content == '{"a": 1}'
+
+    def test_does_not_strip_content_that_merely_contains_backticks(self) -> None:
+        # Conservative by design - only a fence wrapping the *entire*
+        # response is stripped, so a legitimate response that happens to
+        # mention a code sample mid-text isn't corrupted.
+        client = _client()
+        client._client = MagicMock()
+        content = 'Here is some text with ```inline code``` in the middle.'
+        client._client.messages.create.return_value = SimpleNamespace(
+            content=[_text_block(content)], stop_reason="end_turn"
+        )
+        result = client.create_message(
+            model="m", system="s", messages=[], max_tokens=10
+        )
+        assert result.content == content

@@ -13,12 +13,12 @@ result, don't depend on a live Claude call):
    scheduler that would normally generate one is disabled by default
    locally (Settings.scheduler_enabled=False) and, even enabled, has no
    guaranteed timing. Inserted directly via the ORM.
-2. A real Evaluation row — app.main.create_app hardcodes
-   `app.state.claude_client = None` unconditionally (Phase 4 blocker B3,
-   see that file's own comment): there is currently no code path, even
-   with a real ANTHROPIC_API_KEY configured, that makes POST
-   .../complete succeed against a running app. Inserted directly via the
-   ORM, replicating exactly what
+2. A real Evaluation row — POST .../complete now works against a real,
+   live Claude API (Phase 4 blocker B3, closed 2026-09-14 -
+   app.domain.claude_client_anthropic.AnthropicClaudeClient), but a
+   committed E2E spec run in CI shouldn't depend on a live, billed API
+   call for its own determinism and cost - so this script still inserts
+   the Evaluation row directly via the ORM, replicating exactly what
    app.services.evaluation.complete_thread_and_generate_evaluation itself
    writes (Evaluation row + ChatThread.status -> COMPLETED) minus the
    actual Claude call.

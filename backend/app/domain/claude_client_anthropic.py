@@ -10,8 +10,9 @@ Protocol exactly - same model/system/messages/max_tokens in, same
 persona_chat/evaluation need no changes to call a live model instead of
 `MockClaudeClient`.
 
-Two things this module does deliberately, both flagged by review comments
-written before this adapter existed:
+Three things this module does deliberately, both flagged by review comments
+written before this adapter existed plus one found empirically once a real
+key was configured:
 
 1. A bounded per-call timeout, passed to the SDK client itself rather than
    left to the caller - `ClaudeClient`'s own Protocol docstring: every real
@@ -24,6 +25,15 @@ written before this adapter existed:
    The SDK's own default internal retry (on 429/5xx/connection errors)
    would silently turn one logical call into several HTTP requests
    underneath that, undermining the PRD-mandated retry count.
+3. Markdown-code-fence stripping - found live: despite every prompt's own
+   "no markdown fences" instruction, claude-sonnet-4-5 routinely wraps its
+   JSON response in a ```json ... ``` fence anyway. `MockClaudeClient`
+   never exercised this shape, so it reached none of the 23 tests written
+   before a real key existed. Every one of scenario_generation/
+   persona_chat/evaluation's own `parse_*_response` functions calls
+   `json.loads` directly on `ClaudeResponse.content` - fixed once, here,
+   rather than in each of the three, since this is a real-API response
+   quirk the domain layer should never need to know about.
 """
 
 from __future__ import annotations
@@ -35,6 +45,22 @@ import anthropic
 from app.domain.claude_client import ClaudeAPIError, ClaudeResponse, ClaudeTimeoutError
 
 logger = logging.getLogger(__name__)
+
+
+def _strip_markdown_json_fence(content: str) -> str:
+    """Undo a ```json ... ``` (or bare ``` ... ```) fence wrapping the
+    *entire* response - found live, not hypothetically (see module
+    docstring). Deliberately conservative: only strips when the whole
+    stripped content both starts and ends with a fence line, so a response
+    that merely contains a backtick or code sample mid-text is returned
+    unchanged rather than corrupted."""
+    stripped = content.strip()
+    if not stripped.startswith("```"):
+        return content
+    lines = stripped.splitlines()
+    if len(lines) < 2 or lines[-1].strip() != "```":
+        return content
+    return "\n".join(lines[1:-1])
 
 
 class AnthropicClaudeClient:
@@ -85,6 +111,7 @@ class AnthropicClaudeClient:
         content = "".join(
             block.text for block in message.content if block.type == "text"
         )
+        content = _strip_markdown_json_fence(content)
         return ClaudeResponse(
             content=content, stop_reason=message.stop_reason or "end_turn"
         )

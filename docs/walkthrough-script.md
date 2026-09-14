@@ -7,35 +7,39 @@ repo's own seed data, source, or the Playwright specs written against it
 (e2e/tests/) — not guessed. Run in order; each step names exactly what to
 click and what you should see.
 
-## One honest gap, stated up front
+## Live AI generation — now working, opt-in
 
-Three actions in step 10 call the live Claude API (`app/core/claude.py`):
-regenerating a scenario's narrative, and the chat composer's **Suggest
-pushback** / **Sufficiency check** buttons.
+Four actions call the live Claude API (`app/core/claude.py`): regenerating
+a scenario's narrative, **Complete Thread & Evaluate**, and the chat
+composer's **Suggest pushback** / **Sufficiency check** buttons.
 
-Blocker B3 (`prd/MeadowOps_progress.md`) is now closed on the code side: a
-real adapter (`app.domain.claude_client_anthropic.AnthropicClaudeClient`)
-exists and is wired into `app.main.create_app`, but it is **opt-in**, not
-automatic — set
-both `ANTHROPIC_API_KEY` (a real key) and `MEADOWOPS_CLAUDE_CLIENT_ENABLED=
-true` in `.env` to turn it on (`.env.example` documents both; deliberately
-two separate settings, not one, so a key merely sitting in a local/CI `.env`
+Blocker B3 (`prd/MeadowOps_progress.md`) is fully closed as of 2026-09-14:
+a real adapter (`app.domain.claude_client_anthropic.AnthropicClaudeClient`)
+is wired into `app.main.create_app` and verified live — both against the
+domain functions directly and through the actual `/regenerate` and
+`/complete` HTTP routes on a real running app (200, genuine Claude-generated
+content, real DB writes). It's **opt-in**, not automatic — set both
+`ANTHROPIC_API_KEY` (a real key) and `MEADOWOPS_CLAUDE_CLIENT_ENABLED=true`
+in `.env` to turn it on (`.env.example` documents both; deliberately two
+separate settings, not one, so a key merely sitting in a local/CI `.env`
 never silently starts making live billed calls — see
-`Settings.anthropic_api_key`'s own comment). In this environment specifically,
-`ANTHROPIC_API_KEY` is present in `.env` but **blank** — found empirically
-while building this adapter, contradicting an earlier draft of this doc that
-assumed a real key was configured. So today, in every environment available
-to this project, these three routes still 503 cleanly rather than hanging —
-same practical outcome as before, but now because of a missing credential,
-not missing code. **Do not attempt to demo live AI generation without first
-confirming both settings are actually set and the key is genuinely non-blank
-— a `.env` line with `ANTHROPIC_API_KEY=` present-but-empty looks configured
-at a glance and is not.** None of the three is required to complete the
-loop: step 10 gives the manual alternative for each (hand-typed ground
-truth, hand-typed chat replies), using the exact same code paths Unit 29's
-QA harness and the full backend test suite already exercise against
-`MockClaudeClient`. Every other step in this script uses only already-seeded
-data and no AI call at all.
+`Settings.anthropic_api_key`'s own comment). The local dev `.env` has the
+real key but **deliberately not** the enabled flag left on permanently —
+leaving both set broke `tests/conftest.py`'s own test isolation (3 tests
+that assert a clean 503-no-client path started making real, billed live
+calls instead, found live while closing this blocker), confirming exactly
+the risk that design decision was protecting against. **Turn the flag on
+only for the duration of this walkthrough**
+(`MEADOWOPS_CLAUDE_CLIENT_ENABLED=true uv run uvicorn app.main:create_app
+--factory --port 8000`, or add the line to `.env` and remove it again
+afterward), and confirm the key is genuinely non-blank first — a `.env`
+line with `ANTHROPIC_API_KEY=` present-but-empty looks configured at a
+glance and is not. Without both set, these four routes 503 cleanly rather
+than hanging. If you'd rather not spend a live API call mid-demo, step 10
+still names the manual alternative for narrative/evaluation (hand-typed
+ground truth), the exact same code path Unit 29's QA harness and the full
+backend test suite exercise against `MockClaudeClient`. Every other step
+in this script uses only already-seeded data and no AI call at all.
 
 ## Setup (once)
 
@@ -62,7 +66,7 @@ with Session(engine) as session:
     seed_initial_world_state_and_clock(session)
     session.commit()
 "
-uv run uvicorn app.main:app --reload --port 8000
+uv run uvicorn app.main:create_app --factory --reload --port 8000
 
 # 3. Subsystem 1 (orbynadmin) — separate terminal
 cd frontend/subsystem_1/orbynadmin
@@ -158,18 +162,18 @@ exist (PRD 5.1: exactly two users).
 
 10. On the scenario's detail page (`/scenarios/[id]`):
     - **Regenerate narrative** calls the live Claude API. A real adapter
-      now exists (`app.domain.claude_client_anthropic.AnthropicClaudeClient`,
-      Phase 4 blocker B3, closed 2026-09-14) and `app.main.create_app` wires
-      it in when `Settings.claude_client_enabled` is true — but that flag
-      defaults to `False`, and in this environment specifically,
-      `ANTHROPIC_API_KEY` is present in `.env` but blank, so
-      `claude_client_enabled=True` would fail Settings validation outright
-      rather than construct a broken client. Until both a genuine key and
-      the enabled flag are set, this route still 503s cleanly, same as
-      before the adapter existed — just for a different reason (missing
-      credential, not missing code). Use the **Edit narrative** form instead
-      and type ground truth by hand — this is the exact same code path Unit
-      29's QA harness itself uses to drive its own automated run
+      exists (`app.domain.claude_client_anthropic.AnthropicClaudeClient`,
+      Phase 4 blocker B3, closed 2026-09-14 — including a live-verified
+      round trip through this exact route) and `app.main.create_app` wires
+      it in when `Settings.claude_client_enabled` is true. The local dev
+      `.env` has a genuine `ANTHROPIC_API_KEY` but leaves that flag off by
+      default (see "Live AI generation" above for why) — set
+      `MEADOWOPS_CLAUDE_CLIENT_ENABLED=true` before starting the backend to
+      make this button work live; expect a few seconds' wait while the
+      real model call completes. If you'd rather not spend a live call
+      mid-demo, use the **Edit narrative** form instead and type ground
+      truth by hand — this is the exact same code path Unit 29's QA
+      harness itself uses to drive its own automated run
       (`tests/support/qa_harness.py`: "Ground truth here is hand-authored
       via PATCH .../ground-truth, not Claude-regenerated"), so it is not an
       improvised substitute — it's this project's own established way of
@@ -186,14 +190,14 @@ exist (PRD 5.1: exactly two users).
       composing a pushback).
     - Back on the scenario detail page, under **Persona threads**, click
       **Complete Thread & Evaluate** for the thread you just messaged in
-      (Unit 34) — same 503-until-a-real-key-and-flag-are-set condition as
-      Regenerate narrative above, surfaced here as a toast rather than a
-      generic failure. `e2e/tests/subsystem2/evaluation.spec.ts`
-      demonstrates the rest of this step live by seeding an Evaluation row
-      directly (`e2e/scripts/seed_evaluation_fixture.py`) rather than via
-      this button — do the same by hand to continue the demo without a
-      live Claude call, or simply describe this step rather than clicking
-      through it.
+      (Unit 34) — this also calls the live Claude API and is live-verified
+      the same way Regenerate narrative is above (a real 200 through this
+      exact route, real Evaluation row written). `e2e/tests/subsystem2/
+      evaluation.spec.ts` still seeds its own Evaluation row directly
+      (`e2e/scripts/seed_evaluation_fixture.py`) rather than via this
+      button, since a committed E2E spec shouldn't depend on live, billed
+      API calls — that script's own docstring is the historical record of
+      the bug this button no longer has.
     - With an evaluation in place, fill in and submit **Record human
       review** (reviewer name, agree/override, tier assessment notes) —
       the Builder standing in for the External Human Reviewer, who has no
