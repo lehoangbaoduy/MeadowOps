@@ -1,0 +1,12 @@
+{
+  "name": "meadowops-e2e",
+  "private": true,
+  "version": "0.0.0",
+  "scripts": {
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.63.0",
+    "dotenv": "17.4.2"
+  }
+}

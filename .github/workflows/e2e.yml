@@ -1,0 +1,111 @@
+name: E2E (Playwright)
+
+# Unit 31 (MEADOWOPS-HARDEN-002): the browser-level companion to
+# backend-ci.yml. Kept as its own job/workflow rather than folded into
+# backend-ci.yml's `test` job — a real Postgres + FastAPI + two built
+# Next.js apps + a Chromium download is a meaningfully heavier, slower,
+# more flake-prone path than the backend's plain `pytest -q`, and a failure
+# here should never block on, or be blocked by, the other's result.
+#
+# Every value under `env:` below is a throwaway placeholder for this job's
+# own ephemeral Postgres service container - never a real credential, same
+# convention as backend-ci.yml.
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+permissions:
+  contents: read
+
+jobs:
+  e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: meadowops
+          POSTGRES_PASSWORD: ci-only-not-a-real-secret
+          POSTGRES_DB: meadowops
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U meadowops -d meadowops"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      MEADOWOPS_POSTGRES_PASSWORD: ci-only-not-a-real-secret
+      MEADOWOPS_DATABASE_URL: postgresql+psycopg://meadowops:ci-only-not-a-real-secret@localhost:5434/meadowops
+      MEADOWOPS_SANDBOX_ROLE_PASSWORD: abcdef0123456789abcdef0123456789
+      MEADOWOPS_SESSION_SECRET_KEY: ci-only-session-secret-key-at-least-32-bytes-long
+      MEADOWOPS_INTERNAL_SERVICE_TOKEN: ci-only-internal-service-token-at-least-32-bytes-long
+      MEADOWOPS_INITIAL_ADMIN_EMAIL: admin@meadowops.local
+      MEADOWOPS_INITIAL_ADMIN_PASSWORD: ci-only-admin-password
+      MEADOWOPS_INITIAL_ANALYST_EMAIL: analyst@meadowops.local
+      MEADOWOPS_INITIAL_ANALYST_PASSWORD: ci-only-analyst-password
+      # Read by both frontends' own /api/login and admin-api.ts at request
+      # time (not NEXT_PUBLIC_-prefixed, so not build-time inlined) -
+      # matches frontend/*/.env.local's local-dev value exactly.
+      MEADOWOPS_API_BASE_URL: http://localhost:8000
+      NEXT_PUBLIC_MEADOWOPS_WS_BASE_URL: ws://localhost:8000
+      UV_FROZEN: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        working-directory: backend
+        run: uv sync --frozen
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install orbynadmin dependencies
+        working-directory: frontend/subsystem_1/orbynadmin
+        run: npm ci
+
+      - name: Install subsystem_2 dependencies
+        # `npm ci` requires package-lock.json, which this app doesn't have -
+        # it's pnpm-managed (own pnpm-lock.yaml), but pnpm itself crashes
+        # outright in this project's dev environment (scripts/ci.sh's own
+        # comment: `ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING`, Unit 12). `npm
+        # install` alone doesn't write a competing lockfile - same
+        # already-verified npm-without-ci approach scripts/ci.sh uses.
+        working-directory: frontend/subsystem_2/shadcn-dashboard/nextjs-version
+        run: npm install
+
+      - name: Install e2e suite dependencies
+        working-directory: e2e
+        run: npm ci
+
+      - name: Install Playwright's Chromium
+        working-directory: e2e
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright E2E suite
+        working-directory: e2e
+        run: npx playwright test
+
+      - name: Upload Playwright report
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: e2e/playwright-report/
+          retention-days: 7

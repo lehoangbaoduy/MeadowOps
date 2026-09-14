@@ -17,4 +17,8 @@ build/
 .DS_Store
 .playwright-mcp/
 
+e2e/.auth/
+e2e/playwright-report/
+e2e/test-results/
+
 scripts/_ci_sabotage_test.sh

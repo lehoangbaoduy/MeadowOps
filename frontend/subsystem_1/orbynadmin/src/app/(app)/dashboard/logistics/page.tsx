@@ -15,9 +15,14 @@ import { getExecutiveSummary, getExecutiveTrend } from "@/lib/dashboard-api";
 import { formatDays, formatPercent } from "@/lib/dashboard-format";
 import { EXCEPTION_CATEGORY_LABEL, type ExecutiveKpi, type ExecutiveSummary } from "@/types/dashboard";
 
-// PRD Appendix A — the five core KPIs, in the same order as Unit 10's
-// backend/sql/kpi/ files (otif, fill_rate, days_of_supply, order_cycle_time,
-// perfect_order_rate).
+// PRD Appendix A — the four global-scalar starter KPIs, in the same order
+// as Unit 10's backend/sql/kpi/ files (otif, fill_rate, order_cycle_time,
+// perfect_order_rate). Days of supply is deliberately not a card here: per
+// Unit 14's own reviewed design (app/db/kpi.py's KpiSnapshot/
+// DaysOfSupplySnapshot docstrings), it isn't a single global scalar the way
+// the other four are — it's per product/warehouse, and PRD S1-FR-3's
+// "calculate and display" is satisfied via the Inventory view's own table
+// and drill-down (inventory-table.tsx, reports/[id]/page.tsx) instead.
 const KPI_CARDS = [
   { icon: IconTruckDelivery, label: "OTIF", unit: "", field: "otif_pct", color: "var(--chart-1)" },
   { icon: IconPackageExport, label: "Fill Rate", unit: "", field: "fill_rate_pct", color: "var(--chart-2)" },

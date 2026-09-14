@@ -101,3 +101,14 @@ jobs:
       - name: Run tests
         working-directory: backend
         run: uv run --frozen pytest -q
+
+      - name: Run repo-root frontend structural checks
+        # Unit 7's tests/frontend/ (Appendix D layout/demo-data structural
+        # checks, 4 files) - scoped out of backend/pyproject.toml's own
+        # testpaths on purpose (see that file's own docstring), and never
+        # swept into any CI job until now (previously only run locally via
+        # scripts/ci.sh). Uses the backend's venv/pytest since these tests
+        # have no Node/browser dependency of their own - just Path-based
+        # repo-layout assertions.
+        working-directory: backend
+        run: uv run --frozen pytest ../tests/frontend -q
