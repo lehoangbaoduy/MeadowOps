@@ -50,10 +50,23 @@ jobs:
         # setup script (postgresql-common's apt.postgresql.org.sh) rather
         # than a hand-rolled apt source file, so codename/format handling
         # stays correct across Ubuntu runner image updates.
+        #
+        # Installing postgresql-client-18 does NOT make it the default
+        # `pg_dump`/`pg_restore` on PATH - found via a real failed run
+        # (2026-09-14): the runner image already had postgresql-client-16
+        # on PATH via update-alternatives, apt installing -18 alongside it
+        # didn't re-point the alternative, and pg_dump refused to run at
+        # all against Postgres 18 ("aborting because of server version
+        # mismatch"). Prepending the versioned install directory to
+        # GITHUB_PATH - which every later step's PATH inherits - sidesteps
+        # the alternatives system entirely rather than trying to fix it.
         run: |
           sudo apt-get install -y postgresql-common
           yes | sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh
           sudo apt-get install -y postgresql-client-18
+          echo "/usr/lib/postgresql/18/bin" >> "$GITHUB_PATH"
+          export PATH="/usr/lib/postgresql/18/bin:$PATH"
+          pg_dump --version
 
       - name: Dump every real schema (live, reporting, engine, chat)
         env:
