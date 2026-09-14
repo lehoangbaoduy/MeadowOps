@@ -1,6 +1,6 @@
 services:
   postgres:
-    image: postgres:16-alpine
+    image: postgres:18-alpine
     container_name: meadowops_postgres
     restart: unless-stopped
     environment:
@@ -10,7 +10,17 @@ services:
     ports:
       - "127.0.0.1:5434:5432"
     volumes:
-      - meadowops_pgdata:/var/lib/postgresql/data
+      # postgres:18+ moved PGDATA to a version-specific subdirectory and its
+      # own VOLUME declaration to the parent /var/lib/postgresql (mounting
+      # at the old .../data path, correct through postgres:17, makes the
+      # 18-alpine entrypoint refuse to start - docker-library/postgres docs).
+      # If you already have a pre-18 meadowops_pgdata volume from before
+      # this change, it won't migrate automatically - Postgres data isn't
+      # forward-compatible across a major version bump. Run
+      # `docker compose down -v` (or `docker volume rm meadowops_pgdata`)
+      # first, then `docker compose up -d` and re-run migrations/seeds
+      # (see prd/MeadowOps_progress.md's U32 entry for the exact commands).
+      - meadowops_pgdata:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U meadowops -d meadowops"]
       interval: 5s

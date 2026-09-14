@@ -66,6 +66,7 @@ from psycopg import errors as pg_errors
 from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
+from starlette.concurrency import run_in_threadpool
 
 from app.core.auth import reject_service_role, require_admin, require_analyst
 from app.core.chat_registry import ChatConnectionRegistry
@@ -508,7 +509,16 @@ async def upload_attachment_route(
     # first place.
     content = await file.read(max_size + 1)
     try:
-        attachment = upload_attachment(
+        # run_in_threadpool (Unit 32, pre-implementation security review,
+        # decision 1627): upload_attachment's storage.save() call can now be
+        # a real R2 network round-trip, not just a local disk write - this
+        # route is `async def`, so calling it directly on the event loop
+        # would block every other coroutine on this worker for the duration
+        # of that upload. get_message_attachment_route needs no equivalent
+        # change - it's already a plain `def`, which FastAPI/Starlette runs
+        # in the same threadpool this call now uses explicitly.
+        attachment = await run_in_threadpool(
+            upload_attachment,
             session,
             storage,
             thread_id=thread_id,

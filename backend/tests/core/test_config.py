@@ -1,0 +1,66 @@
+"""Unit 32 (MEADOWOPS-INFRA-005): Settings._validate_attachment_storage_backend
+- the model_validator added at this unit's pre-implementation security
+review (decision 1627) to fail fast at Settings() construction rather than
+let a misconfigured "r2" backend silently build a broken client, or a
+forgotten backend flag silently keep writing to ephemeral local disk with
+no error signal."""
+
+import pytest
+from pydantic import ValidationError
+
+from app.core.config import Settings
+from tests.support.auth import TEST_SESSION_SECRET
+
+_SERVICE_TOKEN = "test-internal-service-token-value-at-least-32-bytes-long"
+
+_R2_FIELDS: dict[str, object] = {
+    "r2_account_id": "test-account-id",
+    "r2_access_key_id": "test-access-key-id",
+    "r2_secret_access_key": "test-secret-access-key",
+    "r2_bucket_name": "test-bucket",
+}
+
+
+def _settings(**overrides: object) -> Settings:
+    base: dict[str, object] = {
+        "session_secret_key": TEST_SESSION_SECRET,
+        "internal_service_token": _SERVICE_TOKEN,
+    }
+    base.update(overrides)
+    return Settings(**base)  # type: ignore[arg-type]
+
+
+class TestAttachmentStorageBackendValidation:
+    def test_local_backend_with_no_r2_fields_is_valid(self) -> None:
+        settings = _settings()
+        assert settings.attachment_storage_backend == "local"
+
+    def test_r2_backend_with_all_fields_is_valid(self) -> None:
+        settings = _settings(attachment_storage_backend="r2", **_R2_FIELDS)
+        assert settings.attachment_storage_backend == "r2"
+        assert settings.r2_bucket_name == "test-bucket"
+        assert settings.r2_access_key_id is not None
+        assert settings.r2_access_key_id.get_secret_value() == "test-access-key-id"
+
+    def test_r2_backend_missing_a_field_is_rejected(self) -> None:
+        incomplete = dict(_R2_FIELDS)
+        del incomplete["r2_bucket_name"]
+        with pytest.raises(ValidationError, match="r2_bucket_name"):
+            _settings(attachment_storage_backend="r2", **incomplete)
+
+    def test_r2_backend_missing_all_fields_is_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="requires all of"):
+            _settings(attachment_storage_backend="r2")
+
+    def test_local_backend_with_r2_fields_set_is_rejected(self) -> None:
+        """Guards the mirror-image misconfiguration flagged at review: an
+        operator who sets the r2_* secrets but forgets to also flip
+        attachment_storage_backend to "r2" would otherwise get a
+        local-filesystem deploy with zero error signal."""
+        with pytest.raises(ValidationError, match="r2_bucket_name"):
+            _settings(attachment_storage_backend="local", **_R2_FIELDS)
+
+    def test_error_message_never_includes_the_secret_value(self) -> None:
+        with pytest.raises(ValidationError) as exc_info:
+            _settings(attachment_storage_backend="r2")
+        assert "test-secret-access-key" not in str(exc_info.value)

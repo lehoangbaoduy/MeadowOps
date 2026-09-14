@@ -1,0 +1,103 @@
+name: Backend CI
+
+# U32 (MEADOWOPS-INFRA-005) follow-on: tests-only CI, by explicit user
+# choice (AskUserQuestion, 2026-09-14) over a full CI/CD variant that would
+# also auto-deploy on merge. Deployment to Railway stays a deliberate manual
+# step (`railway up` / `railway redeploy`) - this workflow's only job is to
+# fail a PR/push whose backend test suite doesn't pass.
+#
+# Every value under `env:` below is a throwaway placeholder for the
+# ephemeral Postgres service container this job starts and destroys itself
+# - never a real credential, never referenced outside this workflow. No
+# Railway token or any live secret appears anywhere in this file.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_USER: meadowops
+          POSTGRES_PASSWORD: ci-only-not-a-real-secret
+          POSTGRES_DB: meadowops
+        ports:
+          - 5434:5432
+        options: >-
+          --health-cmd "pg_isready -U meadowops -d meadowops"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      MEADOWOPS_POSTGRES_PASSWORD: ci-only-not-a-real-secret
+      MEADOWOPS_DATABASE_URL: postgresql+psycopg://meadowops:ci-only-not-a-real-secret@localhost:5434/meadowops
+      # 32 lowercase hex chars - satisfies migration 0001's _HEX_PASSWORD
+      # validation (defense in depth against DDL interpolation), not a real
+      # secret since this role only ever exists inside this job's own
+      # throwaway Postgres container.
+      MEADOWOPS_SANDBOX_ROLE_PASSWORD: abcdef0123456789abcdef0123456789
+      MEADOWOPS_SESSION_SECRET_KEY: ci-only-session-secret-key-at-least-32-bytes-long
+      MEADOWOPS_INTERNAL_SERVICE_TOKEN: ci-only-internal-service-token-at-least-32-bytes-long
+      MEADOWOPS_INITIAL_ADMIN_EMAIL: admin@meadowops.local
+      MEADOWOPS_INITIAL_ADMIN_PASSWORD: ci-only-admin-password
+      MEADOWOPS_INITIAL_ANALYST_EMAIL: analyst@meadowops.local
+      MEADOWOPS_INITIAL_ANALYST_PASSWORD: ci-only-analyst-password
+      # Applies to every `uv run`/`uv sync` call below - fail loudly on any
+      # lock/pyproject drift instead of silently re-resolving mid-job
+      # (code-reviewer finding: `uv sync --frozen` and the final `pytest`
+      # step already had --frozen, but the migration/seed steps didn't).
+      UV_FROZEN: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+        with:
+          enable-cache: true
+          python-version: "3.12"
+
+      - name: Install dependencies
+        working-directory: backend
+        run: uv sync --frozen
+
+      - name: Run migrations
+        working-directory: backend
+        run: uv run alembic upgrade head
+
+      - name: Run bootstrap seeds
+        working-directory: backend
+        run: |
+          uv run python -c "
+          from sqlalchemy import create_engine
+          from sqlalchemy.orm import Session
+          from app.core.config import Settings
+          from app.services.auth_seed import seed_initial_users
+          from app.services.baseline_data import seed_master_data
+          from app.services.simulation_clock_ops import seed_initial_world_state_and_clock
+
+          settings = Settings()
+          engine = create_engine(settings.database_url)
+          with Session(engine) as session:
+              seed_initial_users(session, settings)
+              seed_master_data(session)
+              seed_initial_world_state_and_clock(session)
+              session.commit()
+          "
+
+      - name: Run tests
+        working-directory: backend
+        run: uv run --frozen pytest -q

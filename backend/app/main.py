@@ -1,6 +1,8 @@
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 
+import boto3
+from botocore.config import Config as BotoConfig
 from fastapi import Depends, FastAPI
 
 from app.api.admin_query_log import router as admin_query_log_router
@@ -59,6 +61,35 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         app.state.subsystem2_client = build_subsystem2_client(
             app, service_token=settings.internal_service_token
         )
+        # Unit 32 (MEADOWOPS-INFRA-005): built once here, not per-request
+        # like LocalFilesystemAttachmentStorage - a boto3 client holds real
+        # connection-pooling state worth keeping (app.core.storage's
+        # get_attachment_storage reads it back off app.state, never
+        # constructs its own). None when the backend is "local" (the
+        # default) - Settings' own validator guarantees the four r2_*
+        # fields are all present whenever attachment_storage_backend == "r2",
+        # so no further None-checking is needed past this point. Explicit
+        # connect/read timeouts + bounded retries (pre-implementation
+        # security review, decision 1627): without them, a slow or hanging
+        # R2 connection could hold a threadpool slot shared with every other
+        # sync route in this app (get_message_attachment_route included)
+        # indefinitely - a local disk read can't produce that failure mode.
+        app.state.r2_client = None
+        if settings.attachment_storage_backend == "r2":
+            assert settings.r2_access_key_id is not None
+            assert settings.r2_secret_access_key is not None
+            app.state.r2_client = boto3.client(
+                "s3",
+                endpoint_url=f"https://{settings.r2_account_id}.r2.cloudflarestorage.com",
+                aws_access_key_id=settings.r2_access_key_id.get_secret_value(),
+                aws_secret_access_key=settings.r2_secret_access_key.get_secret_value(),
+                region_name="auto",
+                config=BotoConfig(
+                    connect_timeout=5,
+                    read_timeout=10,
+                    retries={"max_attempts": 3, "mode": "standard"},
+                ),
+            )
         # Unit 13: opt-in background scheduler (settings.scheduler_enabled,
         # default False) — off for tests/CI, and for any create_app() call
         # that doesn't explicitly ask for it, so no test unexpectedly gets
@@ -77,6 +108,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if scheduler is not None:
             scheduler.shutdown(wait=False)
         await app.state.subsystem2_client.aclose()
+        if app.state.r2_client is not None:
+            app.state.r2_client.close()
         app.state.engine.dispose()
 
     # docs/redoc/openapi disabled: unauthenticated by default, an

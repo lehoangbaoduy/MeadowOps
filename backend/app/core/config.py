@@ -1,7 +1,8 @@
 from pathlib import Path
+from typing import Literal
 
 from psycopg.conninfo import make_conninfo
-from pydantic import Field
+from pydantic import Field, SecretStr, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
@@ -120,6 +121,62 @@ class Settings(BaseSettings):
     max_attachment_size_bytes: int = Field(
         default=DEFAULT_MAX_ATTACHMENT_SIZE_BYTES, gt=0
     )
+    # Unit 32 (MEADOWOPS-INFRA-005): object storage backend for
+    # app.core.storage. "local" (default) is LocalFilesystemAttachmentStorage
+    # - every existing test/CI/Docker Compose flow keeps working with zero
+    # new required config. "r2" swaps in R2AttachmentStorage against
+    # Cloudflare R2 (S3-compatible), chosen so attachment bytes survive a
+    # Railway redeploy - the container-local filesystem doesn't (found
+    # during B1/B2, Phase 3). The four r2_* fields are Optional at the type
+    # level only so a "local" deployment never has to set them; the
+    # model_validator below enforces the real invariant (r2_* present iff
+    # backend == "r2") at Settings() construction, matching this class's
+    # existing fail-fast-at-startup convention for every other required
+    # secret (session_secret_key, database_url, sandbox_role_password,
+    # internal_service_token) rather than a per-request runtime check that
+    # could let a misconfigured "r2" backend silently construct a broken
+    # client, or a forgotten backend flag silently keep writing to ephemeral
+    # local disk with no error signal - both flagged at this unit's
+    # pre-implementation security review (decision 1627).
+    attachment_storage_backend: Literal["local", "r2"] = "local"
+    r2_account_id: str | None = None
+    # SecretStr, unlike sandbox_role_password/internal_service_token above -
+    # security review of this unit: those two are an accepted existing
+    # pattern, not retrofitted here, but a new field is a fresh choice, and
+    # SecretStr closes the narrow residual risk of an accidental
+    # repr(settings)/str(settings) landing in a log line. Call
+    # .get_secret_value() only at the single boto3-client-construction site
+    # (app.main's lifespan).
+    r2_access_key_id: SecretStr | None = None
+    r2_secret_access_key: SecretStr | None = None
+    r2_bucket_name: str | None = None
+
+    @model_validator(mode="after")
+    def _validate_attachment_storage_backend(self) -> "Settings":
+        r2_fields = {
+            "r2_account_id": self.r2_account_id,
+            "r2_access_key_id": self.r2_access_key_id,
+            "r2_secret_access_key": self.r2_secret_access_key,
+            "r2_bucket_name": self.r2_bucket_name,
+        }
+        missing = sorted(name for name, value in r2_fields.items() if value is None)
+        present = sorted(name for name, value in r2_fields.items() if value is not None)
+        # Error messages name only field names, never the Settings object
+        # itself or any field value (security review, this unit) - printing
+        # `self`/`vars(self)` here would put secret values into a startup
+        # crash log.
+        if self.attachment_storage_backend == "r2" and missing:
+            raise ValueError(
+                "attachment_storage_backend='r2' requires all of: "
+                + ", ".join(missing)
+            )
+        if self.attachment_storage_backend == "local" and present:
+            raise ValueError(
+                "attachment_storage_backend='local' but these r2_* fields "
+                "are set: " + ", ".join(present) + " (set "
+                "attachment_storage_backend='r2' too, or unset them)"
+            )
+        return self
 
     def owner_dsn(self) -> str:
         """A plain psycopg-style DSN (not the `postgresql+psycopg://`
