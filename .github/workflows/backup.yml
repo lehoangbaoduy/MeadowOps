@@ -1,0 +1,96 @@
+name: Backup
+
+# U33 (MEADOWOPS-INFRA-006, PRD 8.6): "Automated daily backups of the
+# Postgres instance are a requirement" - separate from B2's restore drill
+# (2026-09-13, see prd/MeadowOps_progress.md §2/§8 row 32), which proved a
+# backup/restore cycle works but was a one-off manual test, not a running
+# job. This workflow is that job.
+#
+# Dumps every real schema (live/reporting/engine/chat) - a broader scope
+# than B2's own drill, which only covered live/reporting/engine (32 tables)
+# and missed `chat` (6 tables, migration 0018) entirely. `sandbox`/
+# `sandbox_staging` are deliberately excluded: both are disposable mirrors
+# rebuilt on demand by app/services/sandbox_refresh.py from `live`, hold no
+# data that doesn't already exist elsewhere, and would only inflate backup
+# size/time for zero recovery value.
+#
+# Targets the real Neon instance (secrets.NEON_DATABASE_URL), never the
+# ephemeral service-container Postgres backend-ci.yml/e2e.yml use - this is
+# the only workflow in this repo that touches production data, and it only
+# ever reads it (pg_dump, no writes).
+#
+# Uploads to a dedicated R2 bucket via a narrowly-scoped API token separate
+# from the one U32 gave the app's own attachment storage (app/core/
+# storage.py) - a backup dump contains the entire database, including
+# live.user.password_hash, so it deliberately doesn't share credentials or
+# a bucket with anything the running app itself can reach. Retention/
+# rotation is a Cloudflare R2 bucket lifecycle rule (configured once in the
+# dashboard, not scripted here) rather than this workflow listing and
+# deleting old objects itself - one less thing that can fail silently.
+
+on:
+  schedule:
+    - cron: "0 3 * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Install postgresql-client 18
+        # Matches the Postgres 18 the app itself runs against (U32's
+        # deliberate parity work) - ubuntu-latest's default apt package is
+        # an older major version, and pg_dump/pg_restore compatibility
+        # across major versions isn't guaranteed. Uses PGDG's own official
+        # setup script (postgresql-common's apt.postgresql.org.sh) rather
+        # than a hand-rolled apt source file, so codename/format handling
+        # stays correct across Ubuntu runner image updates.
+        run: |
+          sudo apt-get install -y postgresql-common
+          yes | sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh
+          sudo apt-get install -y postgresql-client-18
+
+      - name: Dump every real schema (live, reporting, engine, chat)
+        env:
+          NEON_DATABASE_URL: ${{ secrets.NEON_DATABASE_URL }}
+        run: |
+          pg_dump \
+            --format=custom \
+            --no-owner \
+            --no-privileges \
+            --exclude-schema=sandbox \
+            --exclude-schema=sandbox_staging \
+            --file=backup.dump \
+            "$NEON_DATABASE_URL"
+
+      - name: Verify the dump is a genuine, non-empty restorable archive
+        # Cheap integrity check - not a full restore drill (B2 already
+        # proved a pg_dump/pg_restore cycle works end-to-end against real
+        # data; re-proving that destructively on every scheduled run would
+        # be its own outage risk). This only confirms the archive's table
+        # of contents parses and is non-empty, catching a truncated/corrupt
+        # upload before it ever reaches R2.
+        run: |
+          toc_entries=$(pg_restore --list backup.dump | grep -c 'TABLE DATA')
+          echo "TABLE DATA entries in dump: $toc_entries"
+          if [ "$toc_entries" -lt 1 ]; then
+            echo "::error::pg_dump produced an archive with zero TABLE DATA entries"
+            exit 1
+          fi
+
+      - name: Upload to R2
+        env:
+          AWS_ACCESS_KEY_ID: ${{ secrets.BACKUP_R2_ACCESS_KEY_ID }}
+          AWS_SECRET_ACCESS_KEY: ${{ secrets.BACKUP_R2_SECRET_ACCESS_KEY }}
+          AWS_DEFAULT_REGION: auto
+        run: |
+          filename="meadowops-$(date -u +%Y-%m-%dT%H-%M-%SZ).dump"
+          aws s3 cp backup.dump \
+            "s3://${{ secrets.BACKUP_R2_BUCKET }}/${filename}" \
+            --endpoint-url "https://${{ secrets.BACKUP_R2_ACCOUNT_ID }}.r2.cloudflarestorage.com"
+          echo "Uploaded ${filename}"
