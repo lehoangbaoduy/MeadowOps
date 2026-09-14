@@ -142,44 +142,70 @@ exist (PRD 5.1: exactly two users).
    works identically with or without a live `ANTHROPIC_API_KEY`.
 
 10. On the scenario's detail page (`/scenarios/[id]`):
-    - **Regenerate narrative** calls the live Claude API and needs a real
-      key — with none configured (this environment, right now) it 503s
-      cleanly rather than hanging. To continue the demo without a key,
-      use the **Edit narrative** form instead and type ground truth by
-      hand — this is the exact same code path Unit 29's QA harness itself
-      uses to drive its own automated run (`tests/support/qa_harness.py`:
-      "Ground truth here is hand-authored via PATCH .../ground-truth, not
+    - **Regenerate narrative** would call the live Claude API — it 503s
+      cleanly rather than hanging, every time, regardless of whether a
+      real `ANTHROPIC_API_KEY` is configured: `app.main.create_app`
+      hardcodes `app.state.claude_client = None` unconditionally (Phase 4
+      blocker B3 — no real Anthropic SDK adapter is wired into the running
+      app yet, confirmed 2026-09-14 while building Unit 34's E2E coverage;
+      earlier drafts of this doc assumed the 503 was just this
+      environment's missing key, which understated the gap). Use the
+      **Edit narrative** form instead and type ground truth by hand — this
+      is the exact same code path Unit 29's QA harness itself uses to
+      drive its own automated run (`tests/support/qa_harness.py`: "Ground
+      truth here is hand-authored via PATCH .../ground-truth, not
       Claude-regenerated"), so it is not an improvised substitute — it's
       this project's own established way of running the loop without a
-      live key.
+      live Claude adapter.
     - **Approve**, then **Activate** the scenario.
     - Switch to orbynadmin's **Chat** (`/chat`) as the Analyst (step 8's
       account) — the newly activated scenario's thread is now visible.
       Type a message as the Analyst; switch back to the admin session in
       Subsystem 2 and reply as the Builder. This exercises the same
       real-time WebSocket delivery both ends of the chat rely on, with no
-      AI involved — `suggest-pushback`/`sufficiency-check` (Unit 23) and
-      the evaluation/human-review/portfolio routes (Units 25-26) are real,
-      tested backend capabilities but have **no frontend UI at all** yet
-      (a documented deferral, not something this script can demo live);
-      likewise the Decision & Event Ledger's propose/accept/implement/
-      outcome transitions are API-only. `docs/testing-report.md`'s
-      backend-suite description and `tests/support/qa_harness.py` are
-      where that part of the loop is actually exercised end-to-end.
+      AI involved. `suggest-pushback`/`sufficiency-check` (Unit 23) still
+      have no frontend UI (a documented deferral — neither is required to
+      close the loop, both are advisory aids for the Builder while
+      composing a pushback).
+    - Back on the scenario detail page, under **Persona threads**, click
+      **Complete Thread & Evaluate** for the thread you just messaged in
+      (Unit 34) — same permanent 503 as Regenerate narrative above (same
+      `app.state.claude_client = None`), surfaced here as a toast rather
+      than a generic failure. `e2e/tests/subsystem2/evaluation.spec.ts`
+      demonstrates the rest of this step live by seeding an Evaluation row
+      directly (`e2e/scripts/seed_evaluation_fixture.py`) rather than via
+      this button — do the same by hand to continue the demo without a
+      live Claude adapter, or simply describe this step rather than
+      clicking through it.
+    - With an evaluation in place, fill in and submit **Record human
+      review** (reviewer name, agree/override, tier assessment notes) —
+      the Builder standing in for the External Human Reviewer, who has no
+      account of their own in this phase (PRD 14's Open Items).
+    - Click **View Portfolio Export** to see the compiled document
+      (scenario summary, full transcript, evaluation, human review) —
+      empty reflection is expected and correct here (PRD 1.6 requires
+      neither a completed monthly review nor real reflection content for
+      Done).
+    - Switch to orbynadmin's **Chat** as the Analyst again — the composer
+      has been replaced by a seven-question reflection form now that the
+      thread is completed (Unit 34). Fill in and submit it; the export
+      above would now include it on a reload.
 
 ## Closing the loop
 
-Reload orbynadmin's **Activity** page (`/activity`, Unit 24) as the admin
-— once a decision has actually been proposed via the API (as the QA
-harness or a direct `curl`/`httpie` call against
-`POST /api/scenarios/{id}/...` would do), it renders here as a Ledger
-entry. Absent that, `/activity`'s own empty state ("Ledger entries appear
+Reload orbynadmin's **Activity** page (`/activity`, Unit 24) as the admin.
+Click **Propose Decision**, fill in an entity type/ID, title, and summary,
+and submit — it renders here as a new Ledger entry with **Request
+Clarification**/**Accept**/**Reject** actions (Unit 34). Accept it, then
+**Mark Implemented**, then **Record Outcome** to walk it through its full
+lifecycle live, in the UI, with no `curl`/`httpie` call needed. Absent any
+proposed decision, `/activity`'s own empty state ("Ledger entries appear
 here once a decision is proposed") is itself the correct, honest thing to
 show — not a bug to explain away.
 
-This walkthrough deliberately stops at the boundary of what has a real UI
-today. Everything demoed above — both roles, both frontends, the
-permission boundary, the chat thread shared live across the API boundary —
-is genuinely clickable end-to-end with zero improvisation and zero live AI
-dependency; the remaining lifecycle steps are real and fully tested
-(docs/testing-report.md), just API-only for now.
+Everything demoed above — both roles, both frontends, the permission
+boundary, the chat thread shared live across the API boundary, the full
+evaluation → human review → portfolio export chain, and the full Ledger
+decision lifecycle — is genuinely clickable end-to-end with zero
+improvisation and (outside the one Claude-dependent step, called out
+above) zero live AI dependency.

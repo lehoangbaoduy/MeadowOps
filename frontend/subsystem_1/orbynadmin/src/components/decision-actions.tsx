@@ -201,8 +201,13 @@ function OutcomeDialog({ decisionId }: { decisionId: string }) {
             </Select>
           </div>
           <div className="grid gap-2">
-            <Label>Notes (optional)</Label>
-            <Textarea rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} />
+            <Label htmlFor="outcome_notes">Notes (optional)</Label>
+            <Textarea
+              id="outcome_notes"
+              rows={3}
+              value={notes}
+              onChange={(e) => setNotes(e.target.value)}
+            />
           </div>
         </div>
         <DialogFooter>

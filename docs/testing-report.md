@@ -11,7 +11,7 @@ branch `master`.
 |---|---|---|---|
 | Backend unit/integration/architecture (`backend/tests/`) | 1288 | `cd backend && uv run --frozen pytest -q` | Yes — `.github/workflows/backend-ci.yml` |
 | Repo-root frontend structural checks (`tests/frontend/`) | 23 | `cd backend && uv run --frozen pytest ../tests/frontend -q` | Yes — `backend-ci.yml`, "Run repo-root frontend structural checks" step |
-| Playwright E2E (`e2e/tests/`) | 13 | `cd e2e && npx playwright test` | Yes — `.github/workflows/e2e.yml`, its own job |
+| Playwright E2E (`e2e/tests/`) | 20 | `cd e2e && npx playwright test` | Yes — `.github/workflows/e2e.yml`, its own job |
 | orbynadmin/subsystem_2 production build | — | `npm run build` in each app | Indirectly — `e2e.yml`'s `webServer` entries run `npm run build && npm run start` before any spec executes, so a broken build fails the E2E job even though "build" isn't a named step |
 | orbynadmin/subsystem_2 ESLint | — | `npm run lint` in each app | **No.** Runs only via `scripts/ci.sh`, locally, non-blocking (see gap below) |
 
@@ -37,6 +37,34 @@ with both GitHub Actions workflows green. This is a real, currently-open
 gap, not a decision to fix as part of this documentation pass; noting it
 here rather than letting the "all CI green" fact imply full coverage it
 doesn't have.
+
+## Unit 34's UI now has real E2E coverage (closed 2026-09-14)
+
+Initially shipped verified only statically (types, lint, production
+build) — no backend/DB configuration was available in that session to
+boot the stack for a live click-through. Closed in a follow-up pass, with
+a real local stack booted and all 7 new specs run live and repeatedly
+(not just written and assumed to pass): `e2e/tests/orbynadmin/
+ledger-actions.spec.ts` (2 tests — the full propose → accept → implement →
+outcome lifecycle, plus reject), `e2e/tests/subsystem2/evaluation.spec.ts`
+(3 tests — the evaluation/human-review/portfolio-export panel), and
+`e2e/tests/orbynadmin-analyst/reflection.spec.ts` (2 tests — the Analyst's
+reflection form, including the 409-as-already-submitted path).
+
+Getting there surfaced a real, previously-unknown finding: `app.main.
+create_app` hardcodes `app.state.claude_client = None` unconditionally
+(Phase 4 blocker B3) — there is currently no code path, even with a real
+`ANTHROPIC_API_KEY` configured, that makes `POST .../complete` succeed
+against a running app. `e2e/scripts/seed_evaluation_fixture.py` works
+around this the same way `tests/support/qa_harness.py`'s own
+`complete_thread` already does for the backend suite — scripting the
+Evaluation row directly (plus one ExceptionFlag insert, since no route
+creates one and the scheduler that normally would is disabled locally)
+rather than depending on a live Claude call. Also caught and fixed:
+`ScenariosPage`'s own empty-state E2E test assumed a scenario-free
+database, which Unit 34's own fixture-creating specs now violate — refiltered
+to `status=cancelled` (genuinely, deterministically empty) rather than the
+unfiltered list.
 
 ## Metadata gap found while writing docs/data-dictionary.md — fixed 2026-09-14
 
@@ -89,7 +117,7 @@ Not an undifferentiated pile — the suite is organized by what it protects:
 
 ## What the E2E suite covers that the backend suite structurally cannot
 
-The 13 Playwright specs are deliberately not a re-test of backend logic —
+The 20 Playwright specs are deliberately not a re-test of backend logic —
 they exercise the real browser against real seeded/QA data through both
 frontends' actual UI, catching classes of bug no `TestClient` call can:
 login redirects, the Query Playground's write-statement confirmation
