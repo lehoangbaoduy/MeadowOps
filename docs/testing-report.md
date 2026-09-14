@@ -3,13 +3,14 @@
 PRD §1.6 / Phase 4 exit criteria: "a testing report summarizing coverage
 and results." Counts below are regenerable, not narrated from memory —
 see the exact command next to each. Snapshot taken 2026-09-13, current
-branch `master`.
+branch `master`; backend count updated 2026-09-14 (Phase 4 blocker B3's
+Anthropic adapter, 23 new tests).
 
 ## Suite inventory
 
 | Suite | Count | Command | Runs in CI? |
 |---|---|---|---|
-| Backend unit/integration/architecture (`backend/tests/`) | 1288 | `cd backend && uv run --frozen pytest -q` | Yes — `.github/workflows/backend-ci.yml` |
+| Backend unit/integration/architecture (`backend/tests/`) | 1311 | `cd backend && uv run --frozen pytest -q` | Yes — `.github/workflows/backend-ci.yml` |
 | Repo-root frontend structural checks (`tests/frontend/`) | 23 | `cd backend && uv run --frozen pytest ../tests/frontend -q` | Yes — `backend-ci.yml`, "Run repo-root frontend structural checks" step |
 | Playwright E2E (`e2e/tests/`) | 20 | `cd e2e && npx playwright test` | Yes — `.github/workflows/e2e.yml`, its own job |
 | orbynadmin/subsystem_2 production build | — | `npm run build` in each app | Indirectly — `e2e.yml`'s `webServer` entries run `npm run build && npm run start` before any spec executes, so a broken build fails the E2E job even though "build" isn't a named step |
@@ -65,6 +66,60 @@ rather than depending on a live Claude call. Also caught and fixed:
 database, which Unit 34's own fixture-creating specs now violate — refiltered
 to `status=cancelled` (genuinely, deterministically empty) rather than the
 unfiltered list.
+
+## Phase 4 blocker B3: real Anthropic adapter (closed 2026-09-14)
+
+`app.domain.claude_client_anthropic.AnthropicClaudeClient` now implements
+`ClaudeClient` against the real `anthropic` SDK package, wired into
+`app.main.create_app` behind a new opt-in `Settings.claude_client_enabled`
+(default `False` — see that field's own comment for why "a key is present"
+alone can't be the switch, given `tests/conftest.py` loads the repo-root
+`.env`, key included, into every backend test process). 23 new tests:
+config validation (`tests/core/test_config.py`), `create_app`'s own wiring
+decision (`tests/core/test_claude_client_wiring.py`), and the adapter
+itself (`tests/domain/test_claude_client_anthropic.py`) — the last exercised
+against the real installed `anthropic` package's own exception types
+(`anthropic.APITimeoutError`/`APIStatusError`/`APIConnectionError`/
+`RateLimitError`/`InternalServerError`), not hand-rolled stand-ins, since
+the adapter's most important property (upstream error text never reaching
+`ClaudeAPIError`'s own message, per `scenario_generation.
+ScenarioGenerationFailedError`'s own pre-existing docstring — that message
+flows straight into an HTTP 502 detail the Builder's browser sees) can only
+be checked against the SDK's real `str(exc)` behavior.
+
+**Not closed**: a genuine live call. `tests/domain/
+test_claude_client_anthropic_smoke.py` is the PRD-line-373 "periodic
+live-call smoke test," `pytest.mark.skipif`-gated behind
+`MEADOWOPS_RUN_LIVE_CLAUDE_SMOKE_TEST=1` so it never runs (or spends money)
+as part of a normal suite run — but running it once by hand, the way this
+report's own discipline requires before claiming something works, failed:
+the repo-root `.env`'s `ANTHROPIC_API_KEY` line is present but **blank**,
+not the real key an earlier session's notes had assumed. That discovery
+also caught a real gap in this unit's own `Settings` validator — an
+`is None`-only check would have let `claude_client_enabled=True` through
+with a blank key, deferring the failure to a cryptic SDK-internal
+`TypeError` at the first live call instead of Settings construction; fixed
+to also reject an empty/whitespace-only key, with its own regression test.
+So the adapter is verified correct against the real SDK's own types and
+error shapes, but **not yet verified against a live model response** — that
+step needs a real, non-blank `ANTHROPIC_API_KEY`, which is outside what
+this session can supply.
+
+**Separately noticed, not fixed here**: the full backend suite currently
+shows 3 pre-existing failures in `tests/services/test_evaluation_service.py
+::TestResolveDifficultyForCluster` (confirmed via `git stash` to predate
+this unit's changes) — traced to real `Evaluation` rows for the
+`analysis_diagnosis` competency cluster left behind in the shared local
+dev Postgres by U34's own E2E fixture-seeding work earlier the same day
+(`e2e/scripts/seed_evaluation_fixture.py`, which commits real rows rather
+than rolling them back). `test_evaluation_service.py`'s own `session`
+fixture connects to that same real database and only cleans up its own
+`User` rows, not `Scenario`/`Evaluation` rows, so it silently assumed a
+cluster-clean table that U34's own work invalidated. Local-dev-only (CI
+runs against a fresh database per workflow), and not touched here — the
+polluting rows may be exactly the seeded demo data `docs/walkthrough-
+script.md` expects to still be there, so deleting them without asking
+first would be the wrong call.
 
 ## Metadata gap found while writing docs/data-dictionary.md — fixed 2026-09-14
 

@@ -29,6 +29,7 @@ from app.core.internal_client import build_subsystem2_client
 from app.core.rate_limit import LoginRateLimiter
 from app.core.ws_tickets import WsTicketStore
 from app.db.session import make_engine
+from app.domain.claude_client_anthropic import AnthropicClaudeClient
 from app.domain.scheduler import build_scheduler
 
 # Unit 21a (MEADOWOPS-DOM-014, PRD 6.13): the WS ticket handshake window,
@@ -147,11 +148,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # calls in tests must not share ticket/connection state.
     app.state.chat_ws_tickets = WsTicketStore(ttl_seconds=_CHAT_WS_TICKET_TTL_SECONDS)
     app.state.chat_connections = ChatConnectionRegistry()
-    # Unit 22 (MEADOWOPS-DOM-016): no real Anthropic SDK adapter exists yet
-    # (Phase 4, blocker B3 - no API key configured). app.api.admin_scenarios.
-    # regenerate_scenario_route returns a clean 503 while this is None;
-    # tests substitute a MockClaudeClient via app.state.claude_client.
-    app.state.claude_client = None
+    # Unit 22 (MEADOWOPS-DOM-016) / Phase 4 blocker B3: real only when
+    # explicitly opted in (Settings.claude_client_enabled, off by default -
+    # see that field's own comment for why "ANTHROPIC_API_KEY present" alone
+    # can't be the switch). Every existing 503 caller path
+    # (app.api.admin_scenarios/app.api.chat) is unchanged when this stays
+    # None; tests substitute a MockClaudeClient via app.state.claude_client.
+    if settings.claude_client_enabled:
+        # Settings._validate_claude_client_enabled already enforces this.
+        assert settings.anthropic_api_key is not None
+        app.state.claude_client = AnthropicClaudeClient(
+            api_key=settings.anthropic_api_key.get_secret_value(),
+            timeout_seconds=settings.claude_client_timeout_seconds,
+        )
+    else:
+        app.state.claude_client = None
     app.include_router(auth_router)
     app.include_router(master_data_router)
     app.include_router(customers_router)

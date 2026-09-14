@@ -64,3 +64,50 @@ class TestAttachmentStorageBackendValidation:
         with pytest.raises(ValidationError) as exc_info:
             _settings(attachment_storage_backend="r2")
         assert "test-secret-access-key" not in str(exc_info.value)
+
+
+class TestClaudeClientEnabledValidation:
+    """Phase 4 blocker B3: claude_client_enabled=True must never silently
+    construct a client with no key - see Settings.anthropic_api_key's own
+    comment on why "key present" alone can't be the live/mock switch."""
+
+    def test_disabled_by_default(self) -> None:
+        settings = _settings()
+        assert settings.claude_client_enabled is False
+
+    def test_disabled_with_a_key_present_is_valid(self) -> None:
+        # The expected default local-dev/CI/test shape: a real
+        # ANTHROPIC_API_KEY sitting in the environment (tests/conftest.py's
+        # load_dotenv of the repo-root .env) must never itself flip the
+        # switch to a live client.
+        settings = _settings(anthropic_api_key="sk-ant-test-key")
+        assert settings.claude_client_enabled is False
+
+    def test_enabled_with_a_key_present_is_valid(self) -> None:
+        settings = _settings(
+            claude_client_enabled=True, anthropic_api_key="sk-ant-test-key"
+        )
+        assert settings.claude_client_enabled is True
+        assert settings.anthropic_api_key is not None
+        assert settings.anthropic_api_key.get_secret_value() == "sk-ant-test-key"
+
+    def test_enabled_with_no_key_is_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="claude_client_enabled=True"):
+            _settings(claude_client_enabled=True, anthropic_api_key=None)
+
+    def test_enabled_with_a_blank_key_is_rejected(self) -> None:
+        # Found empirically: this repo's own .env had ANTHROPIC_API_KEY=
+        # present but blank - pydantic-settings reads that as SecretStr(""),
+        # not None. An is-None-only check would pass this straight through
+        # to a cryptic SDK TypeError at the first live call instead of
+        # failing fast at Settings() construction.
+        with pytest.raises(ValidationError, match="claude_client_enabled=True"):
+            _settings(claude_client_enabled=True, anthropic_api_key="")
+
+    def test_enabled_with_a_whitespace_only_key_is_rejected(self) -> None:
+        with pytest.raises(ValidationError, match="claude_client_enabled=True"):
+            _settings(claude_client_enabled=True, anthropic_api_key="   ")
+
+    def test_default_timeout_seconds(self) -> None:
+        settings = _settings()
+        assert settings.claude_client_timeout_seconds == 60.0
