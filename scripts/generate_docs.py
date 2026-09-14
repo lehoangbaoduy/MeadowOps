@@ -1,0 +1,278 @@
+#!/usr/bin/env python3
+"""Generates docs/schema-diagram.md and docs/data-dictionary.md straight
+from the live SQLAlchemy metadata (backend/app/db), so they can never
+silently drift from the actual schema the way a hand-written copy would.
+
+Regenerate after any migration:
+    cd backend && uv run --frozen python ../scripts/generate_docs.py
+
+Imports app.db.evaluation/human_review/portfolio explicitly, redundantly
+with app/db/__init__.py now doing the same (fixed 2026-09-14 — see
+docs/testing-report.md for the gap this closed: those three `engine`-schema
+tables exist in the database via migrations 0020/0021 but were invisible
+to anything, including `alembic revision --autogenerate`, that only
+imported `app.db`). Kept here anyway as defense in depth — a future model
+module added without a corresponding `app/db/__init__.py` import would
+silently reintroduce the same gap, and this script would rather import a
+module twice than quietly drop a table from the generated docs.
+"""
+
+from __future__ import annotations
+
+import sys
+from pathlib import Path
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+BACKEND = REPO_ROOT / "backend"
+DOCS = REPO_ROOT / "docs"
+sys.path.insert(0, str(BACKEND))
+
+import app.db as db  # noqa: E402
+import app.db.evaluation  # noqa: E402,F401
+import app.db.human_review  # noqa: E402,F401
+import app.db.portfolio  # noqa: E402,F401
+from app.services.sandbox_refresh import SANDBOX_MIRRORED_TABLES  # noqa: E402
+from sqlalchemy import CheckConstraint, UniqueConstraint  # noqa: E402
+from sqlalchemy import Enum as SAEnum  # noqa: E402
+from sqlalchemy.dialects import postgresql  # noqa: E402
+
+SCHEMA_ORDER = ["live", "reporting", "engine", "chat"]
+SCHEMA_BLURB = {
+    "live": (
+        "Subsystem 1 operational data plus the Decision & Event Ledger "
+        "(PRD 4.1). Owned by the `meadowops` role only — `meadowops_sandbox` "
+        "has zero privileges here (migration 0001)."
+    ),
+    "reporting": (
+        "A deliberately-lagged shadow copy of `live`'s dimension/fact keys "
+        "(PRD 4.1, SR-2), refreshed on its own cadence so the dashboard can "
+        "realistically \"not have caught up yet\" and disagree with `live` "
+        "(SR-4)."
+    ),
+    "engine": (
+        "Subsystem 2's own supporting tables: scenario definitions/state, "
+        "AI evaluation drafts, human review verdicts, portfolio artifacts. "
+        "Never read directly by Subsystem 1 — only via the API boundary "
+        "(Unit 20, see docs/data-flow.md)."
+    ),
+    "chat": (
+        "The Analyst<->Builder persona-chat delivery layer (threads, "
+        "messages, read state, drafts, attachments, notifications), added "
+        "in Unit 21a."
+    ),
+}
+
+
+def table_schema(table) -> str:
+    return table.schema or "live"
+
+
+def pg_type(column) -> str:
+    try:
+        return str(column.type.compile(dialect=postgresql.dialect()))
+    except Exception:
+        return str(column.type)
+
+
+def mermaid_type(column) -> str:
+    """Mermaid ER attribute types must be a single bare identifier."""
+    if isinstance(column.type, SAEnum):
+        return f"enum_{column.type.name}"
+    raw = pg_type(column).lower()
+    if "timestamp" in raw:
+        return "timestamptz" if "with time zone" in raw else "timestamp"
+    if raw.startswith("numeric") or raw.startswith("double"):
+        return "numeric"
+    if raw.startswith("character varying") or raw.startswith("varchar") or raw == "text":
+        return "string"
+    if raw == "boolean":
+        return "bool"
+    if raw == "date":
+        return "date"
+    if raw in ("integer", "bigint", "smallint"):
+        return "int"
+    if raw == "uuid":
+        return "uuid"
+    if raw in ("jsonb", "json"):
+        return "jsonb"
+    return raw.split("(")[0].replace(" ", "_") or "unknown"
+
+
+def collect_tables() -> dict[str, list]:
+    by_schema: dict[str, list] = {}
+    for t in db.metadata.sorted_tables:
+        by_schema.setdefault(table_schema(t), []).append(t)
+    for tabs in by_schema.values():
+        tabs.sort(key=lambda t: t.name)
+    return by_schema
+
+
+def class_doc_by_table() -> dict[tuple[str, str], str]:
+    """Keyed by (schema, tablename), not tablename alone — `inventory_snapshot`
+    exists in both `live` and `reporting` with different docstrings (one
+    blank), and `Base.registry.mappers` is a set with no defined iteration
+    order, so a tablename-only dict silently picked whichever docstring
+    happened to be visited last and applied it to both tables."""
+    docs = {}
+    for m in db.Base.registry.mappers:
+        cls = m.class_
+        first_line = (cls.__doc__ or "").strip().split("\n")[0].strip()
+        if first_line:
+            docs[(table_schema(cls.__table__), cls.__tablename__)] = first_line
+    return docs
+
+
+def gen_data_dictionary(by_schema: dict[str, list], docs: dict[tuple[str, str], str]) -> str:
+    total = sum(len(v) for v in by_schema.values())
+    lines = [
+        "# Data Dictionary",
+        "",
+        "Generated by `scripts/generate_docs.py` from the live SQLAlchemy "
+        "metadata (`backend/app/db`) — do not hand-edit, regenerate instead. "
+        f"{total} tables across {len(by_schema)} schemas.",
+        "",
+        "`sandbox` is deliberately excluded: it is not a modeled schema but "
+        "a plain, unconstrained copy of the `live` tables listed below under "
+        "\"Mirrored into `sandbox`\", rebuilt by "
+        "`app/services/sandbox_refresh.py` (see docs/data-flow.md).",
+        "",
+    ]
+    for schema in SCHEMA_ORDER:
+        tabs = by_schema.get(schema, [])
+        lines.append(f"## Schema: `{schema}` ({len(tabs)} tables)")
+        lines.append("")
+        lines.append(SCHEMA_BLURB.get(schema, ""))
+        lines.append("")
+        for t in tabs:
+            # Same collision risk as class_doc_by_table: SANDBOX_MIRRORED_TABLES
+            # is bare table names, and `inventory_snapshot` exists in both
+            # `live` and `reporting` — only the `live` one is actually
+            # mirrored (app/services/sandbox_refresh.py's own filter is
+            # schema == "live" AND name in the allowlist), so schema must be
+            # checked here too, not just table name.
+            mirrored = (
+                " — mirrored into `sandbox`"
+                if schema == "live" and t.name in SANDBOX_MIRRORED_TABLES
+                else ""
+            )
+            lines.append(f"### `{schema}.{t.name}`{mirrored}")
+            if docs.get((schema, t.name)):
+                lines.append("")
+                lines.append(docs[(schema, t.name)])
+            lines.append("")
+            lines.append("| Column | Type | Null | Key | Default |")
+            lines.append("|---|---|---|---|---|")
+            for col in t.columns:
+                keys = []
+                if col.primary_key:
+                    keys.append("PK")
+                for fk in col.foreign_keys:
+                    tgt = fk.column.table
+                    tgt_schema = tgt.schema or "live"
+                    keys.append(f"FK→{tgt_schema}.{tgt.name}.{fk.column.name}")
+                if col.unique:
+                    keys.append("UNIQUE")
+                default = ""
+                if col.server_default is not None:
+                    default = str(col.server_default.arg)
+                elif col.default is not None and not callable(getattr(col.default, "arg", None)):
+                    default = str(col.default.arg)
+                lines.append(
+                    f"| {col.name} | {pg_type(col)} | {'yes' if col.nullable else 'no'} "
+                    f"| {', '.join(keys)} | {default} |"
+                )
+            extra = []
+            for c in t.constraints:
+                if isinstance(c, CheckConstraint):
+                    extra.append(f"CHECK ({c.sqltext})")
+                elif isinstance(c, UniqueConstraint) and len(c.columns) > 1:
+                    cols = ", ".join(col.name for col in c.columns)
+                    extra.append(f"UNIQUE ({cols})")
+            if extra:
+                lines.append("")
+                lines.append("Constraints:")
+                for c in extra:
+                    lines.append(f"- {c}")
+            lines.append("")
+    return "\n".join(lines)
+
+
+def gen_schema_diagram(by_schema: dict[str, list]) -> str:
+    total = sum(len(v) for v in by_schema.values())
+    lines = [
+        "# Schema Diagram",
+        "",
+        "Generated by `scripts/generate_docs.py` from the live SQLAlchemy "
+        "metadata — do not hand-edit, regenerate instead. One Mermaid ER "
+        f"diagram per schema ({total} tables, {len(by_schema)} schemas), "
+        "plus the cross-schema foreign keys that don't fit inside a single "
+        "schema's own diagram.",
+        "",
+    ]
+    cross_schema_fks: list[str] = []
+    for schema in SCHEMA_ORDER:
+        tabs = by_schema.get(schema, [])
+        lines.append(f"## Schema: `{schema}`")
+        lines.append("")
+        lines.append(SCHEMA_BLURB.get(schema, ""))
+        lines.append("")
+        lines.append("```mermaid")
+        lines.append("erDiagram")
+        for t in tabs:
+            lines.append(f"    {t.name} {{")
+            for col in t.columns:
+                flag = ""
+                if col.primary_key:
+                    flag = "PK"
+                elif col.foreign_keys:
+                    flag = "FK"
+                lines.append(f"        {mermaid_type(col)} {col.name} {flag}".rstrip())
+            lines.append("    }")
+        for t in tabs:
+            for fk in t.foreign_keys:
+                tgt = fk.column.table
+                tgt_schema = tgt.schema or "live"
+                if tgt_schema != schema:
+                    cross_schema_fks.append(
+                        f"`{schema}.{t.name}.{fk.parent.name}` → "
+                        f"`{tgt_schema}.{tgt.name}.{fk.column.name}`"
+                    )
+                    continue
+                card = "||--||" if (fk.parent.unique or fk.parent.primary_key) else "||--o{"
+                lines.append(f'    {tgt.name} {card} {t.name} : "{fk.parent.name}"')
+        lines.append("```")
+        lines.append("")
+    lines.append("## Cross-schema references")
+    lines.append("")
+    lines.append(
+        "Not renderable inside a single schema's own diagram above (Mermaid "
+        "`erDiagram` doesn't group entities into schema-labeled boxes). "
+        "Every one of these points at `live.user` (authentication lives in "
+        "exactly one place), `engine.scenario`, or `chat.chat_thread` — "
+        "there is no case of `live`/`reporting` reading forward into "
+        "`engine`/`chat`:"
+    )
+    lines.append("")
+    for ref in sorted(set(cross_schema_fks)):
+        lines.append(f"- {ref}")
+    lines.append("")
+    lines.append(
+        f"`sandbox` mirrors {len(SANDBOX_MIRRORED_TABLES)} of `live`'s "
+        "tables as plain, unconstrained copies (no FKs, no PK enforcement "
+        "carried over) — see docs/data-flow.md."
+    )
+    return "\n".join(lines)
+
+
+def main() -> None:
+    by_schema = collect_tables()
+    docs = class_doc_by_table()
+    DOCS.mkdir(exist_ok=True)
+    (DOCS / "data-dictionary.md").write_text(gen_data_dictionary(by_schema, docs) + "\n")
+    (DOCS / "schema-diagram.md").write_text(gen_schema_diagram(by_schema) + "\n")
+    total = sum(len(v) for v in by_schema.values())
+    print(f"Wrote docs/data-dictionary.md and docs/schema-diagram.md ({total} tables).")
+
+
+if __name__ == "__main__":
+    main()
