@@ -13,8 +13,15 @@ immutability tests, since even a caught exception's partial effects vanish
 on rollback.
 """
 
+import importlib.util
+import os
+from pathlib import Path
+
 import psycopg
 import pytest
+from alembic.migration import MigrationContext
+from alembic.operations import Operations
+from sqlalchemy import create_engine, text
 
 
 def test_chat_schema_and_tables_exist(owner_dsn: str) -> None:
@@ -176,3 +183,87 @@ def test_immutability_triggers_are_enabled(owner_dsn: str) -> None:
         "chat_message_no_truncate": "O",
         "chat_message_no_update": "O",
     }
+
+
+def _load_migration_0027():
+    """alembic/versions/0027_....py can't be a normal dotted import (Python
+    module names can't start with a digit) - loaded by file path instead.
+    Raises (FileNotFoundError via the loader) before that file exists,
+    which is what makes this test a real regression test tied to the
+    actual migration rather than to a hand-duplicated copy of its SQL."""
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "alembic"
+        / "versions"
+        / "0027_fix_chat_message_sender_role_drift.py"
+    )
+    spec = importlib.util.spec_from_file_location("migration_0027", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_migration_0027_repairs_a_missing_sender_role_column() -> None:
+    """B14: regression test for a real production incident. The live
+    Railway/Neon database had `chat.chat_message` missing its `sender_role`
+    column entirely (`psycopg.errors.UndefinedColumn` on every real send)
+    even though alembic reported revision 0026 as fully applied there -
+    migration 0018 already includes this column, so alembic's own bookkeeping
+    gave no signal anything was wrong (see migration 0027's own docstring for
+    the full incident and root-cause theory).
+
+    Executes migration 0027's own upgrade() function for real (a standalone
+    Alembic Operations context bound to this connection - the documented
+    way to drive Alembic operations outside of `alembic upgrade`), against
+    the real chat.chat_message table, inside one uncommitted transaction -
+    reproducing production's exact drifted state (zero rows, missing
+    column) without permanently losing this shared dev database's own
+    existing rows, which the rollback at the end restores untouched.
+    Deleting those rows first to reach that zero-rows state needs the same
+    immutability-trigger-disable escape hatch this project's other fixtures
+    already use for committed teardown (e.g. tests/api/test_chat_api.py) -
+    here, inside a transaction that's never committed, re-enabling the
+    trigger and restoring the deleted rows both happen for free via
+    rollback rather than by undoing them by hand.
+    """
+    migration = _load_migration_0027()
+
+    engine = create_engine(os.environ["MEADOWOPS_DATABASE_URL"])
+    conn = engine.connect()
+    trans = conn.begin()
+    try:
+        conn.execute(text("alter table chat.chat_message disable trigger chat_message_no_delete"))
+        conn.execute(text("delete from chat.chat_message"))
+        conn.execute(text("alter table chat.chat_message enable trigger chat_message_no_delete"))
+        conn.execute(text("alter table chat.chat_message drop column sender_role"))
+
+        result = conn.execute(
+            text(
+                "select column_name from information_schema.columns "
+                "where table_schema = 'chat' and table_name = 'chat_message' "
+                "and column_name = 'sender_role'"
+            )
+        )
+        assert result.fetchone() is None  # drift reproduced
+
+        mc = MigrationContext.configure(conn)
+        with Operations.context(mc):
+            migration.upgrade()
+
+        result = conn.execute(
+            text(
+                "select is_nullable from information_schema.columns "
+                "where table_schema = 'chat' and table_name = 'chat_message' "
+                "and column_name = 'sender_role'"
+            )
+        )
+        assert result.fetchone() == ("NO",)
+
+        # Idempotency: re-running against an already-correct column (the
+        # real state in every environment except the drifted production
+        # database) must not raise.
+        with Operations.context(mc):
+            migration.upgrade()
+    finally:
+        trans.rollback()
+        conn.close()
