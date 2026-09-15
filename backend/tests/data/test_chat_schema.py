@@ -204,7 +204,7 @@ def _load_migration_0027():
 
 
 def test_migration_0027_repairs_a_missing_sender_role_column() -> None:
-    """B14: regression test for a real production incident. The live
+    """B15: regression test for a real production incident. The live
     Railway/Neon database had `chat.chat_message` missing its `sender_role`
     column entirely (`psycopg.errors.UndefinedColumn` on every real send)
     even though alembic reported revision 0026 as fully applied there -

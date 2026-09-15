@@ -1,4 +1,4 @@
-"""Repair production schema drift (B14): chat.chat_message is missing its
+"""Repair production schema drift (B15): chat.chat_message is missing its
 sender_role column on the live Railway/Neon database, even though alembic
 believes revision 0018 (which creates this table with sender_role already
 included, see that file) is fully applied there.
