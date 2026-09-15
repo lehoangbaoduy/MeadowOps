@@ -284,6 +284,10 @@ class TestServiceCredentialRouteAllowlist:
             ("POST", "/api/v1/chat/threads/{thread_id}/attachments"): "service_rejected",
             ("GET", "/api/v1/chat/messages/{message_id}/attachment"): "service_rejected",
             ("POST", "/api/v1/chat/threads/{thread_id}/suggest-pushback"): "admin_only",
+            # Unit 35 (follow-on to Unit 23): same reasoning as
+            # suggest-pushback above - Builder-only, ground truth must
+            # never reach the Analyst role.
+            ("POST", "/api/v1/chat/threads/{thread_id}/suggest-opening"): "admin_only",
             ("POST", "/api/v1/chat/threads/{thread_id}/sufficiency-check"): "admin_only",
             # Unit 25 (MEADOWOPS-DOM-019): same reasoning as suggest-
             # pushback/sufficiency-check above - triggers a Claude call

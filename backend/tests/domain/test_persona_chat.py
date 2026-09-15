@@ -22,9 +22,11 @@ from app.domain.persona_chat import (
     SufficiencyCheckSchemaError,
     SufficiencyVerdict,
     build_known_information,
+    build_opening_prompt,
     build_pushback_prompt,
     parse_sufficiency_response,
     run_sufficiency_check,
+    suggest_opening_message,
     suggest_pushback_message,
 )
 
@@ -208,6 +210,120 @@ class TestSuggestPushbackMessage:
 
         with pytest.raises(PersonaMessageGenerationFailedError):
             suggest_pushback_message(client, **self._kwargs())
+        assert len(client.call_log) == 2
+
+
+class TestBuildOpeningPrompt:
+    """Unit 35 (follow-on to Unit 23): mirrors TestBuildPushbackPrompt
+    above, but there is no analyst_message/conversation_history to react
+    to yet - STAKEHOLDER_OPENING_TEMPLATE has neither slot, unlike
+    STAKEHOLDER_ROLEPLAY_TEMPLATE."""
+
+    def _kwargs(self, **overrides) -> dict:
+        base = dict(
+            persona=StakeholderPersona.CFO,
+            attitude=Attitude.NEUTRAL,
+            known_information=build_known_information(_FULL_GROUND_TRUTH),
+        )
+        base.update(overrides)
+        return base
+
+    def test_includes_persona_priorities_and_style(self):
+        prompt = build_opening_prompt(**self._kwargs())
+        profile = PERSONA_PROFILES[StakeholderPersona.CFO]
+        assert profile.priorities in prompt
+        assert profile.style in prompt
+
+    def test_includes_the_attitude_description_as_a_suffix(self):
+        neutral_prompt = build_opening_prompt(**self._kwargs(attitude=Attitude.NEUTRAL))
+        frustrated_prompt = build_opening_prompt(**self._kwargs(attitude=Attitude.FRUSTRATED))
+        assert neutral_prompt != frustrated_prompt
+        assert "frustrated" in frustrated_prompt.lower()
+
+    @pytest.mark.parametrize("attitude", [Attitude.SKEPTICAL, Attitude.APPRECIATIVE])
+    def test_skeptical_and_appreciative_do_not_reference_a_nonexistent_prior_analyst_turn(self, attitude):
+        # Code review finding: build_pushback_prompt's shared
+        # _ATTITUDE_DESCRIPTIONS wording for these two ("...the Analyst's
+        # claims", "...the Analyst's work so far") presupposes a prior
+        # Analyst message that cannot exist yet on an opening message -
+        # build_opening_prompt must use its own wording for these two,
+        # not the pushback-oriented one.
+        prompt = build_opening_prompt(**self._kwargs(attitude=attitude))
+        assert "analyst's claims" not in prompt.lower()
+        assert "analyst's work" not in prompt.lower()
+
+    @pytest.mark.parametrize("grading_marker", ["SECRET-SIGNAL", "SECRET-DISTRACTOR", "SECRET-CONSIDERATION", "SECRET-CONCLUSION", "SECRET-UNCERTAINTY"])
+    def test_never_leaks_a_grading_field_when_given_the_redacted_projection(self, grading_marker):
+        prompt = build_opening_prompt(**self._kwargs())
+        assert grading_marker not in prompt
+
+    def test_does_not_mutate_the_frozen_roleplay_template(self):
+        # This function must render its own new template, never the
+        # existing frozen STAKEHOLDER_ROLEPLAY_TEMPLATE (ER-6 discipline -
+        # see that template's own "must not be edited" precedent).
+        from app.domain.prompt_templates import STAKEHOLDER_ROLEPLAY_TEMPLATE
+
+        before = STAKEHOLDER_ROLEPLAY_TEMPLATE.template
+        build_opening_prompt(**self._kwargs())
+        assert STAKEHOLDER_ROLEPLAY_TEMPLATE.template == before
+
+
+class TestSuggestOpeningMessage:
+    def _kwargs(self) -> dict:
+        return dict(
+            persona=StakeholderPersona.CFO,
+            attitude=Attitude.URGENT,
+            known_information=build_known_information(_FULL_GROUND_TRUTH),
+        )
+
+    def test_succeeds_on_the_first_call(self):
+        client = MockClaudeClient(script=[ClaudeResponse(content="We need to talk about this.")])
+
+        message = suggest_opening_message(client, **self._kwargs())
+
+        assert message == "We need to talk about this."
+        assert len(client.call_log) == 1
+
+    def test_retries_once_after_a_claude_api_error_then_succeeds(self):
+        client = MockClaudeClient(
+            script=[ClaudeAPIError("rate limited"), ClaudeResponse(content="Second attempt.")]
+        )
+
+        message = suggest_opening_message(client, **self._kwargs())
+
+        assert message == "Second attempt."
+        assert len(client.call_log) == 2
+
+    def test_retries_once_after_an_empty_response_then_succeeds(self):
+        client = MockClaudeClient(
+            script=[ClaudeResponse(content="   "), ClaudeResponse(content="A real opening.")]
+        )
+
+        message = suggest_opening_message(client, **self._kwargs())
+
+        assert message == "A real opening."
+        assert len(client.call_log) == 2
+
+    def test_raises_after_the_retry_is_also_exhausted(self):
+        client = MockClaudeClient(
+            script=[ClaudeAPIError("rate limited"), ClaudeAPIError("rate limited again")]
+        )
+
+        with pytest.raises(PersonaMessageGenerationFailedError):
+            suggest_opening_message(client, **self._kwargs())
+        assert len(client.call_log) == 2
+
+    def test_does_not_attempt_a_third_call(self):
+        client = MockClaudeClient(
+            script=[
+                ClaudeAPIError("1"),
+                ClaudeAPIError("2"),
+                ClaudeResponse(content="unused"),
+            ]
+        )
+
+        with pytest.raises(PersonaMessageGenerationFailedError):
+            suggest_opening_message(client, **self._kwargs())
         assert len(client.call_log) == 2
 
 

@@ -40,7 +40,9 @@ from app.services.persona_chat import (
     MaxPushbackRoundsExceededError,
     NoAnalystMessageYetError,
     ScenarioCancelledError,
+    ThreadAlreadyHasMessagesError,
     check_thread_sufficiency,
+    suggest_thread_opening,
     suggest_thread_pushback,
 )
 from app.services.scenario_service import create_scenario_from_exception_flag
@@ -343,6 +345,101 @@ class TestSuggestThreadPushback:
 
         with pytest.raises(ScenarioCancelledError):
             suggest_thread_pushback(
+                session, thread_id=thread.id, attitude=Attitude.NEUTRAL, claude_client=client
+            )
+
+
+class TestSuggestThreadOpening:
+    """Unit 35 (follow-on to Unit 23): the inverse guard of
+    TestSuggestThreadPushback above - suggest_thread_opening requires a
+    thread to have NO messages yet (of either role), where suggest_thread_
+    pushback requires at least one Analyst message. Mirrors that class's
+    fixture/assertion shape throughout."""
+
+    def test_suggests_a_message_for_a_brand_new_thread(
+        self, session: Session, thread: ChatThread
+    ) -> None:
+        client = MockClaudeClient(script=[ClaudeResponse(content="We have a situation here.")])
+
+        suggestion = suggest_thread_opening(
+            session, thread_id=thread.id, attitude=Attitude.URGENT, claude_client=client
+        )
+
+        assert suggestion == "We have a situation here."
+
+    def test_raises_once_the_thread_already_has_any_message(
+        self, session: Session, thread: ChatThread, admin_id: uuid.UUID
+    ) -> None:
+        send_message(
+            session,
+            thread_id=thread.id,
+            sender_user_id=admin_id,
+            sender_role=UserRole.ADMIN,
+            body="Opening message already sent.",
+        )
+        client = MockClaudeClient(script=[ClaudeResponse(content="unused")])
+
+        with pytest.raises(ThreadAlreadyHasMessagesError):
+            suggest_thread_opening(
+                session, thread_id=thread.id, attitude=Attitude.NEUTRAL, claude_client=client
+            )
+
+    def test_raises_once_the_thread_has_an_analyst_message_too(
+        self, session: Session, thread: ChatThread, admin_id: uuid.UUID, analyst_id: uuid.UUID
+    ) -> None:
+        # Same guard, checked against the other sender role too - "already
+        # has messages" must not be accidentally scoped to admin-only.
+        send_message(
+            session,
+            thread_id=thread.id,
+            sender_user_id=analyst_id,
+            sender_role=UserRole.ANALYST,
+            body="Somehow the Analyst spoke first.",
+        )
+        client = MockClaudeClient(script=[ClaudeResponse(content="unused")])
+
+        with pytest.raises(ThreadAlreadyHasMessagesError):
+            suggest_thread_opening(
+                session, thread_id=thread.id, attitude=Attitude.NEUTRAL, claude_client=client
+            )
+
+    def test_does_not_write_any_message(self, session: Session, thread: ChatThread) -> None:
+        before = len(list_messages(session, thread.id))
+        client = MockClaudeClient(script=[ClaudeResponse(content="Suggestion text.")])
+
+        suggest_thread_opening(
+            session, thread_id=thread.id, attitude=Attitude.NEUTRAL, claude_client=client
+        )
+
+        after = len(list_messages(session, thread.id))
+        assert after == before
+
+    def test_excludes_grading_fields_from_the_prompt(
+        self, session: Session, thread: ChatThread
+    ) -> None:
+        client = MockClaudeClient(script=[ClaudeResponse(content="Suggestion text.")])
+
+        suggest_thread_opening(
+            session, thread_id=thread.id, attitude=Attitude.NEUTRAL, claude_client=client
+        )
+
+        sent_prompt = client.call_log[0]["messages"][0]["content"]
+        for marker in _GRADING_ONLY_MARKERS:
+            assert marker not in sent_prompt
+
+    def test_raises_when_the_scenario_is_cancelled(
+        self, session: Session, admin_id: uuid.UUID
+    ) -> None:
+        cancelled_scenario = _make_active_scenario_with_full_ground_truth(session, admin_id=admin_id)
+        cancelled_scenario.status = ScenarioStatus.CANCELLED
+        session.flush()
+        thread = ChatThread(scenario_id=cancelled_scenario.id, persona=StakeholderPersona.CFO)
+        session.add(thread)
+        session.flush()
+        client = MockClaudeClient(script=[ClaudeResponse(content="unused")])
+
+        with pytest.raises(ScenarioCancelledError):
+            suggest_thread_opening(
                 session, thread_id=thread.id, attitude=Attitude.NEUTRAL, claude_client=client
             )
 

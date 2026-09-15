@@ -148,7 +148,20 @@ class SuggestPushbackRequest(BaseModel):
     attitude: Attitude
 
 
+class SuggestOpeningRequest(BaseModel):
+    """Unit 35 (follow-on to Unit 23): mirrors SuggestPushbackRequest -
+    kept as its own schema rather than reused, matching how SuggestPushback
+    Request/Response are already split from SufficiencyCheckResponse (one
+    schema per route, even where the shape is identical)."""
+
+    attitude: Attitude
+
+
 class SuggestPushbackResponse(BaseModel):
+    suggested_message: str
+
+
+class SuggestOpeningResponse(BaseModel):
     suggested_message: str
 
 

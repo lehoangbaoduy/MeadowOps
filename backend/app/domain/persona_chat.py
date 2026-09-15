@@ -22,13 +22,14 @@ Scoping decisions made with the user 2026-09-05 (see DD-33):
   information-asymmetry intent. The sufficiency check is the opposite case:
   it grades against the ground truth, so it gets the full package,
   unredacted.
-- AI-suggestion is pushback-only (PRD 6.6 steps 5-7), even though step 2's
-  own text allows an AI-suggested opening message too - that variant needs
-  a template shape with no prior analyst_message to react to, which is a
-  real design question of its own, deferred rather than answered as a
-  drive-by here. The opening message (step 2) stays Builder-typed only for
-  now; STAKEHOLDER_ROLEPLAY_TEMPLATE's existing required `analyst_message`
-  context is therefore always a real prior Analyst message.
+- AI-suggestion is pushback-only (PRD 6.6 steps 5-7) - deferred rather than
+  answered as a drive-by here, since it needs a template shape with no
+  prior analyst_message to react to. **Superseded by Unit 35** (MEADOWOPS-
+  DOM-023, 2026-09-15): build_opening_prompt/suggest_opening_message below
+  add exactly that shape, via a new STAKEHOLDER_OPENING_TEMPLATE -
+  STAKEHOLDER_ROLEPLAY_TEMPLATE itself is untouched and its `analyst_message`
+  context remains always a real prior Analyst message; only the pushback
+  path ever renders it.
 - The sufficiency check's output is structured JSON (verdict +
   suggested_pushback), schema-validated the same way U22's narrative is.
 
@@ -46,7 +47,11 @@ from enum import Enum
 
 from app.db.enums import StakeholderPersona
 from app.domain.claude_client import ClaudeAPIError, ClaudeClient
-from app.domain.prompt_templates import STAKEHOLDER_ROLEPLAY_TEMPLATE, SUFFICIENCY_CHECK_TEMPLATE
+from app.domain.prompt_templates import (
+    STAKEHOLDER_OPENING_TEMPLATE,
+    STAKEHOLDER_ROLEPLAY_TEMPLATE,
+    SUFFICIENCY_CHECK_TEMPLATE,
+)
 
 # Placeholder pending the real Anthropic SDK adapter (Phase 4, blocker B3) -
 # see app.domain.scenario_generation's identical constant.
@@ -64,11 +69,18 @@ _MAX_ATTEMPTS = 2
 
 class PersonaMessageGenerationFailedError(Exception):
     """Raised once the one automatic retry (PRD 9.2) is exhausted while
-    generating a persona pushback suggestion."""
+    generating a persona message - pushback (Unit 23) or opening (Unit 35).
 
-    def __init__(self, last_error: Exception) -> None:
+    Code review, Unit 35: this used to hardcode "pushback suggestion" in
+    its message regardless of caller, which meant suggest_opening_message's
+    502 responses read "persona pushback suggestion failed..." for a
+    request that was never about pushback - `kind` fixes that at the one
+    place both callers already funnel through, rather than adding a second
+    near-identical exception class."""
+
+    def __init__(self, last_error: Exception, *, kind: str = "pushback suggestion") -> None:
         self.last_error = last_error
-        super().__init__(f"persona pushback suggestion failed after one retry: {last_error}")
+        super().__init__(f"persona {kind} failed after one retry: {last_error}")
 
 
 class SufficiencyCheckSchemaError(ValueError):
@@ -100,6 +112,21 @@ _ATTITUDE_DESCRIPTIONS: dict[Attitude, str] = {
     Attitude.URGENT: "conveying real time pressure, wants a fast answer",
     Attitude.SKEPTICAL: "doubtful, questioning the Analyst's claims",
     Attitude.APPRECIATIVE: "positive, appreciative of the Analyst's work so far",
+}
+
+# Code review, Unit 35: SKEPTICAL/APPRECIATIVE above both presuppose prior
+# Analyst input ("the Analyst's claims", "the Analyst's work so far") that
+# cannot exist yet on an opening message - STAKEHOLDER_OPENING_TEMPLATE's
+# own text says as much ("there is no prior conversation to continue"),
+# so build_opening_prompt uses this parallel map instead of reusing
+# _ATTITUDE_DESCRIPTIONS wholesale. NEUTRAL/FRUSTRATED/URGENT are unchanged
+# (none of them reference the Analyst at all) - only the two that did are
+# reworded here, to attitudes about the situation/persona rather than
+# about an Analyst interaction that hasn't happened yet.
+_OPENING_ATTITUDE_DESCRIPTIONS: dict[Attitude, str] = {
+    **_ATTITUDE_DESCRIPTIONS,
+    Attitude.SKEPTICAL: "already doubtful this situation will get a good resolution",
+    Attitude.APPRECIATIVE: "positive, opening on a constructive, collaborative note",
 }
 
 
@@ -191,27 +218,20 @@ def build_pushback_prompt(
     return rendered + f"\n\nAdopt this attitude while replying: {_ATTITUDE_DESCRIPTIONS[attitude]}"
 
 
-def suggest_pushback_message(
-    client: ClaudeClient,
-    *,
-    persona: StakeholderPersona,
-    attitude: Attitude,
-    known_information: dict,
-    conversation_history: str,
-    analyst_message: str,
-) -> str:
-    """One automatic retry on a Claude API error/timeout or an empty
-    response (PRD 9.2) - a second consecutive failure of either kind is
-    surfaced as PersonaMessageGenerationFailedError. Free-form prose, not
-    schema-validated - unlike the sufficiency check, this is just a chat
-    message the Builder may edit or discard before sending."""
-    prompt = build_pushback_prompt(
-        persona=persona,
-        attitude=attitude,
-        known_information=known_information,
-        conversation_history=conversation_history,
-        analyst_message=analyst_message,
-    )
+def _generate_persona_message(client: ClaudeClient, *, persona: StakeholderPersona, prompt: str, kind: str) -> str:
+    """Code review, Unit 35: suggest_pushback_message and suggest_opening_
+    message had become byte-for-byte identical in structure (same retryable
+    exception, same terminal exception, same model/token constants, same
+    system-prompt shape), differing only in which build_*_prompt function
+    produced `prompt` - exactly the "third occurrence" this module's own
+    docstring already named as the threshold for extracting a shared
+    helper (the sufficiency-check loop is NOT folded in here; it has a
+    different retryable-exception tuple and terminal exception type, per
+    that same docstring note). One automatic retry on a Claude API error or
+    an empty response (PRD 9.2) - a second consecutive failure of either
+    kind is surfaced as PersonaMessageGenerationFailedError(kind=kind), so
+    a caller's own action name (not always "pushback suggestion") reaches
+    the exception message and, from there, the API's error responses."""
     profile = PERSONA_PROFILES[persona]
     last_error: Exception | None = None
     for _attempt in range(_MAX_ATTEMPTS):
@@ -232,7 +252,64 @@ def suggest_pushback_message(
         except ClaudeAPIError as exc:
             last_error = exc
     assert last_error is not None  # every loop iteration above sets it on failure
-    raise PersonaMessageGenerationFailedError(last_error)
+    raise PersonaMessageGenerationFailedError(last_error, kind=kind)
+
+
+def suggest_pushback_message(
+    client: ClaudeClient,
+    *,
+    persona: StakeholderPersona,
+    attitude: Attitude,
+    known_information: dict,
+    conversation_history: str,
+    analyst_message: str,
+) -> str:
+    """Free-form prose, not schema-validated - unlike the sufficiency
+    check, this is just a chat message the Builder may edit or discard
+    before sending. See _generate_persona_message for the retry mechanics."""
+    prompt = build_pushback_prompt(
+        persona=persona,
+        attitude=attitude,
+        known_information=known_information,
+        conversation_history=conversation_history,
+        analyst_message=analyst_message,
+    )
+    return _generate_persona_message(client, persona=persona, prompt=prompt, kind="pushback suggestion")
+
+
+def build_opening_prompt(
+    *,
+    persona: StakeholderPersona,
+    attitude: Attitude,
+    known_information: dict,
+) -> str:
+    """Unit 35 (follow-on to Unit 23): mirrors build_pushback_prompt above,
+    rendering STAKEHOLDER_OPENING_TEMPLATE instead - no conversation_history
+    or analyst_message parameters, since neither exists yet for an opening
+    message."""
+    profile = PERSONA_PROFILES[persona]
+    rendered = STAKEHOLDER_OPENING_TEMPLATE.render(
+        {
+            "persona_name": profile.name,
+            "persona_priorities": profile.priorities,
+            "persona_style": profile.style,
+            "known_information": json.dumps(known_information, sort_keys=True, default=str),
+        }
+    )
+    return rendered + f"\n\nAdopt this attitude while writing: {_OPENING_ATTITUDE_DESCRIPTIONS[attitude]}"
+
+
+def suggest_opening_message(
+    client: ClaudeClient,
+    *,
+    persona: StakeholderPersona,
+    attitude: Attitude,
+    known_information: dict,
+) -> str:
+    """Generates a persona's opening message instead of a reaction to one -
+    see _generate_persona_message for the shared retry mechanics."""
+    prompt = build_opening_prompt(persona=persona, attitude=attitude, known_information=known_information)
+    return _generate_persona_message(client, persona=persona, prompt=prompt, kind="opening message generation")
 
 
 def parse_sufficiency_response(content: str) -> SufficiencyVerdict:

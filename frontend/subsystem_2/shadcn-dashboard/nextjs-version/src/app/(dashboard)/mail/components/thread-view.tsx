@@ -9,13 +9,14 @@ import { Button } from "@/components/ui/button"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Textarea } from "@/components/ui/textarea"
+import { AiAssistPanel, type SuggestResult, type SufficiencyResult } from "./ai-assist-panel"
 import {
   clearDraftBuffer,
   loadDraftBuffer,
   saveDraftBuffer,
   syncDraftToServer,
 } from "../composer-draft"
-import { MAX_MESSAGE_BODY_LENGTH, personaLabel, type ChatMessage, type ChatThread } from "../data"
+import { MAX_MESSAGE_BODY_LENGTH, personaLabel, type Attitude, type ChatMessage, type ChatThread } from "../data"
 
 // Unit 30b (MEADOWOPS-UI-004, PRD 6.1, B12): matches mail.tsx's own
 // markReadDebounced precedent — collapse a burst of keystrokes into one
@@ -50,10 +51,16 @@ export function ThreadView({
   thread,
   messages,
   onSend,
+  onSuggestOpening,
+  onSuggestPushback,
+  onCheckSufficiency,
 }: {
   thread: ChatThread | null;
   messages: ChatMessage[];
   onSend: (body: string) => Promise<boolean>;
+  onSuggestOpening: (attitude: Attitude) => Promise<SuggestResult>;
+  onSuggestPushback: (attitude: Attitude) => Promise<SuggestResult>;
+  onCheckSufficiency: () => Promise<SufficiencyResult>;
 }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
@@ -214,6 +221,14 @@ export function ThreadView({
         </div>
       </ScrollArea>
       <Separator className="mt-auto" />
+      <AiAssistPanel
+        hasMessages={messages.length > 0}
+        hasAnalystMessage={messages.some((message) => message.sender_role === "analyst")}
+        onSuggestOpening={onSuggestOpening}
+        onSuggestPushback={onSuggestPushback}
+        onCheckSufficiency={onCheckSufficiency}
+        onAcceptSuggestion={handleDraftChange}
+      />
       <div className="p-4">
         <div className="grid gap-2">
           <Textarea

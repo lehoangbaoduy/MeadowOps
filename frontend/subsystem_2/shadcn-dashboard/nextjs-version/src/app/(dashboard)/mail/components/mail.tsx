@@ -6,11 +6,28 @@ import { ResizableHandle, ResizablePanel, ResizablePanelGroup } from "@/componen
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { TooltipProvider } from "@/components/ui/tooltip"
+import type { SuggestResult, SufficiencyResult } from "./ai-assist-panel"
 import { NewThreadDialog } from "./new-thread-dialog"
 import { ThreadList } from "./thread-list"
 import { ThreadView } from "./thread-view"
 import { useChatSocket, type ChatSocketFrame } from "../use-chat-socket"
-import type { ChatMessage, ChatThread, Persona, ScenarioOption } from "../data"
+import type { Attitude, ChatMessage, ChatThread, Persona, ScenarioOption } from "../data"
+
+// Unit 35 (follow-on to Unit 23): shared by all three AI-assist actions -
+// each backend route (suggest-opening/suggest-pushback/sufficiency-check)
+// returns a JSON body with a `detail` string on every non-2xx status
+// (FastAPI's own HTTPException shape), so this is the one place that turns
+// "whatever went wrong" into the text AiAssistPanel shows the Builder,
+// rather than duplicating this per action.
+async function _aiErrorDetail(response: Response): Promise<string> {
+  try {
+    const body = await response.json();
+    if (typeof body?.detail === "string") return body.detail;
+  } catch {
+    // response body wasn't JSON - fall through to the generic message
+  }
+  return `Request failed (${response.status})`;
+}
 
 async function fetchThreads(): Promise<ChatThread[]> {
   const response = await fetch("/api/chat/threads", { cache: "no-store" });
@@ -129,6 +146,46 @@ export function Mail({ threads: initialThreads, scenarios, defaultLayout = [32, 
     [selectedId]
   );
 
+  const handleSuggestOpening = useCallback(
+    async (attitude: Attitude): Promise<SuggestResult> => {
+      if (!selectedId) return { ok: false, error: "No thread selected." };
+      const response = await fetch(`/api/chat/threads/${selectedId}/suggest-opening`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ attitude }),
+      });
+      if (!response.ok) return { ok: false, error: await _aiErrorDetail(response) };
+      const body = await response.json();
+      return { ok: true, message: body.suggested_message };
+    },
+    [selectedId]
+  );
+
+  const handleSuggestPushback = useCallback(
+    async (attitude: Attitude): Promise<SuggestResult> => {
+      if (!selectedId) return { ok: false, error: "No thread selected." };
+      const response = await fetch(`/api/chat/threads/${selectedId}/suggest-pushback`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ attitude }),
+      });
+      if (!response.ok) return { ok: false, error: await _aiErrorDetail(response) };
+      const body = await response.json();
+      return { ok: true, message: body.suggested_message };
+    },
+    [selectedId]
+  );
+
+  const handleCheckSufficiency = useCallback(async (): Promise<SufficiencyResult> => {
+    if (!selectedId) return { ok: false, error: "No thread selected." };
+    const response = await fetch(`/api/chat/threads/${selectedId}/sufficiency-check`, {
+      method: "POST",
+    });
+    if (!response.ok) return { ok: false, error: await _aiErrorDetail(response) };
+    const body = await response.json();
+    return { ok: true, verdict: body.verdict, suggestedPushback: body.suggested_pushback };
+  }, [selectedId]);
+
   const handleFrame = useCallback(
     (frame: ChatSocketFrame) => {
       if (frame.thread_id === selectedId) {
@@ -207,7 +264,14 @@ export function Mail({ threads: initialThreads, scenarios, defaultLayout = [32, 
         </ResizablePanel>
         <ResizableHandle withHandle />
         <ResizablePanel defaultSize={defaultLayout[1]} minSize={30}>
-          <ThreadView thread={selectedThread} messages={messages} onSend={handleSend} />
+          <ThreadView
+            thread={selectedThread}
+            messages={messages}
+            onSend={handleSend}
+            onSuggestOpening={handleSuggestOpening}
+            onSuggestPushback={handleSuggestPushback}
+            onCheckSufficiency={handleCheckSufficiency}
+          />
         </ResizablePanel>
       </ResizablePanelGroup>
     </TooltipProvider>

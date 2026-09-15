@@ -12,6 +12,10 @@ sufficiency_check_route below — both require_admin (Builder-only), unlike
 every route above them, since both read the scenario's ground truth (one
 redacted, one in full) and the Analyst must never see it.
 
+Unit 35 (follow-on to Unit 23, MEADOWOPS-DOM-023) adds suggest_opening_
+route — same require_admin reasoning, redacted ground truth, generating a
+thread's opening message instead of reacting to one.
+
 Code review of this unit: neither new route catches PromptRenderError —
 unreachable today (both call sites always supply full required_context, and
 test_prompt_templates.py's placeholder-consistency test pins that), so
@@ -92,6 +96,8 @@ from app.schemas.chat import (
     MessageRead,
     NotificationRead,
     SufficiencyCheckResponse,
+    SuggestOpeningRequest,
+    SuggestOpeningResponse,
     SuggestPushbackRequest,
     SuggestPushbackResponse,
     ThreadCreate,
@@ -133,7 +139,9 @@ from app.services.persona_chat import (
     MaxPushbackRoundsExceededError,
     NoAnalystMessageYetError,
     ScenarioCancelledError,
+    ThreadAlreadyHasMessagesError,
     check_thread_sufficiency,
+    suggest_thread_opening,
     suggest_thread_pushback,
 )
 
@@ -618,6 +626,39 @@ def suggest_pushback_route(
     except PersonaMessageGenerationFailedError as exc:
         raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
     return SuggestPushbackResponse(suggested_message=suggestion)
+
+
+@router.post("/threads/{thread_id}/suggest-opening", response_model=SuggestOpeningResponse)
+def suggest_opening_route(
+    thread_id: uuid.UUID,
+    payload: SuggestOpeningRequest,
+    session: Session = Depends(get_session),
+    claude_client: ClaudeClient | None = Depends(get_claude_client),
+    _identity: dict[str, str] = Depends(require_admin),
+) -> SuggestOpeningResponse:
+    """Unit 35 (follow-on to Unit 23, MEADOWOPS-DOM-023): mirrors
+    suggest_pushback_route above - same Builder-only reasoning (the ground
+    truth this suggestion is built from, redacted but still real scenario
+    evidence, must never reach the Analyst role)."""
+    if claude_client is None:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Persona opening-message suggestion is not configured (no Claude client)",
+        )
+    try:
+        suggestion = suggest_thread_opening(
+            session,
+            thread_id=thread_id,
+            attitude=Attitude(payload.attitude),
+            claude_client=claude_client,
+        )
+    except ThreadNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except (ScenarioCancelledError, ThreadAlreadyHasMessagesError) as exc:
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except PersonaMessageGenerationFailedError as exc:
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    return SuggestOpeningResponse(suggested_message=suggestion)
 
 
 @router.post("/threads/{thread_id}/sufficiency-check", response_model=SufficiencyCheckResponse)

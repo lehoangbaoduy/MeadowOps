@@ -40,6 +40,27 @@ export function personaLabel(persona: string): string {
   return PERSONA_LABELS[persona as Persona] ?? persona;
 }
 
+// Unit 35 (follow-on to Unit 23): mirrors app.domain.persona_chat.Attitude
+// exactly (backend/app/schemas/chat.py's own Attitude Literal, which
+// app.api.chat's suggest-pushback/suggest-opening routes validate against) —
+// this is the first frontend surface for the attitude concept; Unit 23's
+// own backend work never had a UI to feed it from.
+export type Attitude = "neutral" | "frustrated" | "urgent" | "skeptical" | "appreciative";
+
+export const ATTITUDES: Attitude[] = ["neutral", "frustrated", "urgent", "skeptical", "appreciative"];
+
+const ATTITUDE_LABELS: Record<Attitude, string> = {
+  neutral: "Neutral",
+  frustrated: "Frustrated",
+  urgent: "Urgent",
+  skeptical: "Skeptical",
+  appreciative: "Appreciative",
+};
+
+export function attitudeLabel(attitude: string): string {
+  return ATTITUDE_LABELS[attitude as Attitude] ?? attitude;
+}
+
 export type ChatThread = {
   id: string;
   scenario_id: string;

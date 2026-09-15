@@ -92,6 +92,30 @@ export function mintWsTicket(): Promise<Response> {
   return chatFetch("/api/v1/chat/ws-ticket", { method: "POST" });
 }
 
+// Unit 35 (follow-on to Unit 23, PRD 6.13): the AI-assist trio -
+// suggestOpening is new this unit (app.api.chat.suggest_opening_route);
+// suggestPushback/checkSufficiency proxy routes that already existed
+// backend-only since Unit 23 with no caller anywhere in this app until now.
+export function suggestOpening(threadId: string, attitude: string): Promise<Response> {
+  return chatFetch(`/api/v1/chat/threads/${encodeURIComponent(threadId)}/suggest-opening`, {
+    method: "POST",
+    body: JSON.stringify({ attitude }),
+  });
+}
+
+export function suggestPushback(threadId: string, attitude: string): Promise<Response> {
+  return chatFetch(`/api/v1/chat/threads/${encodeURIComponent(threadId)}/suggest-pushback`, {
+    method: "POST",
+    body: JSON.stringify({ attitude }),
+  });
+}
+
+export function checkSufficiency(threadId: string): Promise<Response> {
+  return chatFetch(`/api/v1/chat/threads/${encodeURIComponent(threadId)}/sufficiency-check`, {
+    method: "POST",
+  });
+}
+
 // Unit 30a (MEADOWOPS-UI-003, PRD 6.1, B12): the Builder's own notification
 // feed — deadline_missed (a thread the Builder is responsible for chasing)
 // rows only, per app.services.notifications.sweep_thread_deadlines's

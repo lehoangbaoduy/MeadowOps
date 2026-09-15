@@ -6,27 +6,30 @@ models and Scenario, the same layering app.services.scenario_service
 established for app.domain.scenario_generation's ClaudeClient-calling
 functions.
 
-Both public functions here are read-only - neither writes to the database
-(no `session.add`, no status change, no message insert) or commits.
-Suggesting a pushback message is not the same as sending one (PRD 6.6 step
-5: the Builder "composes and sends" - the AI only ever suggests what a
-Builder may edit or discard), and the sufficiency check is explicitly "a
-recommendation only" (PRD 6.13) that "never writes an evaluation record
-itself."
+All three public functions here are read-only - neither writes to the
+database (no `session.add`, no status change, no message insert) or
+commits. Suggesting a pushback or opening message is not the same as
+sending one (PRD 6.6 step 5: the Builder "composes and sends" - the AI
+only ever suggests what a Builder may edit or discard), and the
+sufficiency check is explicitly "a recommendation only" (PRD 6.13) that
+"never writes an evaluation record itself."
 
-Both require at least one prior Analyst message in the thread - the
-pushback suggestion because STAKEHOLDER_ROLEPLAY_TEMPLATE's required
-`analyst_message` context needs a real message to react to (this is what
-makes "pushback-only, not opening-message" enforceable in code, not just in
-the UI), and the sufficiency check because PRD 6.13 defines it as reviewing
-"the Analyst's latest message" - there is nothing to review before one
-exists. Both also refuse to run against a cancelled scenario (Scenario.
-status has no Analyst-facing meaning once cancelled, and continuing the
-persona conversation past that point serves no purpose) - draft/approved/
-active scenarios are all otherwise allowed, since nothing else in this
-codebase's chat layer (get_or_create_thread, send_message) gates on
-scenario status either, and inventing a stricter requirement here without a
-PRD rule to back it would be an arbitrary asymmetry.
+**Updated at Unit 35** (follow-on to Unit 23, MEADOWOPS-DOM-023):
+suggest_thread_pushback/check_thread_sufficiency both require at least one
+prior Analyst message in the thread - the pushback suggestion because
+STAKEHOLDER_ROLEPLAY_TEMPLATE's required `analyst_message` context needs a
+real message to react to, and the sufficiency check because PRD 6.13
+defines it as reviewing "the Analyst's latest message" - there is nothing
+to review before one exists. suggest_thread_opening has the *inverse*
+precondition instead (ThreadAlreadyHasMessagesError, below) - it only
+makes sense before the thread has any message at all. All three refuse to
+run against a cancelled scenario (Scenario.status has no Analyst-facing
+meaning once cancelled, and continuing the persona conversation past that
+point serves no purpose) - draft/approved/active scenarios are all
+otherwise allowed, since nothing else in this codebase's chat layer
+(get_or_create_thread, send_message) gates on scenario status either, and
+inventing a stricter requirement here without a PRD rule to back it would
+be an arbitrary asymmetry.
 
 app.services.scenario_service.regenerate_scenario's own security-review note
 about holding a DB session open across a Claude call applies identically
@@ -56,6 +59,7 @@ from app.domain.persona_chat import (
     SufficiencyVerdict,
     build_known_information,
     run_sufficiency_check,
+    suggest_opening_message,
     suggest_pushback_message,
 )
 from app.services.chat import get_thread, list_messages
@@ -65,6 +69,13 @@ from app.services.scenario_service import ScenarioNotFoundError
 class NoAnalystMessageYetError(ValueError):
     """Raised when a thread has no Analyst message yet for the pushback
     suggestion or sufficiency check to react to/grade."""
+
+
+class ThreadAlreadyHasMessagesError(ValueError):
+    """Unit 35 (follow-on to Unit 23): raised by suggest_thread_opening
+    when the thread already has a message (of either role) - the inverse
+    guard of NoAnalystMessageYetError above. An opening-message suggestion
+    only makes sense before anyone has said anything in the thread yet."""
 
 
 class ScenarioCancelledError(ValueError):
@@ -162,6 +173,30 @@ def suggest_thread_pushback(
             session, thread_id, exclude_message_id=latest_analyst_message.id
         ),
         analyst_message=latest_analyst_message.body,
+    )
+
+
+def suggest_thread_opening(
+    session: Session, *, thread_id: uuid.UUID, attitude: Attitude, claude_client: ClaudeClient
+) -> str:
+    """Unit 35 (follow-on to Unit 23): mirrors suggest_thread_pushback
+    above, with the inverse precondition - an opening-message suggestion
+    only makes sense before the thread has any message yet (of either
+    role), where pushback requires at least one Analyst message to react
+    to. list_messages (rather than a dedicated count query) is reused here
+    the same way _load_thread_and_active_scenario reuses get_thread - this
+    module already depends on app.services.chat for both."""
+    thread, scenario = _load_thread_and_active_scenario(session, thread_id)
+    if list_messages(session, thread_id):
+        raise ThreadAlreadyHasMessagesError(
+            f"chat thread {thread_id} already has a message - an opening "
+            "message can only be suggested before the thread's first message"
+        )
+    return suggest_opening_message(
+        claude_client,
+        persona=thread.persona,
+        attitude=attitude,
+        known_information=build_known_information(scenario.ground_truth),
     )
 
 

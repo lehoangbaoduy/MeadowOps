@@ -1502,6 +1502,134 @@ class TestSuggestPushbackRoute:
             assert marker not in suggested
 
 
+class TestSuggestOpeningRoute:
+    """Unit 35 (follow-on to Unit 23): mirrors TestSuggestPushbackRoute
+    above - same route shape, inverse precondition (rich_thread_id starts
+    with zero messages, which is exactly the state this route requires;
+    the pushback tests are the ones that post messages onto it first)."""
+
+    def test_returns_503_when_no_claude_client_is_configured(
+        self, client: TestClient, admin_auth: dict[str, str], rich_thread_id: str
+    ) -> None:
+        response = client.post(
+            f"/api/v1/chat/threads/{rich_thread_id}/suggest-opening",
+            json={"attitude": "neutral"},
+            headers=admin_auth,
+        )
+
+        assert response.status_code == 503
+
+    def test_analyst_cannot_call_this_route(
+        self, client: TestClient, analyst_auth: dict[str, str], rich_thread_id: str
+    ) -> None:
+        response = client.post(
+            f"/api/v1/chat/threads/{rich_thread_id}/suggest-opening",
+            json={"attitude": "neutral"},
+            headers=analyst_auth,
+        )
+
+        assert response.status_code == 403
+
+    def test_builder_gets_a_suggested_message_once_configured(
+        self, client: TestClient, admin_auth: dict[str, str], rich_thread_id: str
+    ) -> None:
+        client.app.state.claude_client = MockClaudeClient(
+            script=[ClaudeResponse(content="We have a situation.")]
+        )
+
+        response = client.post(
+            f"/api/v1/chat/threads/{rich_thread_id}/suggest-opening",
+            json={"attitude": "urgent"},
+            headers=admin_auth,
+        )
+
+        assert response.status_code == 200
+        assert response.json()["suggested_message"] == "We have a situation."
+
+    def test_returns_409_once_the_thread_already_has_a_message(
+        self, client: TestClient, admin_auth: dict[str, str], rich_thread_id: str
+    ) -> None:
+        _post_message(client, rich_thread_id, admin_auth, "already opened")
+        client.app.state.claude_client = MockClaudeClient(script=[ClaudeResponse(content="unused")])
+
+        response = client.post(
+            f"/api/v1/chat/threads/{rich_thread_id}/suggest-opening",
+            json={"attitude": "neutral"},
+            headers=admin_auth,
+        )
+
+        assert response.status_code == 409
+
+    def test_returns_404_for_an_unknown_thread(
+        self, client: TestClient, admin_auth: dict[str, str]
+    ) -> None:
+        client.app.state.claude_client = MockClaudeClient(script=[ClaudeResponse(content="unused")])
+
+        response = client.post(
+            f"/api/v1/chat/threads/{uuid.uuid4()}/suggest-opening",
+            json={"attitude": "neutral"},
+            headers=admin_auth,
+        )
+
+        assert response.status_code == 404
+
+    def test_returns_502_when_generation_fails_after_retry(
+        self, client: TestClient, admin_auth: dict[str, str], rich_thread_id: str
+    ) -> None:
+        client.app.state.claude_client = MockClaudeClient(
+            script=[ClaudeAPIError("boom"), ClaudeAPIError("boom again")]
+        )
+
+        response = client.post(
+            f"/api/v1/chat/threads/{rich_thread_id}/suggest-opening",
+            json={"attitude": "neutral"},
+            headers=admin_auth,
+        )
+
+        assert response.status_code == 502
+        # Code review finding: PersonaMessageGenerationFailedError used to
+        # hardcode "pushback suggestion" regardless of caller, so this
+        # route's 502 detail read "persona pushback suggestion failed..."
+        # for a request that was never about pushback.
+        assert "opening message generation" in response.json()["detail"]
+        assert "pushback" not in response.json()["detail"]
+
+    def test_rejects_an_invalid_attitude_value(
+        self, client: TestClient, admin_auth: dict[str, str], rich_thread_id: str
+    ) -> None:
+        response = client.post(
+            f"/api/v1/chat/threads/{rich_thread_id}/suggest-opening",
+            json={"attitude": "angry"},
+            headers=admin_auth,
+        )
+
+        assert response.status_code == 422
+
+    def test_the_suggestion_does_not_leak_a_grading_field(
+        self, client: TestClient, admin_auth: dict[str, str], rich_thread_id: str
+    ) -> None:
+        class _EchoClient:
+            def __init__(self) -> None:
+                self.call_log: list[dict] = []
+
+            def create_message(self, *, model, system, messages, max_tokens):
+                self.call_log.append({"messages": messages})
+                return ClaudeResponse(content=messages[0]["content"])
+
+        client.app.state.claude_client = _EchoClient()
+
+        response = client.post(
+            f"/api/v1/chat/threads/{rich_thread_id}/suggest-opening",
+            json={"attitude": "neutral"},
+            headers=admin_auth,
+        )
+
+        assert response.status_code == 200
+        suggested = response.json()["suggested_message"]
+        for marker in ("SECRET-SIGNAL", "SECRET-DISTRACTOR", "SECRET-CONSIDERATION", "SECRET-CONCLUSION", "SECRET-UNCERTAINTY"):
+            assert marker not in suggested
+
+
 class TestSufficiencyCheckRoute:
     def test_returns_503_when_no_claude_client_is_configured(
         self,

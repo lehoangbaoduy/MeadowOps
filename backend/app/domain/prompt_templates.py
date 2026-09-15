@@ -134,6 +134,40 @@ STAKEHOLDER_ROLEPLAY_TEMPLATE = PromptTemplate(
     ),
 )
 
+# Unit 35 (follow-on to Unit 23, MEADOWOPS-DOM-023): a new frozen v1
+# template, not an edit to STAKEHOLDER_ROLEPLAY_TEMPLATE above - that
+# template hardcodes a required analyst_message turn to react to
+# ("The Analyst just said: {analyst_message}"), which an opening message
+# has none of. This was an explicitly deferred design question in Unit 23
+# (see app.domain.persona_chat's own module docstring, DD-33): "that
+# variant needs a template shape with no prior analyst_message to react
+# to... deferred rather than answered as a drive-by here."
+STAKEHOLDER_OPENING_TEMPLATE = PromptTemplate(
+    name="stakeholder_opening",
+    version="v1",
+    required_context=frozenset(
+        {
+            "persona_name",
+            "persona_priorities",
+            "persona_style",
+            "known_information",
+        }
+    ),
+    template=(
+        "You are roleplaying {persona_name}, a stakeholder in a supply-"
+        "chain scenario. Your priorities: {persona_priorities}. Your "
+        "communication style: {persona_style}.\n\n"
+        "You know only the following - do not reveal or reference anything "
+        "outside it; this information asymmetry is intentional:\n"
+        "{known_information}\n\n"
+        "You are opening a new conversation with an Analyst who hasn't "
+        "heard from you yet on this - there is no prior conversation to "
+        "continue. Write the opening message you would send them, in "
+        "character, as {persona_name} would, using only what "
+        "{persona_name} knows."
+    ),
+)
+
 SUFFICIENCY_CHECK_TEMPLATE = PromptTemplate(
     name="sufficiency_check",
     version="v1",
@@ -194,6 +228,7 @@ EVALUATION_TEMPLATE = PromptTemplate(
 ALL_TEMPLATES = (
     GENERATION_TEMPLATE,
     STAKEHOLDER_ROLEPLAY_TEMPLATE,
+    STAKEHOLDER_OPENING_TEMPLATE,
     SUFFICIENCY_CHECK_TEMPLATE,
     EVALUATION_TEMPLATE,
 )
