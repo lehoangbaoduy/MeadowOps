@@ -117,6 +117,12 @@ export function listOpenExceptions(category?: string): Promise<Response> {
   return scenarioFetch(`/api/v1/dashboard/exceptions?${params.toString()}`);
 }
 
+// Unit 39: the latest KPI snapshot plus open exception counts, for the Home
+// page's Company Status section (Unit 16's existing, authenticated route).
+export function getExecutiveSummary(): Promise<Response> {
+  return scenarioFetch("/api/v1/dashboard/executive");
+}
+
 // Unit 40: the admin-only "Reset & regenerate to today" control. The start
 // call returns at once (202); the rebuild runs on the backend and is polled.
 export function startRepopulate(body: unknown): Promise<Response> {
