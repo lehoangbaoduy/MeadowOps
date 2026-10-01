@@ -70,19 +70,22 @@ const ACTION_LABEL: Record<Action, string> = {
   regenerate: "Regenerate",
   approve: "Approve",
   activate: "Activate",
-  cancel: "Cancel",
+  cancel: "Remove",
 };
 
 const ACTION_CONFIRM: Record<Action, string | null> = {
   regenerate: "Re-derive known cause and evidence from the source exception flag? Your narrative edits (known cause, distractors, etc.) are kept.",
   approve: null,
   activate: null,
-  cancel: "Cancel this scenario? This cannot be undone.",
+  cancel:
+    "Remove this scenario? It moves to Cancelled and cannot be reopened. Existing chat threads and evaluations are kept.",
 };
 
 function availableActions(status: ScenarioStatus): Action[] {
   if (status === "draft") return ["regenerate", "approve", "cancel"];
   if (status === "approved") return ["activate", "cancel"];
+  // Unit 39: the live scenario can be removed too (it becomes Cancelled).
+  if (status === "active") return ["cancel"];
   return [];
 }
 
@@ -105,7 +108,7 @@ export function ScenarioActions({ id, status }: { id: string; status: ScenarioSt
         toast.error(extractErrorMessage(body));
         return;
       }
-      toast.success(`Scenario ${action === "cancel" ? "cancelled" : `${action}d`}`);
+      toast.success(`Scenario ${action === "cancel" ? "removed (cancelled)" : `${action}d`}`);
       router.refresh();
     } catch {
       toast.error("Could not reach the server");

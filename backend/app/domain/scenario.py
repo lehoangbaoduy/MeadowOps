@@ -34,6 +34,10 @@ VALID_TRANSITIONS: frozenset[tuple[str, str]] = frozenset(
         ("draft", "cancelled"),
         ("approved", "active"),
         ("approved", "cancelled"),
+        # Unit 39: the Builder can remove the live scenario; activation is no
+        # longer a terminus. Its threads/evaluations stay (persona and
+        # evaluation paths already refuse a cancelled scenario).
+        ("active", "cancelled"),
     }
 )
 

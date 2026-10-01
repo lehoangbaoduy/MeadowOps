@@ -55,6 +55,7 @@ class TestStateMachine:
             ("draft", "cancelled"),
             ("approved", "active"),
             ("approved", "cancelled"),
+            ("active", "cancelled"),
         ],
     )
     def test_valid_transitions_are_allowed(self, from_status: str, to_status: str) -> None:
@@ -67,7 +68,6 @@ class TestStateMachine:
             ("approved", "draft"),
             ("active", "draft"),
             ("active", "approved"),
-            ("active", "cancelled"),
             ("cancelled", "draft"),
             ("cancelled", "approved"),
             ("cancelled", "active"),
