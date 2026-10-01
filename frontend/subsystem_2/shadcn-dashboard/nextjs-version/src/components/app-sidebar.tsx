@@ -10,6 +10,7 @@ import {
   Settings,
   Users,
   ClipboardList,
+  DatabaseZap,
 } from "lucide-react"
 import Link from "next/link"
 import { Logo } from "@/components/logo"
@@ -74,6 +75,11 @@ const data = {
           title: "Users",
           url: "/users",
           icon: Users,
+        },
+        {
+          title: "Simulation",
+          url: "/simulation",
+          icon: DatabaseZap,
         },
       ],
     },

@@ -190,3 +190,33 @@ def reset_simulation(session: Session, *, label: str = "Reset") -> uuid.UUID:
     clock.status = ClockStatus.RUNNING
     session.flush()
     return reset_row.id
+
+
+def rebase_clock(session: Session, *, simulation_date: date, label: str) -> uuid.UUID:
+    """Unit 40: points the clock at `simulation_date` (running) under a new
+    RESET world state chained onto the current head. Unlike reset_simulation
+    it does not return to the clean baseline date - it is how "Reset &
+    regenerate to today" re-anchors the simulation on the real calendar.
+    Takes the clock row lock like every other mutation here, so a scheduler
+    tick waits until the caller's transaction ends."""
+    clock = _lock_clock(session)
+    if clock.current_world_state_id is None:
+        raise SimulationClockNotSeededError(
+            "simulation_clock.current_world_state_id is unset - run "
+            "seed_initial_world_state_and_clock or repair manually"
+        )
+    head = session.get(WorldState, clock.current_world_state_id)
+    rebased = WorldState(
+        kind=WorldStateKind.RESET,
+        simulation_date=simulation_date,
+        seed=head.seed,
+        label=label,
+        parent_id=head.id,
+    )
+    session.add(rebased)
+    session.flush()
+    clock.current_world_state_id = rebased.id
+    clock.simulation_date = simulation_date
+    clock.status = ClockStatus.RUNNING
+    session.flush()
+    return rebased.id

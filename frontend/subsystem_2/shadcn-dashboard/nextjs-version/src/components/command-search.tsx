@@ -19,6 +19,7 @@ import {
   Bell,
   Link2,
   Palette,
+  DatabaseZap,
   type LucideIcon,
 } from "lucide-react"
 
@@ -134,6 +135,7 @@ export function CommandSearch({ open, onOpenChange }: CommandSearchProps) {
     { title: "Chat", url: "/mail", group: "Apps", icon: MessageCircle },
     { title: "Tasks", url: "/tasks", group: "Apps", icon: CheckSquare },
     { title: "Calendar", url: "/calendar", group: "Apps", icon: Calendar },
+    { title: "Simulation", url: "/simulation", group: "Apps", icon: DatabaseZap },
 
     // Auth Pages
     { title: "Sign In 1", url: "/auth/sign-in", group: "Auth Pages", icon: Shield },

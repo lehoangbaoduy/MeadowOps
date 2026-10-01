@@ -7,6 +7,7 @@ from fastapi import Depends, FastAPI
 
 from app.api.admin_query_log import router as admin_query_log_router
 from app.api.admin_scenarios import router as admin_scenarios_router
+from app.api.admin_simulation import router as admin_simulation_router
 from app.api.auth import router as auth_router
 from app.api.chat import router as chat_router
 from app.api.customers import router as customers_router
@@ -31,6 +32,7 @@ from app.core.ws_tickets import WsTicketStore
 from app.db.session import make_engine
 from app.domain.claude_client_anthropic import AnthropicClaudeClient
 from app.domain.scheduler import build_scheduler
+from app.services.repopulate_job import RepopulateJob
 
 # Unit 21a (MEADOWOPS-DOM-014, PRD 6.13): the WS ticket handshake window,
 # not the session's own lifetime — kept short and fixed rather than a
@@ -148,6 +150,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # calls in tests must not share ticket/connection state.
     app.state.chat_ws_tickets = WsTicketStore(ttl_seconds=_CHAT_WS_TICKET_TTL_SECONDS)
     app.state.chat_connections = ChatConnectionRegistry()
+    # Unit 40: one rebuild job per app instance, same reasoning as above.
+    app.state.repopulate_job = RepopulateJob()
     # Unit 22 (MEADOWOPS-DOM-016) / Phase 4 blocker B3: real only when
     # explicitly opted in (Settings.claude_client_enabled, off by default -
     # see that field's own comment for why "ANTHROPIC_API_KEY present" alone
@@ -168,6 +172,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(customers_router)
     app.include_router(dashboard_router)
     app.include_router(admin_scenarios_router)
+    app.include_router(admin_simulation_router)
     app.include_router(query_playground_router)
     app.include_router(chat_router)
     app.include_router(ledger_router)
