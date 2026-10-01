@@ -94,6 +94,7 @@ from app.schemas.chat import (
     DraftUpdate,
     MessageCreate,
     MessageRead,
+    NotificationFeedItemRead,
     NotificationRead,
     SufficiencyCheckResponse,
     SuggestOpeningRequest,
@@ -133,6 +134,8 @@ from app.services.evaluation import (
 )
 from app.services.notifications import (
     NotificationNotFoundError,
+    NotificationFeedItem,
+    list_notification_feed,
     list_notifications_for_user,
     mark_notification_read,
 )
@@ -350,6 +353,23 @@ def list_notifications_route(
             status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
         ) from exc
     return list_notifications_for_user(session, user_id=viewer_id)
+
+
+@router.get("/notification-feed", response_model=list[NotificationFeedItemRead])
+def notification_feed_route(
+    session: Session = Depends(get_session),
+    identity: dict[str, str] = Depends(reject_service_role),
+) -> list[NotificationFeedItem]:
+    """Unit 39 (MEADOWOPS-DOM-027): deadline notifications plus unread
+    replies from the other side, for this viewer only. Drives the header
+    bell/badge in both apps and the Home notifications panel."""
+    try:
+        viewer_id = uuid.UUID(identity["user_id"])
+    except ValueError as exc:
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED, detail="Invalid credentials"
+        ) from exc
+    return list_notification_feed(session, user_id=viewer_id)
 
 
 @router.post("/notifications/{notification_id}/read", status_code=status.HTTP_204_NO_CONTENT)

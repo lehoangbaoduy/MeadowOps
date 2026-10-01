@@ -128,6 +128,12 @@ export function listNotifications(): Promise<Response> {
   return chatFetch("/api/v1/chat/notifications");
 }
 
+// Unit 39: deadline notifications plus unread Analyst replies in one feed,
+// so the Home page shows what actually needs the Builder's attention.
+export function listNotificationFeed(): Promise<Response> {
+  return chatFetch("/api/v1/chat/notification-feed");
+}
+
 export function markNotificationRead(notificationId: string): Promise<Response> {
   return chatFetch(
     `/api/v1/chat/notifications/${encodeURIComponent(notificationId)}/read`,

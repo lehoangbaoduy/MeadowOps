@@ -40,6 +40,18 @@ export function listThreads(): Promise<Response> {
   return chatFetch("/api/v1/chat/threads");
 }
 
+// Unit 39 (MEADOWOPS-DOM-027): deadline notifications plus unread replies -
+// the single source for the header bell/badge and the Notifications page.
+export function listNotificationFeed(): Promise<Response> {
+  return chatFetch("/api/v1/chat/notification-feed");
+}
+
+export function markNotificationRead(notificationId: string): Promise<Response> {
+  return chatFetch(`/api/v1/chat/notifications/${encodeURIComponent(notificationId)}/read`, {
+    method: "POST",
+  });
+}
+
 export function deleteThread(threadId: string): Promise<Response> {
   return chatFetch(`/api/v1/chat/threads/${encodeURIComponent(threadId)}`, { method: "DELETE" });
 }

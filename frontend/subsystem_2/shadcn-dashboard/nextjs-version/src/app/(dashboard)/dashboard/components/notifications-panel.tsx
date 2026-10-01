@@ -3,26 +3,21 @@
 import { useState } from "react"
 import Link from "next/link"
 import { formatDistanceToNow } from "date-fns"
-import { Bell, Clock } from "lucide-react"
+import { Bell, Clock, MessageSquare } from "lucide-react"
 
 import { cn } from "@/lib/utils"
-import { notificationLabel, personaLabel, type ChatThread, type Notification } from "../../mail/data"
+import { feedItemTitle, type NotificationFeedItem } from "../../mail/data"
 
 interface NotificationsPanelProps {
-  notifications: Notification[];
-  threadsById: Record<string, ChatThread>;
+  items: NotificationFeedItem[];
 }
 
-// Unit 30a (MEADOWOPS-UI-003, PRD 6.1): "Home page: Open Threads, Company
-// Status, Notifications, Completed Work." The Builder's deadline_missed
-// feed — app.services.notifications._recipient_ids notifies the Builder
-// when a thread the Analyst hasn't responded to goes overdue. NotificationRead
-// only carries thread_id, so the persona label is joined client-side against
-// the threads already fetched for this page (page.tsx), rather than showing
-// an unlabeled row.
-export function NotificationsPanel({ notifications, threadsById }: NotificationsPanelProps) {
+// Unit 39 (PRD 6.1): what needs the Builder's attention - overdue/approaching
+// response deadlines and unread Analyst replies. Reply items clear by reading
+// the thread (opening it in Chat), deadline items can also be marked read here.
+export function NotificationsPanel({ items }: NotificationsPanelProps) {
   const [readIds, setReadIds] = useState<Set<string>>(
-    () => new Set(notifications.filter((n) => n.read_at).map((n) => n.id))
+    () => new Set(items.filter((item) => item.is_read).map((item) => item.id))
   );
 
   async function handleMarkRead(id: string) {
@@ -38,43 +33,45 @@ export function NotificationsPanel({ notifications, threadsById }: Notifications
     }
   }
 
-  if (notifications.length === 0) {
+  if (items.length === 0) {
     return (
       <div className="flex flex-col items-center justify-center gap-2 rounded-lg border py-10 text-center">
         <Bell className="size-6 text-muted-foreground opacity-50" />
-        <p className="text-sm font-medium">No notifications</p>
+        <p className="text-sm font-medium">Nothing needs your attention</p>
+        <p className="max-w-sm text-xs text-muted-foreground">
+          Analyst replies and response deadlines show up here.
+        </p>
       </div>
     );
   }
 
   return (
     <ul className="flex flex-col divide-y rounded-lg border">
-      {notifications.map((notification) => {
-        const thread = threadsById[notification.thread_id];
-        const isRead = readIds.has(notification.id);
+      {items.map((item) => {
+        const isRead = readIds.has(item.id);
+        const isReply = item.kind === "new_reply";
+        const Icon = isReply ? MessageSquare : Clock;
         return (
           <li
-            key={notification.id}
+            key={item.id}
             className={cn("flex items-start gap-3 px-4 py-3 text-sm", !isRead && "bg-muted/40")}
           >
-            <Clock className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+            <Icon className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
             <div className="flex-1 space-y-0.5">
-              <p className="font-medium">
-                {notificationLabel(notification.kind)}
-                {thread ? ` — ${personaLabel(thread.persona)}` : ""}
-              </p>
+              <p className="font-medium">{feedItemTitle(item)}</p>
               <p className="text-xs text-muted-foreground">
-                {formatDistanceToNow(new Date(notification.created_at), { addSuffix: true })}
+                {item.scenario_title} ·{" "}
+                {formatDistanceToNow(new Date(item.occurred_at), { addSuffix: true })}
               </p>
             </div>
             <div className="flex shrink-0 items-center gap-3">
               <Link href="/mail" className="text-xs text-primary hover:underline">
                 Open
               </Link>
-              {!isRead && (
+              {!isRead && !isReply && (
                 <button
                   type="button"
-                  onClick={() => void handleMarkRead(notification.id)}
+                  onClick={() => void handleMarkRead(item.id)}
                   className="text-xs text-muted-foreground hover:underline cursor-pointer"
                 >
                   Mark read

@@ -2052,3 +2052,47 @@ class TestDeleteThreadRoute:
             assert response.status_code == 204
             payload = ws.receive_json()
             assert payload == {"type": "chat.thread_deleted", "thread_id": thread_id}
+
+
+class TestNotificationFeedRoute:
+    """Unit 39 (MEADOWOPS-DOM-027): the single feed both apps' bells and Home
+    pages read - deadline notifications plus unread replies."""
+
+    def test_requires_authentication(self, client: TestClient) -> None:
+        assert client.get("/api/v1/chat/notification-feed").status_code == 401
+
+    def test_service_credential_is_rejected(self, client: TestClient) -> None:
+        response = client.get("/api/v1/chat/notification-feed", headers=_SERVICE_AUTH)
+        assert response.status_code in (401, 403)
+
+    def test_is_empty_when_there_is_nothing_to_notify_about(
+        self, client: TestClient, admin_auth: dict[str, str], thread_id: str
+    ) -> None:
+        response = client.get("/api/v1/chat/notification-feed", headers=admin_auth)
+        assert response.status_code == 200
+        assert response.json() == []
+
+    def test_an_analyst_reply_notifies_the_admin_until_they_read_the_thread(
+        self,
+        client: TestClient,
+        admin_auth: dict[str, str],
+        analyst_auth: dict[str, str],
+        thread_id: str,
+    ) -> None:
+        client.post(
+            f"/api/v1/chat/threads/{thread_id}/messages",
+            json={"body": "Here is what I found"},
+            headers=analyst_auth,
+        )
+
+        feed = client.get("/api/v1/chat/notification-feed", headers=admin_auth).json()
+        assert [(i["kind"], i["thread_id"], i["unread_count"], i["is_read"]) for i in feed] == [
+            ("new_reply", thread_id, 1, False)
+        ]
+        assert feed[0]["persona"] == "cfo"
+        assert feed[0]["scenario_title"]
+        # the sender is not told about their own message
+        assert client.get("/api/v1/chat/notification-feed", headers=analyst_auth).json() == []
+
+        client.post(f"/api/v1/chat/threads/{thread_id}/read", headers=admin_auth)
+        assert client.get("/api/v1/chat/notification-feed", headers=admin_auth).json() == []

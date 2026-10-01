@@ -15,11 +15,12 @@ from sqlalchemy import create_engine, delete
 from sqlalchemy.orm import Session
 
 from app.db.auth import User
-from app.db.chat import Notification
+from app.db.chat import ChatMessage, Notification
 from app.db.enums import (
     CompetencyCluster,
     DifficultyTier,
     NotificationKind,
+    ScenarioStatus,
     ScenarioType,
     StakeholderPersona,
     UserRole,
@@ -27,11 +28,12 @@ from app.db.enums import (
 from app.db.exception_flags import ExceptionFlag
 from app.db.scenario import Scenario
 from app.services.baseline_data import seed_master_data
-from app.services.chat import delete_thread, get_or_create_thread, send_message
+from app.services.chat import delete_thread, get_or_create_thread, mark_thread_read, send_message
 from app.services.exception_rule_defaults import seed_exception_rule_thresholds
 from app.services.notifications import (
     NotificationNotFoundError,
     create_notification,
+    list_notification_feed,
     list_notifications_for_user,
     mark_notification_read,
     sweep_thread_deadlines,
@@ -413,3 +415,207 @@ class TestSweepThreadDeadlines:
         admin_notifications = list_notifications_for_user(session, user_id=admin_id)
         assert [n.kind for n in analyst_notifications] == [NotificationKind.DEADLINE_APPROACHING]
         assert [n.kind for n in admin_notifications] == [NotificationKind.DEADLINE_MISSED]
+
+
+class TestNotificationFeed:
+    """Unit 39 (MEADOWOPS-DOM-027): what a user actually has to be told about
+    - deadline notifications plus replies from the other side they have not
+    read yet. An empty feed is what makes the header badge disappear."""
+
+    def _thread(self, session: Session, scenario_id: uuid.UUID):
+        return get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+
+    def test_is_empty_when_there_is_nothing_to_notify_about(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID
+    ) -> None:
+        self._thread(session, scenario_id)
+        assert list_notification_feed(session, user_id=admin_id) == []
+
+    def test_an_unread_reply_from_the_other_side_is_a_new_reply_item(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID, analyst_id: uuid.UUID
+    ) -> None:
+        thread = self._thread(session, scenario_id)
+        send_message(
+            session, thread_id=thread.id, sender_user_id=analyst_id,
+            sender_role=UserRole.ANALYST, body="Here is my analysis",
+        )
+        send_message(
+            session, thread_id=thread.id, sender_user_id=analyst_id,
+            sender_role=UserRole.ANALYST, body="And a follow-up",
+        )
+
+        feed = list_notification_feed(session, user_id=admin_id)
+
+        assert len(feed) == 1
+        item = feed[0]
+        assert item.kind == "new_reply"
+        assert item.thread_id == thread.id
+        assert item.persona == StakeholderPersona.CFO
+        assert item.scenario_title == "zztest notification scenario"
+        assert item.unread_count == 2
+        assert item.is_read is False
+
+    def test_a_users_own_messages_never_notify_them(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID
+    ) -> None:
+        thread = self._thread(session, scenario_id)
+        send_message(
+            session, thread_id=thread.id, sender_user_id=admin_id,
+            sender_role=UserRole.ADMIN, body="Opening message",
+        )
+        assert list_notification_feed(session, user_id=admin_id) == []
+
+    def test_reading_the_thread_clears_the_reply_item(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID, analyst_id: uuid.UUID
+    ) -> None:
+        thread = self._thread(session, scenario_id)
+        send_message(
+            session, thread_id=thread.id, sender_user_id=analyst_id,
+            sender_role=UserRole.ANALYST, body="Here is my analysis",
+        )
+        mark_thread_read(session, thread_id=thread.id, user_id=admin_id)
+        session.flush()
+        assert list_notification_feed(session, user_id=admin_id) == []
+
+    def test_a_reply_arriving_after_the_last_read_is_unread_again(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID, analyst_id: uuid.UUID
+    ) -> None:
+        thread = self._thread(session, scenario_id)
+        send_message(
+            session, thread_id=thread.id, sender_user_id=analyst_id,
+            sender_role=UserRole.ANALYST, body="first",
+        )
+        mark_thread_read(session, thread_id=thread.id, user_id=admin_id)
+        session.flush()
+        # now() is frozen at transaction start, so a second send_message in
+        # this single test transaction would not land after the read's
+        # clock_timestamp(); insert it with an explicit later sent_at.
+        session.add(
+            ChatMessage(
+                thread_id=thread.id, sender_user_id=analyst_id, sender_role=UserRole.ANALYST,
+                body="second", sent_at=datetime.now(timezone.utc) + timedelta(seconds=5),
+            )
+        )
+        session.flush()
+
+        feed = list_notification_feed(session, user_id=admin_id)
+
+        assert [(i.kind, i.unread_count) for i in feed] == [("new_reply", 1)]
+
+    def test_a_deadline_notification_appears_with_its_read_state(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID
+    ) -> None:
+        thread = self._thread(session, scenario_id)
+        unread = create_notification(
+            session, user_id=admin_id, thread_id=thread.id, kind=NotificationKind.DEADLINE_MISSED
+        )
+        session.flush()
+
+        feed = list_notification_feed(session, user_id=admin_id)
+        assert [(i.kind, i.is_read) for i in feed] == [("deadline_missed", False)]
+        assert feed[0].id == str(unread.id)
+
+        mark_notification_read(session, notification_id=unread.id, user_id=admin_id)
+        feed = list_notification_feed(session, user_id=admin_id)
+        assert [(i.kind, i.is_read) for i in feed] == [("deadline_missed", True)]
+
+    def test_unread_items_come_before_read_ones(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID, analyst_id: uuid.UUID
+    ) -> None:
+        thread = self._thread(session, scenario_id)
+        old = create_notification(
+            session, user_id=admin_id, thread_id=thread.id, kind=NotificationKind.DEADLINE_MISSED
+        )
+        session.flush()
+        mark_notification_read(session, notification_id=old.id, user_id=admin_id)
+        send_message(
+            session, thread_id=thread.id, sender_user_id=analyst_id,
+            sender_role=UserRole.ANALYST, body="reply",
+        )
+
+        feed = list_notification_feed(session, user_id=admin_id)
+
+        assert [i.kind for i in feed] == ["new_reply", "deadline_missed"]
+
+    def test_a_deleted_thread_contributes_nothing(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID, analyst_id: uuid.UUID
+    ) -> None:
+        thread = self._thread(session, scenario_id)
+        send_message(
+            session, thread_id=thread.id, sender_user_id=analyst_id,
+            sender_role=UserRole.ANALYST, body="reply",
+        )
+        create_notification(
+            session, user_id=admin_id, thread_id=thread.id, kind=NotificationKind.DEADLINE_MISSED
+        )
+        session.flush()
+        delete_thread(session, thread.id)
+        assert list_notification_feed(session, user_id=admin_id) == []
+
+
+class TestCancelledScenarioStaysQuiet:
+    """Unit 39: removing (cancelling) a scenario must silence it. Its threads
+    are kept for the record, but they may not keep raising deadline
+    notifications or unread-reply badges for a scenario nobody is working."""
+
+    def _cancel(self, session: Session, scenario_id: uuid.UUID) -> None:
+        scenario = session.get(Scenario, scenario_id)
+        scenario.status = ScenarioStatus.CANCELLED
+        session.flush()
+
+    def test_a_cancelled_scenarios_overdue_thread_is_never_swept(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID
+    ) -> None:
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        send_message(
+            session, thread_id=thread.id, sender_user_id=admin_id,
+            sender_role=UserRole.ADMIN, body="VP wants a status update",
+        )
+        session.refresh(thread)
+        thread.deadline_at = datetime.now(timezone.utc) - timedelta(hours=1)
+        session.flush()
+        self._cancel(session, scenario_id)
+
+        counts = sweep_thread_deadlines(
+            session, now=datetime.now(timezone.utc), approaching_within=timedelta(hours=24)
+        )
+
+        assert counts == {"approaching": 0, "missed": 0}
+        assert list_notifications_for_user(session, user_id=admin_id) == []
+
+    def test_notifications_raised_before_the_cancel_disappear_from_the_feed(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID
+    ) -> None:
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        create_notification(
+            session, user_id=admin_id, thread_id=thread.id, kind=NotificationKind.DEADLINE_MISSED
+        )
+        session.flush()
+        assert len(list_notification_feed(session, user_id=admin_id)) == 1
+
+        self._cancel(session, scenario_id)
+
+        assert list_notifications_for_user(session, user_id=admin_id) == []
+        assert list_notification_feed(session, user_id=admin_id) == []
+
+    def test_an_unread_reply_on_a_cancelled_scenario_is_not_a_notification(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID, analyst_id: uuid.UUID
+    ) -> None:
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        send_message(
+            session, thread_id=thread.id, sender_user_id=analyst_id,
+            sender_role=UserRole.ANALYST, body="Here is my analysis",
+        )
+        assert len(list_notification_feed(session, user_id=admin_id)) == 1
+
+        self._cancel(session, scenario_id)
+
+        assert list_notification_feed(session, user_id=admin_id) == []

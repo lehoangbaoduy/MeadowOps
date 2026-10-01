@@ -3,13 +3,7 @@
 import * as React from "react";
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import {
-  IconBell,
-  IconSearch,
-  IconLogout,
-  IconSettings,
-  IconBellOff,
-} from "@tabler/icons-react";
+import { IconSearch, IconLogout, IconSettings } from "@tabler/icons-react";
 
 import { navGroups } from "@/config/nav";
 import { useIsMac } from "@/hooks/use-platform";
@@ -17,6 +11,7 @@ import { Kbd, KbdGroup } from "@/components/ui/kbd";
 import { SidebarTrigger } from "@/components/ui/sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { CustomizerButton } from "@/components/theme-customizer";
+import { NotificationsMenu } from "@/components/notifications-menu";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -172,36 +167,6 @@ export function AppHeader() {
         </CommandList>
       </CommandDialog>
     </header>
-  );
-}
-
-function NotificationsMenu() {
-  return (
-    <DropdownMenu>
-      <DropdownMenuTrigger asChild>
-        <Button
-          variant="ghost"
-          size="icon"
-          className="relative rounded-full"
-          aria-label="Notifications"
-        >
-          <IconBell className="size-5" />
-          <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-destructive ring-2 ring-background" />
-        </Button>
-      </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-[calc(100vw-1rem)] sm:w-80">
-        <DropdownMenuLabel>Notifications</DropdownMenuLabel>
-        <DropdownMenuSeparator />
-        <div className="flex flex-col items-center gap-1.5 px-4 py-6 text-center">
-          <IconBellOff className="size-5 text-muted-foreground opacity-50" />
-          <p className="text-sm text-muted-foreground">No notifications yet</p>
-        </div>
-        <DropdownMenuSeparator />
-        <DropdownMenuItem asChild className="justify-center text-sm font-medium">
-          <Link href="/notifications">View all notifications</Link>
-        </DropdownMenuItem>
-      </DropdownMenuContent>
-    </DropdownMenu>
   );
 }
 

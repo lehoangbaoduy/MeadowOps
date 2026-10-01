@@ -270,6 +270,7 @@ class TestServiceCredentialRouteAllowlist:
             # internal-service credential to touch a user's own
             # notification feed.
             ("GET", "/api/v1/chat/notifications"): "service_rejected",
+            ("GET", "/api/v1/chat/notification-feed"): "service_rejected",
             ("POST", "/api/v1/chat/notifications/{notification_id}/read"): "service_rejected",
             # Unit 30b (MEADOWOPS-UI-004): save-draft, same reasoning as
             # every other per-user chat route — no legitimate reason for

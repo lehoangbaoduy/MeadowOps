@@ -141,6 +141,21 @@ class NotificationRead(BaseModel):
     read_at: datetime | None
 
 
+class NotificationFeedItemRead(BaseModel):
+    """Unit 39 (MEADOWOPS-DOM-027): one row of what a user has to be told
+    about. `id` is the Notification id for a deadline item and
+    "reply:<thread_id>" for a derived unread-reply item."""
+
+    id: str
+    kind: Literal["deadline_approaching", "deadline_missed", "new_reply"]
+    thread_id: uuid.UUID
+    persona: StakeholderPersona
+    scenario_title: str
+    unread_count: int
+    occurred_at: datetime
+    is_read: bool
+
+
 Attitude = Literal["neutral", "frustrated", "urgent", "skeptical", "appreciative"]
 
 

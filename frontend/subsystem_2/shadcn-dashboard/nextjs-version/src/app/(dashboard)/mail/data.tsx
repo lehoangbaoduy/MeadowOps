@@ -73,6 +73,9 @@ export type ChatThread = {
   // response, not a stored flag.
   deadline_at: string | null;
   is_overdue: boolean;
+  // Mirrors app.db.enums.ChatThreadStatus: "completed" once the Builder has
+  // closed the thread and generated its evaluation.
+  status: "open" | "completed";
   unread_count: number;
   // Unit 30b (MEADOWOPS-UI-004, PRD 6.1 "Drafting" bullet, catalog row
   // 31): this viewer's own not-yet-sent draft for this thread ("" if
@@ -82,10 +85,35 @@ export type ChatThread = {
 
 export type NotificationKind = "deadline_approaching" | "deadline_missed";
 
+// Unit 39: mirrors app.schemas.chat.NotificationFeedItemRead - the deadline
+// rows plus "new_reply" items derived from unread Analyst messages.
+export type NotificationFeedKind = NotificationKind | "new_reply";
+
+export type NotificationFeedItem = {
+  id: string;
+  kind: NotificationFeedKind;
+  thread_id: string;
+  persona: Persona;
+  scenario_title: string;
+  unread_count: number;
+  occurred_at: string;
+  is_read: boolean;
+};
+
 const NOTIFICATION_LABELS: Record<NotificationKind, string> = {
   deadline_approaching: "Response due soon",
   deadline_missed: "Response overdue",
 };
+
+export function feedItemTitle(item: NotificationFeedItem): string {
+  const who = personaLabel(item.persona);
+  if (item.kind === "new_reply") {
+    return item.unread_count > 1
+      ? `${item.unread_count} new replies from the Analyst (${who})`
+      : `New reply from the Analyst (${who})`;
+  }
+  return `${notificationLabel(item.kind)} — ${who}`;
+}
 
 export function notificationLabel(kind: string): string {
   return NOTIFICATION_LABELS[kind as NotificationKind] ?? kind;

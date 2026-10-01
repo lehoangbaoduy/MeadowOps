@@ -14,14 +14,22 @@ distinct lifecycle (list/mark-read) neither module previously owned.
 """
 
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
 
-from sqlalchemy import select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from app.db.auth import User
-from app.db.chat import ChatThread, Notification
-from app.db.enums import ChatThreadStatus, NotificationKind, UserRole
+from app.db.chat import ChatMessage, ChatThread, ChatThreadReadState, Notification
+from app.db.enums import (
+    ChatThreadStatus,
+    NotificationKind,
+    ScenarioStatus,
+    StakeholderPersona,
+    UserRole,
+)
+from app.db.scenario import Scenario
 
 
 class NotificationNotFoundError(ValueError):
@@ -59,11 +67,106 @@ def list_notifications_for_user(
         session.scalars(
             select(Notification)
             .join(ChatThread, ChatThread.id == Notification.thread_id)
-            .where(Notification.user_id == user_id, ChatThread.deleted_at.is_(None))
+            .join(Scenario, Scenario.id == ChatThread.scenario_id)
+            .where(
+                Notification.user_id == user_id,
+                ChatThread.deleted_at.is_(None),
+                # A removed (cancelled) scenario goes quiet: its threads are
+                # kept for the record but stop raising notifications.
+                Scenario.status != ScenarioStatus.CANCELLED,
+            )
             .order_by(Notification.read_at.is_not(None), Notification.created_at.desc())
             .limit(limit)
         )
     )
+
+
+@dataclass(frozen=True)
+class NotificationFeedItem:
+    id: str
+    kind: str  # "deadline_approaching" | "deadline_missed" | "new_reply"
+    thread_id: uuid.UUID
+    persona: StakeholderPersona
+    scenario_title: str
+    unread_count: int  # messages behind a "new_reply"; 0 for deadline items
+    occurred_at: datetime
+    is_read: bool
+
+
+def _unread_replies(session: Session, *, user_id: uuid.UUID) -> list[NotificationFeedItem]:
+    """One row per live thread holding messages sent by someone else after
+    this user last read it. Derived, not stored: reading the thread (the
+    existing mark-read call) is what clears it, so the badge can never
+    outlive the thing it points at."""
+    last_read = (
+        select(ChatThreadReadState.thread_id, ChatThreadReadState.last_read_at)
+        .where(ChatThreadReadState.user_id == user_id)
+        .subquery()
+    )
+    latest = func.max(ChatMessage.sent_at)
+    rows = session.execute(
+        select(ChatThread, Scenario.title, func.count(ChatMessage.id), latest)
+        .join(ChatMessage, ChatMessage.thread_id == ChatThread.id)
+        .join(Scenario, Scenario.id == ChatThread.scenario_id)
+        .outerjoin(last_read, last_read.c.thread_id == ChatThread.id)
+        .where(
+            ChatThread.deleted_at.is_(None),
+            Scenario.status != ScenarioStatus.CANCELLED,
+            ChatMessage.sender_user_id != user_id,
+            or_(last_read.c.last_read_at.is_(None), ChatMessage.sent_at > last_read.c.last_read_at),
+        )
+        .group_by(ChatThread.id, Scenario.title)
+    ).all()
+    return [
+        NotificationFeedItem(
+            id=f"reply:{thread.id}",
+            kind="new_reply",
+            thread_id=thread.id,
+            persona=thread.persona,
+            scenario_title=title,
+            unread_count=count,
+            occurred_at=last_sent,
+            is_read=False,
+        )
+        for thread, title, count, last_sent in rows
+    ]
+
+
+def list_notification_feed(
+    session: Session, *, user_id: uuid.UUID, limit: int = DEFAULT_NOTIFICATION_LIST_LIMIT
+) -> list[NotificationFeedItem]:
+    """Unit 39 (MEADOWOPS-DOM-027): everything this user has to be told about
+    - deadline notifications (unread first, as list_notifications_for_user
+    already orders them) plus unread replies from the other side. Unread
+    items sort before read ones, newest first; an empty feed is what makes
+    the header badge disappear."""
+    notifications = list_notifications_for_user(session, user_id=user_id, limit=limit)
+    thread_info = {
+        thread.id: (thread, title)
+        for thread, title in session.execute(
+            select(ChatThread, Scenario.title)
+            .join(Scenario, Scenario.id == ChatThread.scenario_id)
+            .where(ChatThread.id.in_({n.thread_id for n in notifications}))
+        ).all()
+    }
+    deadline_items = [
+        NotificationFeedItem(
+            id=str(n.id),
+            kind=n.kind.value,
+            thread_id=n.thread_id,
+            persona=thread_info[n.thread_id][0].persona,
+            scenario_title=thread_info[n.thread_id][1],
+            unread_count=0,
+            occurred_at=n.created_at,
+            is_read=n.read_at is not None,
+        )
+        for n in notifications
+        if n.thread_id in thread_info
+    ]
+    items = _unread_replies(session, user_id=user_id) + deadline_items
+    items.sort(key=lambda item: item.occurred_at, reverse=True)
+    items.sort(key=lambda item: item.is_read)  # stable: unread first, newest first within
+    return items[:limit]
 
 
 def mark_notification_read(
@@ -117,13 +220,16 @@ def sweep_thread_deadlines(
     thread's work is already done regardless of what its stale deadline_at
     still says (app.services.chat.send_message never touches deadline_at
     again once COMPLETED, since ThreadCompletedError blocks any further
-    send)."""
+    send). Threads of a cancelled scenario are skipped too (Unit 39)."""
     threads = list(
         session.scalars(
-            select(ChatThread).where(
+            select(ChatThread)
+            .join(Scenario, Scenario.id == ChatThread.scenario_id)
+            .where(
                 ChatThread.status == ChatThreadStatus.OPEN,
                 ChatThread.deleted_at.is_(None),
                 ChatThread.deadline_at.is_not(None),
+                Scenario.status != ScenarioStatus.CANCELLED,
             )
         )
     )
