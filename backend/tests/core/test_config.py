@@ -111,3 +111,32 @@ class TestClaudeClientEnabledValidation:
     def test_default_timeout_seconds(self) -> None:
         settings = _settings()
         assert settings.claude_client_timeout_seconds == 60.0
+
+
+class TestDirectConnectionDsns:
+    """Production reads through Neon's pgbouncer ("-pooler" host), where
+    session-level advisory locks outlive the client: a finished Playground
+    query's shared lock stayed on the pooled backend and blocked every later
+    sandbox refresh forever. The two paths that take that lock - the
+    sandbox-role query connection and the owner-role refresh connection -
+    must therefore use the direct endpoint."""
+
+    _POOLED = (
+        "postgresql+psycopg://neondb_owner:pw@ep-cool-123456-pooler.c-5.us-east-2.aws.neon.tech/neondb"
+    )
+
+    def test_sandbox_dsn_uses_the_direct_host_when_the_url_is_pooled(self) -> None:
+        dsn = _settings(database_url=self._POOLED, sandbox_role_password="pw").sandbox_dsn()
+        assert "ep-cool-123456.c-5.us-east-2.aws.neon.tech" in dsn
+        assert "-pooler" not in dsn
+
+    def test_owner_dsn_uses_the_direct_host_when_the_url_is_pooled(self) -> None:
+        dsn = _settings(database_url=self._POOLED, sandbox_role_password="pw").owner_dsn()
+        assert "ep-cool-123456.c-5.us-east-2.aws.neon.tech" in dsn
+        assert "-pooler" not in dsn
+
+    def test_a_plain_host_is_left_alone(self) -> None:
+        url = "postgresql+psycopg://meadowops:pw@localhost:5434/meadowops"
+        settings = _settings(database_url=url, sandbox_role_password="pw")
+        assert "host=localhost" in settings.sandbox_dsn()
+        assert "host=localhost" in settings.owner_dsn()

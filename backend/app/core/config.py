@@ -218,6 +218,20 @@ class Settings(BaseSettings):
             )
         return self
 
+    def _direct_host(self) -> str | None:
+        """Neon's pooled endpoint ("ep-xxx-pooler.region...") is a pgbouncer
+        in transaction mode. Session-level advisory locks - which the sandbox
+        query/refresh exclusion (SANDBOX_ADVISORY_LOCK_KEY) depends on - do
+        not survive that: a finished query's shared lock stays on the pooled
+        backend and blocks every refresh. The same endpoint without
+        "-pooler" is a direct connection, so the two lock-taking paths use
+        it; the rest of the app keeps the pooled URL."""
+        host = make_url(self.database_url).host
+        if not host:
+            return host
+        label, dot, rest = host.partition(".")
+        return (label.removesuffix("-pooler") + dot + rest) if label.endswith("-pooler") else host
+
     def owner_dsn(self) -> str:
         """A plain psycopg-style DSN (not the `postgresql+psycopg://`
         SQLAlchemy URL psycopg.connect() doesn't understand) for the same
@@ -228,7 +242,7 @@ class Settings(BaseSettings):
         instead of being treated as one value."""
         url = make_url(self.database_url)
         return make_conninfo(
-            host=url.host, port=url.port, dbname=url.database,
+            host=self._direct_host(), port=url.port, dbname=url.database,
             user=url.username, password=url.password,
         )
 
@@ -238,6 +252,6 @@ class Settings(BaseSettings):
         live/reporting/engine, only on `sandbox` (migration 0001)."""
         url = make_url(self.database_url)
         return make_conninfo(
-            host=url.host, port=url.port, dbname=url.database,
+            host=self._direct_host(), port=url.port, dbname=url.database,
             user="meadowops_sandbox", password=self.sandbox_role_password,
         )
