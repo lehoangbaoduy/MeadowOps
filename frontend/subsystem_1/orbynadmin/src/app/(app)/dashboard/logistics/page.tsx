@@ -1,116 +1,104 @@
 import Link from "next/link";
-import {
-  IconCalendarStats,
-  IconCircleCheck,
-  IconClockHour4,
-  IconPackageExport,
-  IconTruckDelivery,
-} from "@tabler/icons-react";
 
 import { PageHeader } from "@/components/page-header";
-import { KpiCard } from "@/components/kpi-card";
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { getExecutiveSummary, getExecutiveTrend } from "@/lib/dashboard-api";
-import { formatDays, formatPercent } from "@/lib/dashboard-format";
-import { EXCEPTION_CATEGORY_LABEL, type ExecutiveKpi, type ExecutiveSummary } from "@/types/dashboard";
+import {
+  DeliveriesCard,
+  KpiTrendCard,
+  NewExceptionsCard,
+  OrderActivityCard,
+  OrderStatusCard,
+  ShipmentOutcomeCard,
+} from "@/components/overview/activity-charts";
+import {
+  OpenExceptionsCard,
+  TopProductsCard,
+  WarehouseStockCard,
+} from "@/components/overview/network-charts";
+import { OverviewKpis } from "@/components/overview/overview-kpis";
+import { SupplierTable } from "@/components/overview/supplier-table";
+import { getOverview } from "@/lib/dashboard-api";
+import { formatDate } from "@/lib/dashboard-format";
+import { cn } from "@/lib/utils";
+import type { Overview } from "@/types/dashboard";
 
-// PRD Appendix A — the four global-scalar starter KPIs, in the same order
-// as Unit 10's backend/sql/kpi/ files (otif, fill_rate, order_cycle_time,
-// perfect_order_rate). Days of supply is deliberately not a card here: per
-// Unit 14's own reviewed design (app/db/kpi.py's KpiSnapshot/
-// DaysOfSupplySnapshot docstrings), it isn't a single global scalar the way
-// the other four are — it's per product/warehouse, and PRD S1-FR-3's
-// "calculate and display" is satisfied via the Inventory view's own table
-// and drill-down (inventory-table.tsx, reports/[id]/page.tsx) instead.
-const KPI_CARDS = [
-  { icon: IconTruckDelivery, label: "OTIF", unit: "", field: "otif_pct", color: "var(--chart-1)" },
-  { icon: IconPackageExport, label: "Fill Rate", unit: "", field: "fill_rate_pct", color: "var(--chart-2)" },
-  {
-    icon: IconClockHour4,
-    label: "Order Cycle Time",
-    unit: "",
-    field: "order_cycle_time_days",
-    color: "var(--chart-4)",
-  },
-  {
-    icon: IconCircleCheck,
-    label: "Perfect Order Rate",
-    unit: "",
-    field: "perfect_order_rate_pct",
-    color: "var(--chart-3)",
-  },
-] as const;
+const WINDOW_OPTIONS = [7, 30, 90] as const;
+const DEFAULT_WINDOW = 30;
 
-function trendFor(rows: ExecutiveKpi[], field: keyof ExecutiveKpi): number[] {
-  return rows
-    .map((row) => row[field])
-    .filter((v): v is string => v != null)
-    .map(Number);
+function parseWindow(value: string | undefined): number {
+  const days = Number(value);
+  return (WINDOW_OPTIONS as readonly number[]).includes(days) ? days : DEFAULT_WINDOW;
 }
 
-export default async function LogisticsPage() {
-  const [summaryResponse, trendResponse] = await Promise.all([getExecutiveSummary(), getExecutiveTrend()]);
-  const summary: ExecutiveSummary = summaryResponse.ok
-    ? await summaryResponse.json()
-    : { kpis: null, open_exception_counts: [] };
-  const trendRows: ExecutiveKpi[] = trendResponse.ok ? await trendResponse.json() : [];
-  const kpis = summary.kpis;
-
-  const values: Record<string, string | null> = {
-    OTIF: formatPercent(kpis?.otif_pct ?? null),
-    "Fill Rate": formatPercent(kpis?.fill_rate_pct ?? null),
-    "Order Cycle Time": formatDays(kpis?.order_cycle_time_days ?? null),
-    "Perfect Order Rate": formatPercent(kpis?.perfect_order_rate_pct ?? null),
-  };
+/**
+ * Unit 41: the Overview. Every number and chart is an aggregate of the
+ * trailing window of real simulation data, read in one call from
+ * GET /api/v1/dashboard/overview - nothing here is estimated or invented.
+ */
+export default async function OverviewPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ days?: string }>;
+}) {
+  const days = parseWindow((await searchParams).days);
+  const response = await getOverview(days);
+  if (!response.ok) {
+    return (
+      <div className="space-y-6">
+        <PageHeader title="Overview" />
+        <p role="alert" className="rounded-lg border border-destructive/40 p-6 text-sm text-destructive">
+          The overview could not be loaded. Try again in a moment.
+        </p>
+      </div>
+    );
+  }
+  const overview: Overview = await response.json();
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Overview"
-        description={
-          kpis
-            ? `OTIF, fill rate and days-of-supply across the network — as of simulation date ${kpis.simulation_date}.`
-            : "OTIF, fill rate and days-of-supply across the network."
-        }
-      />
-      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        {KPI_CARDS.map((kpi) => (
-          <KpiCard
-            key={kpi.label}
-            icon={kpi.icon}
-            label={kpi.label}
-            unit={kpi.unit}
-            value={values[kpi.label]}
-            trend={trendFor(trendRows, kpi.field)}
-            trendColor={kpi.color}
-          />
-        ))}
+        description={`Company status for ${formatDate(overview.window_start)} – ${formatDate(overview.as_of)} (simulation dates)`}
+      >
+        <nav aria-label="Time window" className="inline-flex rounded-lg border p-0.5">
+          {WINDOW_OPTIONS.map((option) => (
+            <Link
+              key={option}
+              href={`/dashboard/logistics?days=${option}`}
+              aria-current={option === days ? "page" : undefined}
+              className={cn(
+                "rounded-md px-3 py-1.5 text-xs font-medium transition-colors",
+                option === days
+                  ? "bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:text-foreground"
+              )}
+            >
+              {option}d
+            </Link>
+          ))}
+        </nav>
+      </PageHeader>
+
+      {overview.window_days < days && (
+        <p className="text-xs text-muted-foreground">
+          The simulation only has {overview.window_days} day{overview.window_days === 1 ? "" : "s"} of
+          history, so that is all this view covers.
+        </p>
+      )}
+
+      <OverviewKpis overview={overview} />
+
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-12">
+        <KpiTrendCard rows={overview.kpi_trend} />
+        <ShipmentOutcomeCard breakdown={overview.shipment_delivery} />
+        <OrderActivityCard days={overview.daily_activity} />
+        <DeliveriesCard days={overview.daily_activity} />
+        <OrderStatusCard statuses={overview.sales_order_status} />
+        <WarehouseStockCard warehouses={overview.inventory_by_warehouse} />
+        <TopProductsCard products={overview.top_products} />
+        <OpenExceptionsCard counts={overview.open_exceptions_by_category} />
+        <NewExceptionsCard days={overview.new_exceptions_per_day} />
+        <SupplierTable suppliers={overview.suppliers} />
       </div>
-      <Card>
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2 text-sm font-medium text-muted-foreground">
-            <IconCalendarStats className="size-4" />
-            Open exceptions by category
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          {summary.open_exception_counts.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No open exceptions.</p>
-          ) : (
-            <div className="flex flex-wrap gap-3">
-              {summary.open_exception_counts.map((row) => (
-                <Link key={row.category} href={`/reports?category=${row.category}`}>
-                  <Badge variant={row.open_count > 0 ? "destructive" : "secondary"} className="h-7 gap-1.5 px-3 text-sm">
-                    {EXCEPTION_CATEGORY_LABEL[row.category] ?? row.category}
-                    <span className="font-semibold">{row.open_count}</span>
-                  </Badge>
-                </Link>
-              ))}
-            </div>
-          )}
-        </CardContent>
-      </Card>
     </div>
   );
 }

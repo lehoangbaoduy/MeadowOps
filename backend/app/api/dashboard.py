@@ -27,7 +27,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from app.core.auth import require_authenticated
+from app.core.auth import reject_service_role, require_authenticated
 from app.db.dimensions import Product, Supplier, Warehouse
 from app.db.enums import PurchaseOrderStatus, ShipmentStatus
 from app.db.exception_flags import ExceptionFlag
@@ -43,6 +43,7 @@ from app.db.facts import (
 from app.db.kpi import DaysOfSupplySnapshot, KpiSnapshot
 from app.db.scheduling import PurchaseOrderLifecycleEvent, SalesOrderLifecycleEvent
 from app.db.session import get_session
+from app.services.dashboard_overview import build_overview
 from app.services.exception_engine import (
     AT_RISK_PO_CATEGORY,
     LATE_SHIPMENT_CATEGORY,
@@ -56,6 +57,7 @@ from app.schemas.dashboard import (
     ExecutiveSummaryRead,
     InventoryPositionRead,
     InventoryTransactionRead,
+    OverviewRead,
     PurchaseOrderDetailRead,
     PurchaseOrderLifecycleEventRead,
     PurchaseOrderLineRead,
@@ -194,6 +196,24 @@ def get_executive_trend(
     )
     rows.reverse()
     return rows
+
+
+# Unit 41: trailing-window bounds for the Overview page. 7 days is the
+# shortest window with a readable trend; 90 matches get_executive_trend.
+OVERVIEW_MIN_DAYS = 7
+OVERVIEW_MAX_DAYS = 90
+OVERVIEW_DEFAULT_DAYS = 30
+
+
+@router.get("/overview", response_model=OverviewRead)
+def get_overview(
+    days: int = Query(default=OVERVIEW_DEFAULT_DAYS, ge=OVERVIEW_MIN_DAYS, le=OVERVIEW_MAX_DAYS),
+    session: Session = Depends(get_session),
+    # reject_service_role, not require_authenticated: Subsystem 2 has no use
+    # for this page's aggregates, so the internal credential stays out.
+    _identity: dict[str, str] = Depends(reject_service_role),
+) -> OverviewRead:
+    return build_overview(session, days=days)
 
 
 @router.get("/inventory", response_model=list[InventoryPositionRead])

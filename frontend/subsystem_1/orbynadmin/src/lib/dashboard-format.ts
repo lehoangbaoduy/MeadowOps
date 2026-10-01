@@ -28,3 +28,28 @@ export function formatDateTime(value: string): string {
     minute: "2-digit",
   });
 }
+
+/** "2026-09-14" -> "Sep 14" for chart axes (UTC, so the day never shifts). */
+export function formatShortDate(value: string): string {
+  return new Date(`${value}T00:00:00Z`).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+/** 12345.6 -> "$12.3k" for compact money labels. */
+export function formatCompactCurrency(value: number): string {
+  return new Intl.NumberFormat("en-US", {
+    style: "currency",
+    currency: "USD",
+    notation: "compact",
+    maximumFractionDigits: 1,
+  }).format(value);
+}
+
+export function formatCompactNumber(value: number): string {
+  return new Intl.NumberFormat("en-US", { notation: "compact", maximumFractionDigits: 1 }).format(
+    value
+  );
+}

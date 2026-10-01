@@ -94,3 +94,8 @@ export function listExceptions(params: { category?: string; includeResolved?: bo
 export function getExceptionDrilldown(exceptionFlagId: string): Promise<Response> {
   return dashboardFetch(`/api/v1/dashboard/exceptions/${encodeURIComponent(exceptionFlagId)}`);
 }
+
+// Unit 41: every aggregate the Overview page charts, in one read.
+export function getOverview(days?: number): Promise<Response> {
+  return dashboardFetch(`/api/v1/dashboard/overview${toQuery({ days: days?.toString() })}`);
+}

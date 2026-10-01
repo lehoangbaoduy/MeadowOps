@@ -183,3 +183,88 @@ class ExceptionDrilldownRead(BaseModel):
     purchase_order: PurchaseOrderSummaryRead | None = None
     shipment: ShipmentRead | None = None
     inventory: InventoryPositionRead | None = None
+
+
+class OverviewKpiPoint(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    simulation_date: date
+    otif_pct: Decimal | None
+    fill_rate_pct: Decimal | None
+    order_cycle_time_days: Decimal | None
+    perfect_order_rate_pct: Decimal | None
+
+
+class OverviewDailyActivity(BaseModel):
+    simulation_date: date
+    orders_placed: int
+    order_value: Decimal
+    shipments_shipped: int
+    delivered_on_time: int
+    delivered_late: int
+    purchase_orders_placed: int
+
+
+class OverviewCount(BaseModel):
+    label: str
+    count: int
+
+
+class OverviewShipmentBreakdown(BaseModel):
+    delivered_on_time: int
+    delivered_late: int
+    in_progress: int
+    exception: int
+
+
+class OverviewWarehouse(BaseModel):
+    warehouse_id: str
+    warehouse_name: str
+    units_on_hand: int
+    units_allocated: int
+    avg_days_of_supply: Decimal | None
+    low_stock_positions: int
+
+
+class OverviewSupplier(BaseModel):
+    supplier_id: str
+    supplier_name: str
+    purchase_orders_placed: int
+    purchase_orders_received: int
+    received_on_time: int
+    on_time_receipt_pct: Decimal | None
+    open_purchase_orders: int
+    at_risk_purchase_orders: int
+
+
+class OverviewProductDemand(BaseModel):
+    product_id: str
+    product_name: str
+    units_ordered: int
+    units_shipped: int
+
+
+class OverviewExceptionDay(BaseModel):
+    simulation_date: date
+    count: int
+
+
+class OverviewRead(BaseModel):
+    """Unit 41 (MEADOWOPS-DOM-029): everything the Overview page charts, for
+    the trailing `window_days` ending on the current simulation date. Every
+    figure is an aggregate of real rows already in the database - nothing is
+    estimated or filled in. Days with no activity are present with zeros so
+    the charts have a continuous axis."""
+
+    as_of: date
+    window_start: date
+    window_days: int
+    kpi_trend: list[OverviewKpiPoint]
+    daily_activity: list[OverviewDailyActivity]
+    sales_order_status: list[OverviewCount]
+    shipment_delivery: OverviewShipmentBreakdown
+    inventory_by_warehouse: list[OverviewWarehouse]
+    suppliers: list[OverviewSupplier]
+    top_products: list[OverviewProductDemand]
+    open_exceptions_by_category: list[ExceptionCountByCategory]
+    new_exceptions_per_day: list[OverviewExceptionDay]

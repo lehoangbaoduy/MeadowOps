@@ -172,4 +172,70 @@ export const EXCEPTION_CATEGORY_LABEL: Record<string, string> = {
   low_stock_days_of_supply: "Low stock",
   at_risk_po_grace_days: "At-risk PO",
   late_shipment_grace_days: "Late shipment",
+  reporting_conflict_qty_variance: "Reporting conflict",
+  reporting_lag_stale: "Stale reporting data",
+  duplicate_purchase_order: "Duplicate PO",
+};
+
+// Unit 41: GET /api/v1/dashboard/overview (app/schemas/dashboard.py's
+// OverviewRead). Decimals arrive as strings, counts as numbers.
+export type OverviewKpiPoint = Omit<ExecutiveKpi, "computed_at">;
+
+export type OverviewDailyActivity = {
+  simulation_date: string;
+  orders_placed: number;
+  order_value: string;
+  shipments_shipped: number;
+  delivered_on_time: number;
+  delivered_late: number;
+  purchase_orders_placed: number;
+};
+
+export type OverviewShipmentBreakdown = {
+  delivered_on_time: number;
+  delivered_late: number;
+  in_progress: number;
+  exception: number;
+};
+
+export type OverviewWarehouse = {
+  warehouse_id: string;
+  warehouse_name: string;
+  units_on_hand: number;
+  units_allocated: number;
+  avg_days_of_supply: string | null;
+  low_stock_positions: number;
+};
+
+export type OverviewSupplier = {
+  supplier_id: string;
+  supplier_name: string;
+  purchase_orders_placed: number;
+  purchase_orders_received: number;
+  received_on_time: number;
+  on_time_receipt_pct: string | null;
+  open_purchase_orders: number;
+  at_risk_purchase_orders: number;
+};
+
+export type OverviewProductDemand = {
+  product_id: string;
+  product_name: string;
+  units_ordered: number;
+  units_shipped: number;
+};
+
+export type Overview = {
+  as_of: string;
+  window_start: string;
+  window_days: number;
+  kpi_trend: OverviewKpiPoint[];
+  daily_activity: OverviewDailyActivity[];
+  sales_order_status: { label: string; count: number }[];
+  shipment_delivery: OverviewShipmentBreakdown;
+  inventory_by_warehouse: OverviewWarehouse[];
+  suppliers: OverviewSupplier[];
+  top_products: OverviewProductDemand[];
+  open_exceptions_by_category: ExceptionCountByCategory[];
+  new_exceptions_per_day: { simulation_date: string; count: number }[];
 };
