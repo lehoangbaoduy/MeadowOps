@@ -7,7 +7,6 @@ import {
   Search,
   LayoutPanelLeft,
   LayoutDashboard,
-  Mail,
   CheckSquare,
   MessageCircle,
   Calendar,
@@ -132,9 +131,8 @@ export function CommandSearch({ open, onOpenChange }: CommandSearchProps) {
     { title: "Dashboard 2", url: "/dashboard-2", group: "Dashboards", icon: LayoutPanelLeft },
 
     // Apps
-    { title: "Mail", url: "/mail", group: "Apps", icon: Mail },
+    { title: "Chat", url: "/mail", group: "Apps", icon: MessageCircle },
     { title: "Tasks", url: "/tasks", group: "Apps", icon: CheckSquare },
-    { title: "Chat", url: "/chat", group: "Apps", icon: MessageCircle },
     { title: "Calendar", url: "/calendar", group: "Apps", icon: Calendar },
 
     // Auth Pages

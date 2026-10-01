@@ -3,7 +3,7 @@
 import * as React from "react"
 import {
   LayoutDashboard,
-  Mail,
+  MessageSquare,
   CheckSquare,
   Calendar,
   AlertTriangle,
@@ -56,9 +56,9 @@ const data = {
           icon: ClipboardList,
         },
         {
-          title: "Mail",
+          title: "Chat",
           url: "/mail",
-          icon: Mail,
+          icon: MessageSquare,
         },
         {
           title: "Tasks",
