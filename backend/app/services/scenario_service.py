@@ -274,6 +274,11 @@ def regenerate_scenario(
         "unacceptable_conclusions": narrative.unacceptable_conclusions,
         "uncertainty": narrative.uncertainty,
         "referenced_entity_ids": narrative.referenced_entity_ids,
+        # Unit 38: Builder-only (build_known_information's allow-list keeps
+        # both away from every persona prompt, and no Analyst route reads
+        # ground_truth).
+        "narrative": narrative.narrative,
+        "expected_query": narrative.expected_query,
     }
     session.flush()
     return scenario

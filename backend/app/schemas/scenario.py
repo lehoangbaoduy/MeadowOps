@@ -7,7 +7,9 @@ import uuid
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from app.domain.scenario_generation import normalize_expected_query, normalize_narrative
 
 ScenarioType = Literal[
     "stakeholder_request",
@@ -54,6 +56,20 @@ class GroundTruthUpdate(BaseModel):
     acceptable_conclusions: list[str] | None = None
     unacceptable_conclusions: list[str] | None = None
     uncertainty: str | None = None
+    # Unit 38 (MEADOWOPS-DOM-026): Builder-only narrative + suggested query.
+    # "" clears; the validators normalise and reject anything but one read.
+    narrative: str | None = None
+    expected_query: str | None = None
+
+    @field_validator("narrative")
+    @classmethod
+    def _check_narrative(cls, value: str | None) -> str | None:
+        return None if value is None else normalize_narrative(value)
+
+    @field_validator("expected_query")
+    @classmethod
+    def _check_expected_query(cls, value: str | None) -> str | None:
+        return None if value is None else normalize_expected_query(value)
 
 
 class ScenarioRead(BaseModel):

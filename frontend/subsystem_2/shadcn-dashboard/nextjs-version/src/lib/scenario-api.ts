@@ -67,6 +67,12 @@ export function regenerateScenario(id: string): Promise<Response> {
   });
 }
 
+export function runExpectedQuery(id: string): Promise<Response> {
+  return scenarioFetch(`/api/v1/admin/scenarios/${encodeURIComponent(id)}/expected-query/run`, {
+    method: "POST",
+  });
+}
+
 export function approveScenario(id: string): Promise<Response> {
   return scenarioFetch(`/api/v1/admin/scenarios/${encodeURIComponent(id)}/approve`, {
     method: "POST",

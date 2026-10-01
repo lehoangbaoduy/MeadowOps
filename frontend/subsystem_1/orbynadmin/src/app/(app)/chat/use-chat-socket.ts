@@ -13,7 +13,15 @@ import { useEffect, useRef } from "react";
  * Tickets are single-use with a 20s TTL (app/core/ws_tickets.py), so one is
  * never reused across a reconnect.
  */
-export type ChatSocketFrame = {
+export type ChatSocketFrame = ChatMessageFrame | ChatThreadDeletedFrame;
+
+// Unit 37 (MEADOWOPS-DOM-025): broadcast when the Builder deletes a thread.
+export type ChatThreadDeletedFrame = {
+  type: "chat.thread_deleted";
+  thread_id: string;
+};
+
+export type ChatMessageFrame = {
   type: "chat.message";
   thread_id: string;
   message_id: string;

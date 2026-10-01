@@ -94,7 +94,9 @@ def get_or_create_thread(
     normal thing to do twice."""
     existing = session.scalar(
         select(ChatThread).where(
-            ChatThread.scenario_id == scenario_id, ChatThread.persona == persona
+            ChatThread.scenario_id == scenario_id,
+            ChatThread.persona == persona,
+            ChatThread.deleted_at.is_(None),
         )
     )
     if existing is not None:
@@ -112,15 +114,41 @@ def list_threads(session: Session) -> list[ChatThread]:
     persona) is more sensitive than any other Subsystem-1-readable data
     (pre-implementation security review of this unit)."""
     return list(
-        session.scalars(select(ChatThread).order_by(ChatThread.created_at))
+        session.scalars(
+            select(ChatThread)
+            .where(ChatThread.deleted_at.is_(None))
+            .order_by(ChatThread.created_at)
+        )
     )
 
 
-def get_thread(session: Session, thread_id: uuid.UUID) -> ChatThread:
-    thread = session.get(ChatThread, thread_id)
-    if thread is None:
+def get_thread(
+    session: Session, thread_id: uuid.UUID, *, for_update: bool = False
+) -> ChatThread:
+    """A soft-deleted thread (Unit 37) is indistinguishable from a missing
+    one here, so every route built on this 404s for it without each needing
+    its own deleted check. for_update takes a row lock so a delete and a
+    concurrent send serialise instead of a message landing in a thread that
+    was just hidden (Unit 37 code review)."""
+    thread = session.get(ChatThread, thread_id, with_for_update=for_update)
+    if thread is None or thread.deleted_at is not None:
         raise ThreadNotFoundError(f"chat thread {thread_id} not found")
     return thread
+
+
+def delete_thread(session: Session, thread_id: uuid.UUID) -> None:
+    """Unit 37 (MEADOWOPS-DOM-025): soft delete. Never removes rows - messages
+    are DB-immutable (PRD 6.13/ER-6) and evaluations/portfolio reference the
+    thread - it only hides the thread everywhere a user looks. Raises
+    ThreadNotFoundError for an unknown or already-deleted thread, and
+    ThreadCompletedError for a completed one: its evaluation, human review
+    and portfolio export are all reached through get_thread, so hiding it
+    would orphan the record of how the Analyst was graded."""
+    thread = get_thread(session, thread_id, for_update=True)
+    if thread.status == ChatThreadStatus.COMPLETED:
+        raise ThreadCompletedError(f"chat thread {thread_id} is completed and cannot be deleted")
+    thread.deleted_at = func.now()
+    session.flush()
 
 
 def list_messages(session: Session, thread_id: uuid.UUID) -> list[ChatMessage]:
@@ -156,7 +184,7 @@ def send_message(
     after the message itself is successfully created, in the same
     transaction - see migration 0026's docstring for why this can't be set
     at ChatMessage INSERT time via a column on ChatMessage itself."""
-    thread = get_thread(session, thread_id)
+    thread = get_thread(session, thread_id, for_update=True)
     attachment: ChatAttachment | None = None
     if attachment_id is not None:
         # with_for_update (security review, this unit): without a row lock
@@ -342,6 +370,7 @@ def list_threads_with_unread(session: Session, *, user_id: uuid.UUID) -> list[Th
         .outerjoin(read_state, read_state.c.thread_id == ChatThread.id)
         .outerjoin(ChatMessage, ChatMessage.thread_id == ChatThread.id)
         .outerjoin(draft_state, draft_state.c.thread_id == ChatThread.id)
+        .where(ChatThread.deleted_at.is_(None))
         .group_by(ChatThread.id, read_state.c.last_read_at, draft_state.c.body)
         .order_by(ChatThread.created_at)
     )

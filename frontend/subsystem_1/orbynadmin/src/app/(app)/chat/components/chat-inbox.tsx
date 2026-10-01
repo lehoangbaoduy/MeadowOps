@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { ThreadList } from "./thread-list";
 import { ThreadView } from "./thread-view";
+import { clearDraftBuffer } from "../composer-draft";
 import { useChatSocket, type ChatSocketFrame } from "../use-chat-socket";
 import type { ChatMessage, ChatThread } from "../types";
 
@@ -19,7 +20,13 @@ async function fetchMessages(threadId: string): Promise<ChatMessage[]> {
   return response.json();
 }
 
-export function ChatInbox({ initialThreads }: { initialThreads: ChatThread[] }) {
+export function ChatInbox({
+  initialThreads,
+  canDeleteThreads,
+}: {
+  initialThreads: ChatThread[];
+  canDeleteThreads: boolean;
+}) {
   const [threads, setThreads] = useState(initialThreads);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -36,11 +43,18 @@ export function ChatInbox({ initialThreads }: { initialThreads: ChatThread[] }) 
     selectedIdRef.current = selectedId;
   }, [selectedId]);
 
+  // Unit 37 code review: a GET /threads that started before a delete can
+  // resolve after it and would re-add the deleted thread until the next
+  // frame, so ids removed in this session are filtered out of every fetch.
+  const deletedIdsRef = useRef<Set<string>>(new Set());
+
   const applyThreads = useCallback((fetched: ChatThread[]) => {
     setThreads(
-      fetched.map((thread) =>
-        thread.id === selectedIdRef.current ? { ...thread, unread_count: 0 } : thread
-      )
+      fetched
+        .filter((thread) => !deletedIdsRef.current.has(thread.id))
+        .map((thread) =>
+          thread.id === selectedIdRef.current ? { ...thread, unread_count: 0 } : thread
+        )
     );
   }, []);
 
@@ -95,8 +109,36 @@ export function ChatInbox({ initialThreads }: { initialThreads: ChatThread[] }) 
     [selectedId]
   );
 
+  const removeThread = useCallback((threadId: string) => {
+    deletedIdsRef.current.add(threadId);
+    clearDraftBuffer(threadId);
+    setThreads((prev) => prev.filter((thread) => thread.id !== threadId));
+    if (selectedIdRef.current === threadId) {
+      setSelectedId(null);
+      setMessages([]);
+    }
+  }, []);
+
+  // Unit 37 (MEADOWOPS-DOM-025): admin-only soft delete (the backend's
+  // require_admin is the real boundary - canDeleteThreads only hides the
+  // button). The chat.thread_deleted broadcast also removes the thread from
+  // every other open inbox, Analyst or admin.
+  const handleDeleteThread = useCallback(
+    async (threadId: string): Promise<boolean> => {
+      const response = await fetch(`/api/chat/threads/${threadId}`, { method: "DELETE" });
+      if (!response.ok && response.status !== 404) return false;
+      removeThread(threadId);
+      return true;
+    },
+    [removeThread]
+  );
+
   const handleFrame = useCallback(
     (frame: ChatSocketFrame) => {
+      if (frame.type === "chat.thread_deleted") {
+        removeThread(frame.thread_id);
+        return;
+      }
       if (frame.thread_id === selectedId) {
         setMessages((prev) =>
           prev.some((m) => m.id === frame.message_id)
@@ -127,7 +169,7 @@ export function ChatInbox({ initialThreads }: { initialThreads: ChatThread[] }) 
       // rather than guessing whether this frame was sent by us.
       void fetchThreads().then(applyThreads);
     },
-    [selectedId, applyThreads, markReadDebounced]
+    [selectedId, applyThreads, markReadDebounced, removeThread]
   );
 
   useChatSocket(handleFrame);
@@ -144,7 +186,12 @@ export function ChatInbox({ initialThreads }: { initialThreads: ChatThread[] }) 
       <div className="border-r">
         <ThreadList threads={threads} selectedId={selectedId} onSelect={selectThread} />
       </div>
-      <ThreadView thread={selectedThread} messages={messages} onSend={handleSend} />
+      <ThreadView
+        thread={selectedThread}
+        messages={messages}
+        onSend={handleSend}
+        onDelete={canDeleteThreads ? handleDeleteThread : undefined}
+      />
     </div>
   );
 }

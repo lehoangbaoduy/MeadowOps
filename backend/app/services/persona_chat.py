@@ -61,6 +61,7 @@ from app.domain.persona_chat import (
     run_sufficiency_check,
     suggest_opening_message,
     suggest_pushback_message,
+    without_builder_only_keys,
 )
 from app.services.chat import get_thread, list_messages
 from app.services.scenario_service import ScenarioNotFoundError
@@ -211,6 +212,6 @@ def check_thread_sufficiency(
         )
     return run_sufficiency_check(
         claude_client,
-        ground_truth=scenario.ground_truth,
+        ground_truth=without_builder_only_keys(scenario.ground_truth),
         analyst_message=latest_analyst_message.body,
     )

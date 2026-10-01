@@ -233,6 +233,7 @@ class TestServiceCredentialRouteAllowlist:
             ("POST", "/api/v1/query/cancel-confirmation"): "service_rejected",
             ("POST", "/api/v1/query/refresh-sandbox"): "service_rejected",
             ("GET", "/api/v1/query/history"): "service_rejected",
+            ("GET", "/api/v1/query/schema"): "service_rejected",
         }
 
     def test_every_chat_route_is_explicitly_classified(self) -> None:
@@ -288,6 +289,7 @@ class TestServiceCredentialRouteAllowlist:
             # suggest-pushback above - Builder-only, ground truth must
             # never reach the Analyst role.
             ("POST", "/api/v1/chat/threads/{thread_id}/suggest-opening"): "admin_only",
+    ("DELETE", "/api/v1/chat/threads/{thread_id}"): "admin_only",
             ("POST", "/api/v1/chat/threads/{thread_id}/sufficiency-check"): "admin_only",
             # Unit 25 (MEADOWOPS-DOM-019): same reasoning as suggest-
             # pushback/sufficiency-check above - triggers a Claude call

@@ -510,6 +510,40 @@ class TestCheckThreadSufficiency:
         sent_prompt = client.call_log[0]["messages"][0]["content"]
         assert "SECRET-SIGNAL" in sent_prompt
 
+    def test_withholds_the_builder_only_narrative_and_query_from_the_prompt(
+        self,
+        session: Session,
+        thread: ChatThread,
+        scenario: Scenario,
+        admin_id: uuid.UUID,
+        analyst_id: uuid.UUID,
+    ) -> None:
+        # Unit 38: the suggested pushback is something the Builder may send
+        # to the Analyst, so the answer key's narrative/query must not be in
+        # the model's context where it could be quoted back.
+        scenario.ground_truth = {
+            **scenario.ground_truth,
+            "narrative": "NARRATIVE-LEAK-MARKER",
+            "expected_query": "SELECT 'QUERY-LEAK-MARKER'",
+        }
+        session.flush()
+        send_message(
+            session, thread_id=thread.id, sender_user_id=admin_id,
+            sender_role=UserRole.ADMIN, body="What's the status?",
+        )
+        send_message(
+            session, thread_id=thread.id, sender_user_id=analyst_id,
+            sender_role=UserRole.ANALYST, body="Looks fine.",
+        )
+        payload = {"verdict": "sufficient", "suggested_pushback": None}
+        client = MockClaudeClient(script=[ClaudeResponse(content=json.dumps(payload))])
+
+        check_thread_sufficiency(session, thread_id=thread.id, claude_client=client)
+
+        sent_prompt = client.call_log[0]["messages"][0]["content"]
+        assert "NARRATIVE-LEAK-MARKER" not in sent_prompt
+        assert "QUERY-LEAK-MARKER" not in sent_prompt
+
     def test_does_not_write_any_message_or_change_message_count(
         self, session: Session, thread: ChatThread, admin_id: uuid.UUID, analyst_id: uuid.UUID
     ) -> None:

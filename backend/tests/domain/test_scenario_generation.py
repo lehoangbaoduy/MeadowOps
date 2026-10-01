@@ -73,6 +73,17 @@ class TestBuildGenerationPrompt:
         for field_name in (*_LIST_FIELDS, "uncertainty", "referenced_entity_ids"):
             assert field_name in prompt
 
+    def test_asks_for_a_narrative_and_a_single_select_expected_query(self) -> None:
+        prompt = build_generation_prompt(
+            scenario_type="data_quality_issue",
+            difficulty_tier="standard",
+            competency_cluster="analysis_diagnosis",
+            evidence_package=_EVIDENCE_PACKAGE,
+        )
+        assert '"narrative"' in prompt
+        assert '"expected_query"' in prompt
+        assert "sandbox." in prompt  # the Analyst's tables live in the sandbox schema
+
 
 class TestParseNarrativeResponse:
     def test_parses_a_well_formed_payload(self) -> None:
@@ -92,6 +103,72 @@ class TestParseNarrativeResponse:
         narrative = parse_narrative_response(json.dumps(payload))
 
         assert narrative.referenced_entity_ids == {}
+
+    def test_parses_the_narrative_and_expected_query(self) -> None:
+        payload = {
+            **_VALID_PAYLOAD,
+            "narrative": "  Stock of SKU-COR-001 at WH-EAST fell below its cover threshold.  ",
+            "expected_query": "SELECT * FROM sandbox.inventory_snapshot WHERE product_id = 'SKU-COR-001';",
+        }
+
+        narrative = parse_narrative_response(json.dumps(payload))
+
+        assert narrative.narrative == "Stock of SKU-COR-001 at WH-EAST fell below its cover threshold."
+        assert narrative.expected_query == (
+            "SELECT * FROM sandbox.inventory_snapshot WHERE product_id = 'SKU-COR-001'"
+        )
+
+    def test_narrative_and_expected_query_default_to_empty_when_omitted(self) -> None:
+        narrative = parse_narrative_response(json.dumps(_VALID_PAYLOAD))
+
+        assert narrative.narrative == ""
+        assert narrative.expected_query == ""
+
+    @pytest.mark.parametrize("field_name", ["narrative", "expected_query"])
+    def test_raises_when_narrative_or_expected_query_is_not_a_string(self, field_name: str) -> None:
+        payload = {**_VALID_PAYLOAD, field_name: ["not", "a", "string"]}
+        with pytest.raises(ScenarioNarrativeSchemaError):
+            parse_narrative_response(json.dumps(payload))
+
+    @pytest.mark.parametrize(
+        "bad_query",
+        [
+            "DELETE FROM sandbox.product",
+            "UPDATE sandbox.product SET name = 'x'",
+            "DROP TABLE sandbox.product",
+            "SELECT 1; DELETE FROM sandbox.product",
+            "SELECT 1; SELECT 2",
+            "WITH gone AS (DELETE FROM sandbox.product RETURNING *) SELECT * FROM gone",
+            "SELECT * INTO sandbox.copy FROM sandbox.product",
+        ],
+    )
+    def test_raises_when_expected_query_is_not_a_single_read_statement(self, bad_query: str) -> None:
+        payload = {**_VALID_PAYLOAD, "expected_query": bad_query}
+        with pytest.raises(ScenarioNarrativeSchemaError):
+            parse_narrative_response(json.dumps(payload))
+
+    @pytest.mark.parametrize(
+        "query,expected",
+        [
+            ("SELECT 1; -- why this works", "SELECT 1"),
+            ("SELECT 1;\n/* trailing note */", "SELECT 1"),
+            ("-- nothing to run", ""),
+            ("/* nothing to run */", ""),
+        ],
+    )
+    def test_comment_only_fragments_do_not_count_as_extra_statements(
+        self, query: str, expected: str
+    ) -> None:
+        # Unit 38 review: a model that appends a comment after the semicolon
+        # must not make the whole generation fail.
+        payload = {**_VALID_PAYLOAD, "expected_query": query}
+        assert parse_narrative_response(json.dumps(payload)).expected_query == expected
+
+    def test_raises_when_the_narrative_or_query_exceeds_the_length_cap(self) -> None:
+        for field_name in ("narrative", "expected_query"):
+            payload = {**_VALID_PAYLOAD, field_name: "SELECT 1 -- " + "x" * 10_000}
+            with pytest.raises(ScenarioNarrativeSchemaError):
+                parse_narrative_response(json.dumps(payload))
 
     def test_raises_on_invalid_json(self) -> None:
         with pytest.raises(ScenarioNarrativeSchemaError):

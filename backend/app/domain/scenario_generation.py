@@ -31,8 +31,11 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass
 
+import sqlparse
+
 from app.domain.claude_client import ClaudeAPIError, ClaudeClient
 from app.domain.prompt_templates import GENERATION_TEMPLATE
+from app.domain.query_classifier import StatementType, split_statements, classify_statement
 
 # Placeholder pending the real Anthropic SDK adapter (Phase 4, blocker B3) -
 # MockClaudeClient logs but never validates this value, and no live call is
@@ -45,6 +48,11 @@ _MAX_ATTEMPTS = 2
 # validate_referenced_entity_ids DB round-trips downstream, and Claude has
 # no other structural reason to need more than a handful of items per field.
 _MAX_LIST_ITEMS = 50
+
+# Unit 38 (MEADOWOPS-DOM-026): generous for a few paragraphs / a real analytic
+# query, small enough that neither can be used to stuff the JSON column.
+MAX_NARRATIVE_CHARS = 4000
+MAX_EXPECTED_QUERY_CHARS = 4000
 
 _LIST_FIELDS: tuple[str, ...] = (
     "supporting_signals",
@@ -67,7 +75,13 @@ _JSON_FORMAT_INSTRUCTIONS = (
     "keys \"product_ids\", \"warehouse_ids\", \"supplier_ids\", "
     "\"purchase_order_ids\", \"shipment_ids\", each a list of the identifier "
     "strings this scenario actually references - omit a key or leave its "
-    "list empty if none)."
+    "list empty if none). Also include \"narrative\" (a string: a short "
+    "plain-language account of what happened in this scenario, for the "
+    "Builder, never shown to the Analyst) and \"expected_query\" (a string: "
+    "exactly ONE read-only PostgreSQL SELECT statement that would let an "
+    "Analyst find the answer, written against the sandbox schema, i.e. "
+    "tables referenced as sandbox.<table_name>, never live.* - no INSERT, "
+    "UPDATE, DELETE, DDL or second statement)."
 )
 
 
@@ -95,6 +109,47 @@ class ScenarioGenerationFailedError(Exception):
         super().__init__(f"scenario narrative generation failed after one retry: {last_error}")
 
 
+def normalize_expected_query(value: str) -> str:
+    """Unit 38: the Builder-only suggested query must be exactly one plain
+    read statement - it is later executed against the sandbox by the
+    Builder's "run" control, and a model (or a hand edit) must never be able
+    to smuggle a write in behind it. Returns the trimmed statement without
+    its trailing semicolon, or "" when blank (blank means "no query").
+    Raises ScenarioNarrativeSchemaError (a ValueError, so pydantic turns it
+    into a 422 field error) otherwise."""
+    if len(value) > MAX_EXPECTED_QUERY_CHARS:
+        raise ScenarioNarrativeSchemaError(
+            f'"expected_query" must not exceed {MAX_EXPECTED_QUERY_CHARS} characters'
+        )
+    # Comment-only fragments (a model adding "-- note" after the semicolon)
+    # are not statements.
+    statements = [
+        stmt
+        for stmt in split_statements(value)
+        if sqlparse.format(stmt, strip_comments=True).strip().strip(";").strip()
+    ]
+    if not statements:
+        return ""
+    if len(statements) > 1:
+        raise ScenarioNarrativeSchemaError('"expected_query" must be a single statement')
+    if classify_statement(statements[0]) is not StatementType.READ:
+        raise ScenarioNarrativeSchemaError('"expected_query" must be a read-only SELECT')
+    statement = statements[0].rstrip()
+    without_comments = sqlparse.format(statement, strip_comments=True).strip()
+    if without_comments.endswith(";"):
+        # "SELECT 1; -- note": drop the semicolon and the comment after it.
+        return without_comments[:-1].rstrip()
+    return statement.rstrip(";").rstrip()
+
+
+def normalize_narrative(value: str) -> str:
+    if len(value) > MAX_NARRATIVE_CHARS:
+        raise ScenarioNarrativeSchemaError(
+            f'"narrative" must not exceed {MAX_NARRATIVE_CHARS} characters'
+        )
+    return value.strip()
+
+
 @dataclass(frozen=True)
 class ScenarioNarrative:
     supporting_signals: list[str]
@@ -104,6 +159,10 @@ class ScenarioNarrative:
     unacceptable_conclusions: list[str]
     uncertainty: str
     referenced_entity_ids: dict[str, list[str]]
+    # Unit 38: optional on the wire (an older/leaner response still parses)
+    # but always present here, "" meaning "none".
+    narrative: str = ""
+    expected_query: str = ""
 
 
 def build_generation_prompt(
@@ -128,6 +187,13 @@ def _require_string_list(payload: dict, field_name: str) -> list[str]:
         raise ScenarioNarrativeSchemaError(
             f'"{field_name}" must not exceed {_MAX_LIST_ITEMS} items (got {len(value)})'
         )
+    return value
+
+
+def _optional_string(payload: dict, field_name: str) -> str:
+    value = payload.get(field_name, "")
+    if not isinstance(value, str):
+        raise ScenarioNarrativeSchemaError(f'"{field_name}" must be a string')
     return value
 
 
@@ -169,7 +235,12 @@ def parse_narrative_response(content: str) -> ScenarioNarrative:
             )
         referenced_entity_ids[key] = value
 
+    narrative = _optional_string(payload, "narrative")
+    expected_query = _optional_string(payload, "expected_query")
+
     return ScenarioNarrative(
+        narrative=normalize_narrative(narrative),
+        expected_query=normalize_expected_query(expected_query),
         supporting_signals=list_fields["supporting_signals"],
         distractors=list_fields["distractors"],
         expected_considerations=list_fields["expected_considerations"],

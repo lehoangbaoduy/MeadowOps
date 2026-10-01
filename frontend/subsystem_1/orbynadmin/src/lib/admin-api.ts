@@ -81,6 +81,10 @@ export function refreshSandbox(): Promise<Response> {
   return adminFetch("/api/v1/query/refresh-sandbox", { method: "POST" });
 }
 
+export function getSandboxSchema(): Promise<Response> {
+  return adminFetch("/api/v1/query/schema");
+}
+
 export function getQueryHistory(): Promise<Response> {
   return adminFetch("/api/v1/query/history");
 }

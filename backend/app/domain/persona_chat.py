@@ -181,6 +181,17 @@ PERSONA_PROFILES: dict[StakeholderPersona, PersonaProfile] = {
 # ground_truth key.
 _KNOWN_INFORMATION_KEYS = ("known_cause", "evidence")
 
+# Unit 38: ground_truth keys written for the Builder to check and coach the
+# Analyst with. Unlike _KNOWN_INFORMATION_KEYS this is a deny-list on
+# purpose: the grading prompts need everything *except* these, and a model
+# whose output the Analyst (or a pushback the Builder sends her) can see must
+# not hold the narrative or the answer-key query where it could quote them.
+_BUILDER_ONLY_KEYS = frozenset({"narrative", "expected_query"})
+
+
+def without_builder_only_keys(ground_truth: dict) -> dict:
+    return {key: value for key, value in ground_truth.items() if key not in _BUILDER_ONLY_KEYS}
+
 
 @dataclass(frozen=True)
 class SufficiencyVerdict:

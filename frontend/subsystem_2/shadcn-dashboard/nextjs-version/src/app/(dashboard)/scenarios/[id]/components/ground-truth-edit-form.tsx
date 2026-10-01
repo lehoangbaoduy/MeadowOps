@@ -22,6 +22,20 @@ function fromLines(value: string): string[] {
     .filter((line) => line.length > 0);
 }
 
+// FastAPI answers a plain failure with a string `detail` and a field
+// validation failure (e.g. an expected query that is not a single SELECT)
+// with a list of {msg} objects.
+function errorDetail(body: { detail?: unknown }): string {
+  if (typeof body.detail === "string") return body.detail;
+  if (Array.isArray(body.detail)) {
+    const message = body.detail
+      .map((item) => (item && typeof item.msg === "string" ? item.msg : null))
+      .find((msg): msg is string => msg !== null);
+    if (message) return message.replace(/^Value error, /, "");
+  }
+  return "Could not save";
+}
+
 /**
  * Draft-only (backend/app/services/scenario_service.py's own
  * update_ground_truth guard) — this form is only ever rendered by the
@@ -53,6 +67,8 @@ export function GroundTruthEditForm({
     toLines(groundTruth.unacceptable_conclusions)
   );
   const [uncertainty, setUncertainty] = useState(groundTruth.uncertainty);
+  const [narrative, setNarrative] = useState(groundTruth.narrative ?? "");
+  const [expectedQuery, setExpectedQuery] = useState(groundTruth.expected_query ?? "");
   const [isSaving, setIsSaving] = useState(false);
 
   async function handleSave() {
@@ -69,11 +85,13 @@ export function GroundTruthEditForm({
           acceptable_conclusions: fromLines(acceptableConclusions),
           unacceptable_conclusions: fromLines(unacceptableConclusions),
           uncertainty,
+          narrative,
+          expected_query: expectedQuery,
         }),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) {
-        toast.error(typeof body.detail === "string" ? body.detail : "Could not save");
+        toast.error(errorDetail(body));
         return;
       }
       toast.success("Ground truth saved");
@@ -91,6 +109,30 @@ export function GroundTruthEditForm({
         <CardTitle className="text-base">Edit narrative</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        <div className="grid gap-2">
+          <Label htmlFor="narrative">Scenario narrative (Builder only)</Label>
+          <Textarea
+            id="narrative"
+            rows={5}
+            value={narrative}
+            onChange={(e) => setNarrative(e.target.value)}
+          />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor="expected_query">Expected query (Builder only)</Label>
+          <Textarea
+            id="expected_query"
+            rows={6}
+            className="font-mono text-xs"
+            spellCheck={false}
+            value={expectedQuery}
+            onChange={(e) => setExpectedQuery(e.target.value)}
+          />
+          <p className="text-muted-foreground text-xs">
+            One read-only SELECT against the sandbox, e.g. FROM sandbox.inventory_snapshot. Leave
+            empty for none.
+          </p>
+        </div>
         <div className="grid gap-2">
           <Label htmlFor="known_cause">Known cause</Label>
           <Textarea

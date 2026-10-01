@@ -88,6 +88,10 @@ export function sendMessage(threadId: string, body: string): Promise<Response> {
   });
 }
 
+export function deleteThread(threadId: string): Promise<Response> {
+  return chatFetch(`/api/v1/chat/threads/${encodeURIComponent(threadId)}`, { method: "DELETE" });
+}
+
 export function mintWsTicket(): Promise<Response> {
   return chatFetch("/api/v1/chat/ws-ticket", { method: "POST" });
 }

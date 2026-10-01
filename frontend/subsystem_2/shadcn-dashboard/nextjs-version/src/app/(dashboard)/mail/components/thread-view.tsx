@@ -2,10 +2,18 @@
 
 import { useEffect, useRef, useState } from "react"
 import { format, formatDistanceToNow } from "date-fns"
-import { AlertTriangle, Clock, Paperclip } from "lucide-react"
+import { AlertTriangle, Clock, Paperclip, Trash2 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { Separator } from "@/components/ui/separator"
 import { Textarea } from "@/components/ui/textarea"
@@ -51,6 +59,7 @@ export function ThreadView({
   thread,
   messages,
   onSend,
+  onDelete,
   onSuggestOpening,
   onSuggestPushback,
   onCheckSufficiency,
@@ -58,6 +67,7 @@ export function ThreadView({
   thread: ChatThread | null;
   messages: ChatMessage[];
   onSend: (body: string) => Promise<boolean>;
+  onDelete: (threadId: string) => Promise<boolean>;
   onSuggestOpening: (attitude: Attitude) => Promise<SuggestResult>;
   onSuggestPushback: (attitude: Attitude) => Promise<SuggestResult>;
   onCheckSufficiency: () => Promise<SufficiencyResult>;
@@ -65,6 +75,9 @@ export function ThreadView({
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteFailed, setDeleteFailed] = useState(false);
   const syncTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const syncAbortRef = useRef<AbortController | null>(null);
   // Code review (this unit, MEDIUM): the args of a debounced sync not yet
@@ -93,6 +106,11 @@ export function ThreadView({
   // means the user deliberately cleared it, which must NOT fall through
   // to a stale server value (code review, this unit, HIGH).
   useEffect(() => {
+    // Unit 37 code review: this instance outlives the thread, so a confirm
+    // dialog left open when the thread was deleted elsewhere must not
+    // resurface for whichever thread is selected next.
+    setConfirmingDelete(false);
+    setDeleteFailed(false);
     if (!thread) {
       setDraft("");
       return;
@@ -134,6 +152,20 @@ export function ThreadView({
       syncTimerRef.current = null;
       fireSync(threadId, value);
     }, DRAFT_SYNC_DEBOUNCE_MS);
+  }
+
+  // Unit 37 (MEADOWOPS-DOM-025): the open thread disappears from this view
+  // once mail.tsx removes it, so there is nothing to reset on success.
+  async function handleConfirmDelete() {
+    setDeleting(true);
+    setDeleteFailed(false);
+    try {
+      const ok = await onDelete(threadId);
+      if (!ok) setDeleteFailed(true);
+      else setConfirmingDelete(false);
+    } finally {
+      setDeleting(false);
+    }
   }
 
   async function handleSend() {
@@ -181,9 +213,44 @@ export function ThreadView({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center px-4 py-2">
+      <div className="flex items-center justify-between px-4 py-2">
         <h1 className="text-foreground text-xl font-bold">{personaLabel(thread.persona)}</h1>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={() => {
+            setDeleteFailed(false);
+            setConfirmingDelete(true);
+          }}
+          className="text-muted-foreground hover:text-destructive cursor-pointer"
+        >
+          <Trash2 className="size-4" />
+          Delete thread
+        </Button>
       </div>
+      <Dialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete this thread?</DialogTitle>
+            <DialogDescription>
+              It disappears from every inbox, including the Analyst&rsquo;s. The messages are kept
+              for evaluation and portfolio records, and you can open a fresh{" "}
+              {personaLabel(thread.persona)} thread for this scenario afterwards.
+            </DialogDescription>
+          </DialogHeader>
+          {deleteFailed && (
+            <p className="text-sm text-destructive">Couldn&rsquo;t delete the thread. Try again.</p>
+          )}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setConfirmingDelete(false)} disabled={deleting}>
+              Cancel
+            </Button>
+            <Button variant="destructive" onClick={() => void handleConfirmDelete()} disabled={deleting}>
+              {deleting ? "Deleting…" : "Delete thread"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
       <DeadlineBanner thread={thread} />
       <Separator />
       <ScrollArea className="flex-1 p-4">

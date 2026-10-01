@@ -10,8 +10,10 @@ import {
   SCENARIO_TYPE_OPTIONS,
   type Scenario,
 } from "../types";
+import { ExpectedQueryPanel } from "./components/expected-query-panel";
 import { GroundTruthEditForm } from "./components/ground-truth-edit-form";
 import { GroundTruthPreview } from "./components/ground-truth-preview";
+import { NarrativeCard } from "./components/narrative-card";
 import { ScenarioActions } from "./components/scenario-actions";
 import { ScenarioThreads } from "./components/scenario-threads";
 import type { ScenarioThread } from "./thread-types";
@@ -53,6 +55,9 @@ export default async function ScenarioDetailPage({
         </div>
         <ScenarioActions id={scenario.id} status={scenario.status} />
       </div>
+
+      <NarrativeCard narrative={scenario.ground_truth.narrative ?? ""} />
+      <ExpectedQueryPanel id={scenario.id} query={scenario.ground_truth.expected_query ?? ""} />
 
       <GroundTruthPreview groundTruth={scenario.ground_truth} />
 

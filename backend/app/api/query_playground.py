@@ -29,6 +29,7 @@ already gives for this whole codebase.
 import logging
 import uuid
 
+import psycopg
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -43,7 +44,11 @@ from app.schemas.query_playground import (
     QueryLogRead,
     QueryStatementPreview,
     QuerySubmitRequest,
+    SandboxColumnRead,
     SandboxRefreshResponse,
+    SandboxRelationshipRead,
+    SandboxSchemaResponse,
+    SandboxTableRead,
 )
 from app.services.query_execution import (
     QueryConfirmationRequiredError,
@@ -51,6 +56,7 @@ from app.services.query_execution import (
 )
 from app.services.query_log import log_cancelled, log_execution
 from app.services.sandbox_refresh import refresh_sandbox
+from app.services.sandbox_schema import describe_sandbox_schema, sandbox_has_tables
 
 router = APIRouter(prefix="/api/v1/query", tags=["query-playground"])
 logger = logging.getLogger(__name__)
@@ -116,6 +122,52 @@ def execute_query_route(
         truncated=result.truncated,
         duration_ms=result.duration_ms,
         error_message=result.error_message,
+    )
+
+
+def _sandbox_populated_or_unknown(request: Request) -> bool | None:
+    """None (unknown) rather than a 500 when the probe fails: the table list
+    itself comes from static metadata and is still worth returning."""
+    try:
+        return sandbox_has_tables(request.app.state.settings.sandbox_dsn())
+    except psycopg.Error:
+        logger.warning("sandbox populated-check failed", exc_info=True)
+        return None
+
+
+@router.get("/schema", response_model=SandboxSchemaResponse)
+def sandbox_schema_route(
+    request: Request,
+    _identity: dict[str, str] = Depends(reject_service_role),
+) -> SandboxSchemaResponse:
+    """Unit 36 (MEADOWOPS-DOM-024): the tables/columns/relationships the
+    Analyst can query, so she isn't left guessing names (and guessing into
+    `live.*`, which the sandbox role is denied by design)."""
+    description = describe_sandbox_schema(Base.metadata)
+    return SandboxSchemaResponse(
+        tables=[
+            SandboxTableRead(
+                name=t.name,
+                qualified_name=t.qualified_name,
+                columns=[
+                    SandboxColumnRead(
+                        name=c.name, type=c.type, nullable=c.nullable, is_primary_key=c.is_primary_key
+                    )
+                    for c in t.columns
+                ],
+            )
+            for t in description.tables
+        ],
+        relationships=[
+            SandboxRelationshipRead(
+                from_table=r.from_table,
+                from_column=r.from_column,
+                to_table=r.to_table,
+                to_column=r.to_column,
+            )
+            for r in description.relationships
+        ],
+        sandbox_populated=_sandbox_populated_or_unknown(request),
     )
 
 

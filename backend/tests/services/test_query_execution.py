@@ -78,6 +78,57 @@ def test_write_with_confirmed_true_executes(sandbox_dsn: str) -> None:
             cur.execute("drop table sandbox.exec_probe2")
 
 
+# sqlparse treats \' as an escaped quote inside a plain '...' string; Postgres
+# (standard_conforming_strings) ends the string at the backslash. So this is
+# ONE "read" statement to the classifier and TWO statements to the server.
+_CLASSIFIER_BYPASS = r"SELECT '\'; CREATE TABLE sandbox.zz_read_only_probe (x int); --'"
+
+
+def _probe_table_exists(sandbox_dsn: str) -> bool:
+    with psycopg.connect(sandbox_dsn, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute("select to_regclass('sandbox.zz_read_only_probe')")
+        return cur.fetchone()[0] is not None
+
+
+def test_read_only_mode_refuses_a_write_smuggled_past_the_classifier(sandbox_dsn: str) -> None:
+    # Unit 38 security review: the Builder's expected-query run must never be
+    # able to change the sandbox, even when the text-level classifier is fooled.
+    try:
+        result = execute_submission(
+            sandbox_dsn, _CLASSIFIER_BYPASS, confirmed=False, read_only=True
+        )
+        assert result.status == "error"
+        assert not _probe_table_exists(sandbox_dsn)
+    finally:
+        with psycopg.connect(sandbox_dsn, autocommit=True) as conn, conn.cursor() as cur:
+            cur.execute("drop table if exists sandbox.zz_read_only_probe")
+
+
+def test_read_only_mode_still_returns_rows_for_a_plain_select(sandbox_dsn: str) -> None:
+    result = execute_submission(
+        sandbox_dsn, "select 1 as one, 'x' as label", confirmed=False, read_only=True
+    )
+    assert result.status == "success"
+    assert result.rows == [{"one": 1, "label": "x"}]
+
+
+def test_read_only_mode_rejects_a_write_even_when_confirmed(sandbox_dsn: str) -> None:
+    with psycopg.connect(sandbox_dsn, autocommit=True) as conn, conn.cursor() as cur:
+        cur.execute("create table if not exists sandbox.exec_probe3 (id integer primary key)")
+        cur.execute("insert into sandbox.exec_probe3 (id) values (1) on conflict do nothing")
+    try:
+        result = execute_submission(
+            sandbox_dsn, "delete from sandbox.exec_probe3", confirmed=True, read_only=True
+        )
+        assert result.status == "error"
+        with psycopg.connect(sandbox_dsn, autocommit=True) as conn, conn.cursor() as cur:
+            cur.execute("select count(*) from sandbox.exec_probe3")
+            assert cur.fetchone() == (1,)
+    finally:
+        with psycopg.connect(sandbox_dsn, autocommit=True) as conn, conn.cursor() as cur:
+            cur.execute("drop table sandbox.exec_probe3")
+
+
 def test_runaway_query_is_cancelled_at_the_app_enforced_timeout(sandbox_dsn: str) -> None:
     result = execute_submission(
         sandbox_dsn, "select pg_sleep(5)", confirmed=False, timeout_seconds=0.5

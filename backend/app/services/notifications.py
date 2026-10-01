@@ -58,7 +58,8 @@ def list_notifications_for_user(
     return list(
         session.scalars(
             select(Notification)
-            .where(Notification.user_id == user_id)
+            .join(ChatThread, ChatThread.id == Notification.thread_id)
+            .where(Notification.user_id == user_id, ChatThread.deleted_at.is_(None))
             .order_by(Notification.read_at.is_not(None), Notification.created_at.desc())
             .limit(limit)
         )
@@ -121,6 +122,7 @@ def sweep_thread_deadlines(
         session.scalars(
             select(ChatThread).where(
                 ChatThread.status == ChatThreadStatus.OPEN,
+                ChatThread.deleted_at.is_(None),
                 ChatThread.deadline_at.is_not(None),
             )
         )

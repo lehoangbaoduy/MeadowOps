@@ -26,6 +26,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { SchemaBrowser } from "@/components/schema-browser";
 
 interface StatementPreview {
   sql: string;
@@ -76,6 +77,11 @@ export function QueryPlayground() {
   );
   const [history, setHistory] = React.useState<QueryLogEntry[]>([]);
   const [refreshing, setRefreshing] = React.useState(false);
+  const [schemaReloadKey, setSchemaReloadKey] = React.useState(0);
+
+  function insertIntoEditor(text: string) {
+    setStatement((current) => (current.trim() === "" ? text : `${current.trimEnd()} ${text}`));
+  }
 
   const loadHistory = React.useCallback(async () => {
     try {
@@ -157,6 +163,7 @@ export function QueryPlayground() {
         return;
       }
       toast.success(`Sandbox refreshed — ${body.tables_mirrored} tables mirrored`);
+      setSchemaReloadKey((key) => key + 1);
     } catch {
       toast.error("Sandbox refresh failed — check your connection and try again");
     } finally {
@@ -165,7 +172,8 @@ export function QueryPlayground() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+    <div className="min-w-0 space-y-6">
       <div className="rounded-lg border">
         <CodeMirror
           value={statement}
@@ -333,6 +341,8 @@ export function QueryPlayground() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
+    </div>
+    <SchemaBrowser onInsert={insertIntoEditor} reloadKey={schemaReloadKey} />
     </div>
   );
 }

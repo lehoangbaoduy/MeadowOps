@@ -2,9 +2,24 @@
 
 import { useEffect, useRef, useState } from "react";
 import { format, formatDistanceToNow } from "date-fns";
-import { IconAlertTriangle, IconClock, IconLoader2, IconPaperclip, IconX } from "@tabler/icons-react";
+import {
+  IconAlertTriangle,
+  IconClock,
+  IconLoader2,
+  IconPaperclip,
+  IconTrash,
+  IconX,
+} from "@tabler/icons-react";
 
 import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Textarea } from "@/components/ui/textarea";
@@ -59,14 +74,20 @@ export function ThreadView({
   thread,
   messages,
   onSend,
+  onDelete,
 }: {
   thread: ChatThread | null;
   messages: ChatMessage[];
   onSend: (body: string, attachmentId?: string) => Promise<boolean>;
+  /** Present only for admins (Unit 37) - undefined hides the delete control. */
+  onDelete?: (threadId: string) => Promise<boolean>;
 }) {
   const [draft, setDraft] = useState("");
   const [sending, setSending] = useState(false);
   const [error, setError] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteFailed, setDeleteFailed] = useState(false);
   // Unit 30c (MEADOWOPS-UI-005, B12 follow-on to U30): an already-uploaded,
   // not-yet-sent attachment - the two-phase flow migration 0026's own
   // docstring explains (upload first, claim it at send time). Cleared on
@@ -107,6 +128,11 @@ export function ThreadView({
   // means the user deliberately cleared it, which must NOT fall through
   // to a stale server value (code review, this unit, HIGH).
   useEffect(() => {
+    // Unit 37 code review: this instance outlives the thread, so a confirm
+    // dialog left open when the thread was deleted elsewhere must not
+    // resurface for whichever thread is selected next.
+    setConfirmingDelete(false);
+    setDeleteFailed(false);
     if (!thread) {
       setDraft("");
       return;
@@ -245,9 +271,61 @@ export function ThreadView({
 
   return (
     <div className="flex h-full flex-col">
-      <div className="p-4">
+      <div className="flex items-center justify-between p-4">
         <h2 className="text-lg font-semibold">{personaLabel(thread.persona)}</h2>
+        {onDelete && (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="text-muted-foreground hover:text-destructive"
+            onClick={() => {
+              setDeleteFailed(false);
+              setConfirmingDelete(true);
+            }}
+          >
+            <IconTrash className="size-4" />
+            Delete thread
+          </Button>
+        )}
       </div>
+      {onDelete && (
+        <Dialog open={confirmingDelete} onOpenChange={setConfirmingDelete}>
+          <DialogContent>
+            <DialogHeader>
+              <DialogTitle>Delete this thread?</DialogTitle>
+              <DialogDescription>
+                It disappears from every inbox, including the Builder&apos;s. The messages are kept
+                for evaluation and portfolio records.
+              </DialogDescription>
+            </DialogHeader>
+            {deleteFailed && (
+              <p className="text-sm text-destructive">Couldn&apos;t delete the thread. Try again.</p>
+            )}
+            <DialogFooter>
+              <Button variant="outline" onClick={() => setConfirmingDelete(false)} disabled={deleting}>
+                Cancel
+              </Button>
+              <Button
+                variant="destructive"
+                disabled={deleting}
+                onClick={async () => {
+                  setDeleting(true);
+                  setDeleteFailed(false);
+                  try {
+                    const ok = await onDelete(thread.id);
+                    if (!ok) setDeleteFailed(true);
+                    else setConfirmingDelete(false);
+                  } finally {
+                    setDeleting(false);
+                  }
+                }}
+              >
+                {deleting ? "Deleting…" : "Delete thread"}
+              </Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
+      )}
       <DeadlineBanner thread={thread} />
       <Separator />
       <ScrollArea className="flex-1 p-4">

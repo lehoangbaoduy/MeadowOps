@@ -136,8 +136,18 @@ def execute_submission(
     *,
     confirmed: bool,
     timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
+    read_only: bool = False,
 ) -> QueryExecutionResult:
-    """Raises QueryConfirmationRequiredError if the submission needs
+    """`read_only` (Unit 38 security review) is for callers that must never
+    change the sandbox no matter what the text-level classifier believed
+    (e.g. the Builder's expected-query run). It does not rely on the
+    classifier at all: the whole run is one READ ONLY transaction, so the
+    server refuses any write, and each statement goes over the extended
+    protocol, so the server also refuses a text that hides a second statement
+    from the classifier (sqlparse treats a backslash-quote as an escaped
+    quote inside a plain string; Postgres does not).
+
+    Raises QueryConfirmationRequiredError if the submission needs
     confirmation and `confirmed` is False - never returns a result in that
     case. Otherwise always returns a QueryExecutionResult (never raises for
     a query-level failure: a syntax error, a permission violation, or a
@@ -155,6 +165,8 @@ def execute_submission(
 
     try:
         with psycopg.connect(sandbox_dsn, row_factory=dict_row) as conn:
+            if read_only:
+                conn.read_only = True  # must precede the first statement
             backend_pid = conn.info.backend_pid
             with conn.cursor() as lock_cur:
                 lock_cur.execute(
@@ -167,7 +179,7 @@ def execute_submission(
             try:
                 with conn.cursor() as cur:
                     for statement in statements:
-                        cur.execute(statement)
+                        cur.execute(statement, prepare=True if read_only else None)
                         if cur.description is not None:
                             columns = [col.name for col in cur.description]
                             fetched = cur.fetchmany(MAX_RESULT_ROWS + 1)

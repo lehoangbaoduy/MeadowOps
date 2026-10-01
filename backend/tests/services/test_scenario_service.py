@@ -207,6 +207,57 @@ class TestRegenerateScenario:
         assert regenerated.ground_truth["supporting_signals"] == ["signal"]
         assert regenerated.ground_truth["uncertainty"] == "moderate"
 
+    def test_stores_the_narrative_and_expected_query_in_ground_truth(
+        self, session: Session, builder_id: uuid.UUID
+    ) -> None:
+        flag = _open_flag(session)
+        scenario = create_scenario_from_exception_flag(
+            session,
+            exception_flag_id=flag.id,
+            scenario_type=ScenarioType.DATA_QUALITY_ISSUE,
+            competency_cluster=CompetencyCluster.ANALYSIS_DIAGNOSIS,
+            difficulty_tier=DifficultyTier.STANDARD,
+            title="x",
+            created_by=builder_id,
+        )
+        client = MockClaudeClient(
+            script=[
+                ClaudeResponse(
+                    content=json.dumps(
+                        _narrative_payload(
+                            narrative="Cover fell below threshold.",
+                            expected_query="SELECT 1 AS one",
+                        )
+                    )
+                )
+            ]
+        )
+
+        regenerated = regenerate_scenario(session, scenario.id, client)
+
+        assert regenerated.ground_truth["narrative"] == "Cover fell below threshold."
+        assert regenerated.ground_truth["expected_query"] == "SELECT 1 AS one"
+
+    def test_a_narrative_without_them_stores_empty_strings_not_missing_keys(
+        self, session: Session, builder_id: uuid.UUID
+    ) -> None:
+        flag = _open_flag(session)
+        scenario = create_scenario_from_exception_flag(
+            session,
+            exception_flag_id=flag.id,
+            scenario_type=ScenarioType.DATA_QUALITY_ISSUE,
+            competency_cluster=CompetencyCluster.ANALYSIS_DIAGNOSIS,
+            difficulty_tier=DifficultyTier.STANDARD,
+            title="x",
+            created_by=builder_id,
+        )
+        client = MockClaudeClient(script=[ClaudeResponse(content=json.dumps(_narrative_payload()))])
+
+        regenerated = regenerate_scenario(session, scenario.id, client)
+
+        assert regenerated.ground_truth["narrative"] == ""
+        assert regenerated.ground_truth["expected_query"] == ""
+
     def test_full_overwrite_replaces_a_previously_hand_edited_narrative(
         self, session: Session, builder_id: uuid.UUID
     ) -> None:

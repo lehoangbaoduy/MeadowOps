@@ -65,3 +65,29 @@ class SandboxRefreshResponse(BaseModel):
     started_at: datetime
     completed_at: datetime
     error: str | None
+
+
+class SandboxColumnRead(BaseModel):
+    name: str
+    type: str
+    nullable: bool
+    is_primary_key: bool
+
+
+class SandboxTableRead(BaseModel):
+    name: str
+    qualified_name: str
+    columns: list[SandboxColumnRead]
+
+
+class SandboxRelationshipRead(BaseModel):
+    from_table: str
+    from_column: str
+    to_table: str
+    to_column: str
+
+
+class SandboxSchemaResponse(BaseModel):
+    tables: list[SandboxTableRead]
+    relationships: list[SandboxRelationshipRead]
+    sandbox_populated: bool | None

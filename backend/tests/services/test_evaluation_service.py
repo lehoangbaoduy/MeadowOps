@@ -246,6 +246,31 @@ class TestCompleteThreadAndGenerateEvaluation:
         sent_prompt = client.call_log[0]["messages"][0]["content"]
         assert "reorder point looks misconfigured" in sent_prompt
 
+    def test_withholds_the_builder_only_narrative_and_query_from_the_prompt(
+        self,
+        session: Session,
+        thread: ChatThread,
+        scenario: Scenario,
+        admin_id: uuid.UUID,
+        analyst_id: uuid.UUID,
+    ) -> None:
+        # Unit 38: the evaluation text is shown to the Analyst, so the answer
+        # key's narrative/query must not be in the model's context.
+        scenario.ground_truth = {
+            **scenario.ground_truth,
+            "narrative": "NARRATIVE-LEAK-MARKER",
+            "expected_query": "SELECT 'QUERY-LEAK-MARKER'",
+        }
+        session.flush()
+        _send_opening_and_analyst_reply(session, thread, admin_id=admin_id, analyst_id=analyst_id)
+        client = MockClaudeClient(script=[ClaudeResponse(content=json.dumps(_VALID_PAYLOAD))])
+
+        complete_thread_and_generate_evaluation(session, thread_id=thread.id, claude_client=client)
+
+        sent_prompt = client.call_log[0]["messages"][0]["content"]
+        assert "NARRATIVE-LEAK-MARKER" not in sent_prompt
+        assert "QUERY-LEAK-MARKER" not in sent_prompt
+
     def test_stores_the_prompt_version(
         self, session: Session, thread: ChatThread, admin_id: uuid.UUID, analyst_id: uuid.UUID
     ) -> None:

@@ -40,6 +40,9 @@ export interface ScenarioGroundTruth {
   acceptable_conclusions: string[];
   unacceptable_conclusions: string[];
   uncertainty: string;
+  // Unit 38: Builder-only; absent on scenarios generated before it existed.
+  narrative?: string;
+  expected_query?: string;
 }
 
 export interface Scenario {

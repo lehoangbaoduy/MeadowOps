@@ -20,13 +20,14 @@ from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
-from sqlalchemy import create_engine, delete
+from sqlalchemy import create_engine, delete, func, select, text
 from sqlalchemy.orm import Session
 
 from app.core.config import Settings
 from app.db.auth import User
 from app.db.enums import UserRole
 from app.db.exception_flags import ExceptionFlag
+from app.db.query_log import QueryLog
 from app.db.scenario import Scenario
 from app.domain.claude_client import ClaudeAPIError, ClaudeResponse, MockClaudeClient
 from app.main import create_app
@@ -180,6 +181,7 @@ class TestAuth:
             ("get", "/{id}"),
             ("patch", "/{id}/ground-truth"),
             ("post", "/{id}/regenerate"),
+            ("post", "/{id}/expected-query/run"),
             ("post", "/{id}/approve"),
             ("post", "/{id}/activate"),
             ("post", "/{id}/cancel"),
@@ -404,6 +406,214 @@ class TestUpdateGroundTruth:
             f"/api/v1/admin/scenarios/{created['id']}", headers=admin_auth
         ).json()
         assert unchanged["ground_truth"]["uncertainty"] == "moderate"
+
+
+class TestNarrativeAndExpectedQuery:
+    """Unit 38 (MEADOWOPS-DOM-026): the Builder-only narrative + suggested
+    query, so the Builder can check the work and help a stuck Analyst. Both
+    live in ground_truth, which no Analyst or persona path ever reads."""
+
+    _SELECT = "SELECT 1 AS one, 'x' AS label"
+
+    def _create_draft(self, client: TestClient, admin_auth: dict[str, str], flag_id: str) -> dict:
+        response = client.post(
+            "/api/v1/admin/scenarios", json=_create_payload(flag_id), headers=admin_auth
+        )
+        assert response.status_code == 201
+        return response.json()
+
+    def _patch(self, client: TestClient, admin_auth: dict[str, str], scenario_id: str, body: dict):
+        return client.patch(
+            f"/api/v1/admin/scenarios/{scenario_id}/ground-truth", json=body, headers=admin_auth
+        )
+
+    def test_the_builder_can_edit_the_narrative_and_expected_query(
+        self, client: TestClient, admin_auth: dict[str, str], open_flag_id: str
+    ) -> None:
+        created = self._create_draft(client, admin_auth, open_flag_id)
+
+        response = self._patch(
+            client,
+            admin_auth,
+            created["id"],
+            {"narrative": "Stock is low at WH-EAST.", "expected_query": f"{self._SELECT};"},
+        )
+
+        assert response.status_code == 200
+        truth = response.json()["ground_truth"]
+        assert truth["narrative"] == "Stock is low at WH-EAST."
+        assert truth["expected_query"] == self._SELECT  # trailing ; normalised away
+
+    @pytest.mark.parametrize(
+        "bad_query",
+        ["DELETE FROM sandbox.product", "SELECT 1; SELECT 2", "DROP TABLE sandbox.product"],
+    )
+    def test_a_non_select_expected_query_is_rejected_with_422(
+        self, client: TestClient, admin_auth: dict[str, str], open_flag_id: str, bad_query: str
+    ) -> None:
+        created = self._create_draft(client, admin_auth, open_flag_id)
+
+        response = self._patch(client, admin_auth, created["id"], {"expected_query": bad_query})
+
+        assert response.status_code == 422
+        stored = client.get(f"/api/v1/admin/scenarios/{created['id']}", headers=admin_auth).json()
+        assert "expected_query" not in stored["ground_truth"]
+
+    def test_an_empty_expected_query_clears_it(
+        self, client: TestClient, admin_auth: dict[str, str], open_flag_id: str
+    ) -> None:
+        created = self._create_draft(client, admin_auth, open_flag_id)
+        self._patch(client, admin_auth, created["id"], {"expected_query": self._SELECT})
+
+        response = self._patch(client, admin_auth, created["id"], {"expected_query": ""})
+
+        assert response.status_code == 200
+        assert response.json()["ground_truth"]["expected_query"] == ""
+
+    def test_running_the_expected_query_returns_its_rows(
+        self, client: TestClient, admin_auth: dict[str, str], open_flag_id: str
+    ) -> None:
+        created = self._create_draft(client, admin_auth, open_flag_id)
+        self._patch(client, admin_auth, created["id"], {"expected_query": self._SELECT})
+
+        response = client.post(
+            f"/api/v1/admin/scenarios/{created['id']}/expected-query/run", headers=admin_auth
+        )
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "success"
+        assert body["columns"] == ["one", "label"]
+        assert body["rows"] == [{"one": 1, "label": "x"}]
+
+    def test_a_failing_expected_query_reports_the_error_instead_of_a_500(
+        self, client: TestClient, admin_auth: dict[str, str], open_flag_id: str
+    ) -> None:
+        created = self._create_draft(client, admin_auth, open_flag_id)
+        self._patch(
+            client,
+            admin_auth,
+            created["id"],
+            {"expected_query": "SELECT * FROM sandbox.no_such_table_zz"},
+        )
+
+        response = client.post(
+            f"/api/v1/admin/scenarios/{created['id']}/expected-query/run", headers=admin_auth
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "error"
+        assert response.json()["error_message"]
+
+    def test_running_without_an_expected_query_returns_422(
+        self, client: TestClient, admin_auth: dict[str, str], open_flag_id: str
+    ) -> None:
+        created = self._create_draft(client, admin_auth, open_flag_id)
+
+        response = client.post(
+            f"/api/v1/admin/scenarios/{created['id']}/expected-query/run", headers=admin_auth
+        )
+
+        assert response.status_code == 422
+
+    def test_running_an_unknown_scenario_returns_404(
+        self, client: TestClient, admin_auth: dict[str, str]
+    ) -> None:
+        response = client.post(
+            f"/api/v1/admin/scenarios/{uuid.uuid4()}/expected-query/run", headers=admin_auth
+        )
+        assert response.status_code == 404
+
+    def test_a_stored_write_query_is_refused_at_run_time_too(
+        self,
+        client: TestClient,
+        admin_auth: dict[str, str],
+        db_session: Session,
+        open_flag_id: str,
+    ) -> None:
+        # Defence in depth: ground_truth is a free-form JSON column, so a
+        # row written around the API (a migration, a script) must still
+        # never be executed as a write.
+        created = self._create_draft(client, admin_auth, open_flag_id)
+        scenario = db_session.get(Scenario, uuid.UUID(created["id"]))
+        scenario.ground_truth = {**scenario.ground_truth, "expected_query": "DELETE FROM sandbox.product"}
+        db_session.commit()
+
+        response = client.post(
+            f"/api/v1/admin/scenarios/{created['id']}/expected-query/run", headers=admin_auth
+        )
+
+        assert response.status_code == 422
+
+    def test_a_query_that_hides_a_second_statement_from_the_classifier_cannot_write(
+        self,
+        client: TestClient,
+        admin_auth: dict[str, str],
+        db_session: Session,
+        open_flag_id: str,
+    ) -> None:
+        # Unit 38 security review: sqlparse and Postgres disagree about
+        # backslash-escaped quotes, so this passes the text-level checks as
+        # one SELECT while the server sees a second, CREATE TABLE, statement.
+        bypass = r"SELECT '\'; CREATE TABLE sandbox.zz_scenario_probe (x int); --'"
+        created = self._create_draft(client, admin_auth, open_flag_id)
+        self._patch(client, admin_auth, created["id"], {"expected_query": bypass})
+        try:
+            response = client.post(
+                f"/api/v1/admin/scenarios/{created['id']}/expected-query/run", headers=admin_auth
+            )
+
+            assert response.status_code == 200
+            assert response.json()["status"] == "error"
+            exists = db_session.scalar(text("select to_regclass('sandbox.zz_scenario_probe')"))
+            assert exists is None
+        finally:
+            db_session.rollback()
+            db_session.execute(text("drop table if exists sandbox.zz_scenario_probe"))
+            db_session.commit()
+
+    def test_running_the_expected_query_leaves_no_query_log_entry(
+        self,
+        client: TestClient,
+        admin_auth: dict[str, str],
+        db_session: Session,
+        open_flag_id: str,
+    ) -> None:
+        # The Builder's check is not Analyst work: it must not appear in the
+        # query history the Analyst's own activity is read from.
+        created = self._create_draft(client, admin_auth, open_flag_id)
+        self._patch(client, admin_auth, created["id"], {"expected_query": self._SELECT})
+        before = db_session.scalar(select(func.count()).select_from(QueryLog))
+
+        client.post(
+            f"/api/v1/admin/scenarios/{created['id']}/expected-query/run", headers=admin_auth
+        )
+
+        db_session.expire_all()
+        assert db_session.scalar(select(func.count()).select_from(QueryLog)) == before
+
+    def test_a_regenerated_scenario_gets_the_narrative_and_query_from_claude(
+        self, client: TestClient, admin_auth: dict[str, str], open_flag_id: str
+    ) -> None:
+        created = self._create_draft(client, admin_auth, open_flag_id)
+        client.app.state.claude_client = MockClaudeClient(
+            script=[
+                ClaudeResponse(
+                    content=json.dumps(
+                        _narrative_payload(narrative="What happened.", expected_query=self._SELECT)
+                    )
+                )
+            ]
+        )
+
+        response = client.post(
+            f"/api/v1/admin/scenarios/{created['id']}/regenerate", headers=admin_auth
+        )
+
+        assert response.status_code == 200
+        truth = response.json()["ground_truth"]
+        assert truth["narrative"] == "What happened."
+        assert truth["expected_query"] == self._SELECT
 
 
 class TestActivateScenario:

@@ -31,7 +31,7 @@ schema-owning role, and owners bypass grants).
 import uuid
 from datetime import datetime
 
-from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Text, UniqueConstraint, text
+from sqlalchemy import BigInteger, Boolean, DateTime, ForeignKey, Index, Text, text
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column
 from sqlalchemy.sql import func
@@ -45,8 +45,14 @@ _CHAT_SCHEMA = "chat"
 class ChatThread(Base):
     __tablename__ = "chat_thread"
     __table_args__ = (
-        UniqueConstraint(
-            "scenario_id", "persona", name="ux_chat_thread_scenario_persona"
+        # Unit 37 (migration 0028): unique among LIVE threads only, so a
+        # soft-deleted thread doesn't block reopening the same pair.
+        Index(
+            "ux_chat_thread_scenario_persona",
+            "scenario_id",
+            "persona",
+            unique=True,
+            postgresql_where=text("deleted_at IS NULL"),
         ),
         {"schema": _CHAT_SCHEMA},
     )
@@ -100,6 +106,10 @@ class ChatThread(Base):
     overdue_notified: Mapped[bool] = mapped_column(
         Boolean, nullable=False, server_default=text("false")
     )
+    # Unit 37 (MEADOWOPS-DOM-025): soft delete - NULL = live. The row and its
+    # immutable messages stay for evaluations/portfolio; every read path
+    # filters on this.
+    deleted_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class ChatMessage(Base):

@@ -112,6 +112,7 @@ from app.services.chat import (
     MessageBodyTooLongError,
     ThreadCompletedError,
     ThreadNotFoundError,
+    delete_thread,
     get_or_create_thread,
     list_messages,
     list_threads_with_unread,
@@ -223,6 +224,7 @@ def create_thread_route(
             select(ChatThread).where(
                 ChatThread.scenario_id == payload.scenario_id,
                 ChatThread.persona == StakeholderPersona(payload.persona),
+                ChatThread.deleted_at.is_(None),
             )
         )
         if existing is None:
@@ -261,6 +263,33 @@ def list_threads_route(
         )
         for item in list_threads_with_unread(session, user_id=viewer_id)
     ]
+
+
+@router.delete("/threads/{thread_id}", status_code=status.HTTP_204_NO_CONTENT)
+def delete_thread_route(
+    thread_id: uuid.UUID,
+    request: Request,
+    background_tasks: BackgroundTasks,
+    session: Session = Depends(get_session),
+    _identity: dict[str, str] = Depends(require_admin),
+) -> None:
+    """Unit 37 (MEADOWOPS-DOM-025): soft-deletes a thread and tells every
+    connected inbox (Builder and Analyst alike) to drop it. `require_admin`
+    - the Analyst never deletes. The broadcast runs as a background task
+    after the response, same as create_message_route's."""
+    try:
+        delete_thread(session, thread_id)
+        session.commit()
+    except ThreadNotFoundError as exc:
+        session.rollback()
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ThreadCompletedError as exc:
+        session.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    registry: ChatConnectionRegistry = request.app.state.chat_connections
+    background_tasks.add_task(
+        registry.broadcast, {"type": "chat.thread_deleted", "thread_id": str(thread_id)}
+    )
 
 
 @router.put("/threads/{thread_id}/draft", status_code=status.HTTP_204_NO_CONTENT)

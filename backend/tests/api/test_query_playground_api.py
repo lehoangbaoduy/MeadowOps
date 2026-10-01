@@ -238,3 +238,74 @@ class TestRefreshSandbox:
         body = response.json()
         assert body["status"] == "complete"
         assert body["tables_mirrored"] > 0
+
+
+class TestSchemaRoute:
+    """Unit 36 (MEADOWOPS-DOM-024): the schema viewer's data source."""
+
+    def test_requires_authentication(self, client: TestClient) -> None:
+        assert client.get("/api/v1/query/schema").status_code == 401
+
+    def test_analyst_can_read_the_schema(
+        self, client: TestClient, analyst_auth: dict[str, str]
+    ) -> None:
+        response = client.get("/api/v1/query/schema", headers=analyst_auth)
+        assert response.status_code == 200
+        body = response.json()
+        names = {t["name"] for t in body["tables"]}
+        assert {"product", "purchase_order", "warehouse"} <= names
+        product = next(t for t in body["tables"] if t["name"] == "product")
+        assert product["qualified_name"] == "sandbox.product"
+        assert any(c["name"] == "id" and c["is_primary_key"] for c in product["columns"])
+
+    def test_admin_can_read_the_schema(
+        self, client: TestClient, admin_auth: dict[str, str]
+    ) -> None:
+        assert client.get("/api/v1/query/schema", headers=admin_auth).status_code == 200
+
+    def test_reports_the_sandbox_as_populated_after_a_refresh(
+        self, client: TestClient, analyst_auth: dict[str, str]
+    ) -> None:
+        body = client.get("/api/v1/query/schema", headers=analyst_auth).json()
+        assert body["sandbox_populated"] is True
+
+    def test_includes_relationships(
+        self, client: TestClient, analyst_auth: dict[str, str]
+    ) -> None:
+        body = client.get("/api/v1/query/schema", headers=analyst_auth).json()
+        assert {
+            "from_table": "purchase_order_line",
+            "from_column": "product_id",
+            "to_table": "product",
+            "to_column": "id",
+        } in body["relationships"]
+
+    def test_every_listed_table_is_actually_queryable_by_the_analyst(
+        self, client: TestClient, analyst_auth: dict[str, str]
+    ) -> None:
+        body = client.get("/api/v1/query/schema", headers=analyst_auth).json()
+        for table in body["tables"]:
+            result = client.post(
+                "/api/v1/query/execute",
+                json={"sql": f"select * from {table['qualified_name']} limit 1"},
+                headers=analyst_auth,
+            )
+            assert result.json()["status"] == "success", table["qualified_name"]
+
+    def test_still_returns_the_table_list_when_the_populated_probe_fails(
+        self,
+        client: TestClient,
+        analyst_auth: dict[str, str],
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        import psycopg
+
+        def _db_down(_dsn: str) -> bool:
+            raise psycopg.OperationalError("db unavailable")
+
+        monkeypatch.setattr("app.api.query_playground.sandbox_has_tables", _db_down)
+        response = client.get("/api/v1/query/schema", headers=analyst_auth)
+        assert response.status_code == 200
+        body = response.json()
+        assert body["sandbox_populated"] is None
+        assert len(body["tables"]) > 0

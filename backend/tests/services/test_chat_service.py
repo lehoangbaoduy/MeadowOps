@@ -12,11 +12,11 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import create_engine, delete
+from sqlalchemy import create_engine, delete, func, select
 from sqlalchemy.orm import Session
 
 from app.db.auth import User
-from app.db.chat import ChatAttachment
+from app.db.chat import ChatAttachment, ChatMessage
 from app.db.enums import (
     ChatThreadStatus,
     CompetencyCluster,
@@ -36,6 +36,7 @@ from app.services.chat import (
     MessageBodyTooLongError,
     ThreadCompletedError,
     ThreadNotFoundError,
+    delete_thread,
     get_or_create_thread,
     get_thread,
     list_messages,
@@ -719,3 +720,102 @@ class TestDraftPersistence:
             self._draft_body(session, thread_id=thread.id, user_id=admin_id)
             == "stuck in the composer"
         )
+
+
+class TestDeleteThread:
+    """Unit 37 (MEADOWOPS-DOM-025): soft delete - the row and its immutable
+    messages stay (PRD 6.13/ER-6, evaluations and portfolio entries reference
+    the thread), it just stops being visible anywhere a user looks."""
+
+    def test_hides_the_thread_from_every_listing(
+        self, session: Session, scenario_id: uuid.UUID, analyst_id: uuid.UUID
+    ) -> None:
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        delete_thread(session, thread.id)
+        assert thread.id not in [t.id for t in list_threads(session)]
+        assert thread.id not in [
+            item.thread.id for item in list_threads_with_unread(session, user_id=analyst_id)
+        ]
+
+    def test_get_thread_treats_a_deleted_thread_as_not_found(
+        self, session: Session, scenario_id: uuid.UUID
+    ) -> None:
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        delete_thread(session, thread.id)
+        with pytest.raises(ThreadNotFoundError):
+            get_thread(session, thread.id)
+        with pytest.raises(ThreadNotFoundError):
+            list_messages(session, thread.id)
+
+    def test_deleting_an_unknown_or_already_deleted_thread_raises(
+        self, session: Session, scenario_id: uuid.UUID
+    ) -> None:
+        with pytest.raises(ThreadNotFoundError):
+            delete_thread(session, uuid.uuid4())
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        delete_thread(session, thread.id)
+        with pytest.raises(ThreadNotFoundError):
+            delete_thread(session, thread.id)
+
+    def test_the_same_scenario_and_persona_can_get_a_fresh_thread_afterwards(
+        self, session: Session, scenario_id: uuid.UUID
+    ) -> None:
+        first = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        delete_thread(session, first.id)
+        second = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        assert second.id != first.id
+        assert second.deleted_at is None
+
+    def test_keeps_the_messages_in_the_database(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID
+    ) -> None:
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        send_message(
+            session, thread_id=thread.id, sender_user_id=admin_id,
+            sender_role=UserRole.ADMIN, body="keep me",
+        )
+        delete_thread(session, thread.id)
+        remaining = session.scalar(
+            select(func.count()).select_from(ChatMessage).where(ChatMessage.thread_id == thread.id)
+        )
+        assert remaining == 1
+
+    def test_a_completed_thread_cannot_be_deleted(
+        self, session: Session, scenario_id: uuid.UUID
+    ) -> None:
+        # Code review (Unit 37): a completed thread's evaluation, human
+        # review and portfolio export are all reached through get_thread, so
+        # hiding it would orphan the record of how the Analyst was graded.
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        thread.status = ChatThreadStatus.COMPLETED
+        session.flush()
+        with pytest.raises(ThreadCompletedError):
+            delete_thread(session, thread.id)
+        assert get_thread(session, thread.id).deleted_at is None
+
+    def test_sending_to_a_deleted_thread_is_refused(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID
+    ) -> None:
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        delete_thread(session, thread.id)
+        with pytest.raises(ThreadNotFoundError):
+            send_message(
+                session, thread_id=thread.id, sender_user_id=admin_id,
+                sender_role=UserRole.ADMIN, body="too late",
+            )

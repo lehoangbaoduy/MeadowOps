@@ -267,3 +267,53 @@ def test_migration_0027_repairs_a_missing_sender_role_column() -> None:
     finally:
         trans.rollback()
         conn.close()
+
+
+def _load_migration_0028():
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "alembic"
+        / "versions"
+        / "0028_chat_thread_soft_delete.py"
+    )
+    spec = importlib.util.spec_from_file_location("migration_0028", path)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_migration_0028_is_idempotent_and_leaves_a_partial_unique_index() -> None:
+    """Unit 37: runs 0028's own upgrade() for real, twice (production has
+    drifted from migrations before - 0027 - so it must be safe to re-run),
+    inside a transaction that is rolled back. The unique index over
+    (scenario_id, persona) must only cover live threads, or a soft-deleted
+    thread would block reopening the same scenario+persona pair."""
+    migration = _load_migration_0028()
+    engine = create_engine(os.environ["MEADOWOPS_DATABASE_URL"])
+    conn = engine.connect()
+    trans = conn.begin()
+    try:
+        mc = MigrationContext.configure(conn)
+        with Operations.context(mc):
+            migration.upgrade()
+            migration.upgrade()
+        definition = conn.execute(
+            text(
+                "select indexdef from pg_indexes where schemaname = 'chat' "
+                "and tablename = 'chat_thread' and indexname = 'ux_chat_thread_scenario_persona'"
+            )
+        ).scalar_one()
+        assert "UNIQUE" in definition
+        assert "WHERE (deleted_at IS NULL)" in definition
+        column = conn.execute(
+            text(
+                "select data_type, is_nullable from information_schema.columns "
+                "where table_schema = 'chat' and table_name = 'chat_thread' "
+                "and column_name = 'deleted_at'"
+            )
+        ).one()
+        assert column == ("timestamp with time zone", "YES")
+    finally:
+        trans.rollback()
+        conn.close()
+        engine.dispose()

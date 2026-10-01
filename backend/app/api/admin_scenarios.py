@@ -16,7 +16,7 @@ not a client-supplied value.
 
 import uuid
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from psycopg import errors as pg_errors
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -28,13 +28,19 @@ from app.db.scenario import Scenario
 from app.db.session import get_session
 from app.domain.claude_client import ClaudeClient
 from app.domain.scenario import ExceptionFlagNotOpenError
-from app.domain.scenario_generation import ScenarioGenerationFailedError
+from app.domain.scenario_generation import (
+    ScenarioGenerationFailedError,
+    ScenarioNarrativeSchemaError,
+    normalize_expected_query,
+)
+from app.schemas.query_playground import QueryExecuteResponse
 from app.schemas.scenario import (
     GroundTruthUpdate,
     ScenarioCreate,
     ScenarioRead,
 )
 from app.schemas.scenario import ScenarioStatus as ScenarioStatusLiteral
+from app.services.query_execution import QueryConfirmationRequiredError, execute_submission
 from app.services.scenario_service import (
     ExceptionFlagNotFoundError,
     ScenarioGenerationValidationError,
@@ -192,6 +198,65 @@ def regenerate_scenario_route(
     session.commit()
     session.refresh(scenario)
     return scenario
+
+
+# Rows shown in the Builder's check - the full result is not the point, and
+# the sandbox's own cap (MAX_RESULT_ROWS) is far larger than a screen.
+EXPECTED_QUERY_PREVIEW_ROWS = 50
+
+
+@router.post("/{scenario_id}/expected-query/run", response_model=QueryExecuteResponse)
+def run_expected_query_route(
+    scenario_id: uuid.UUID,
+    request: Request,
+    session: Session = Depends(get_session),
+    _identity: dict[str, str] = Depends(require_admin),
+) -> QueryExecuteResponse:
+    """Unit 38 (MEADOWOPS-DOM-026): lets the Builder check the scenario's
+    suggested query against the current sandbox. Admin-only, and the stored
+    text is re-validated as a single read here (not trusted just because the
+    write paths already validated it - ground_truth is a free-form JSON
+    column), then run as the restricted sandbox role without confirmation in a
+    server-enforced READ ONLY transaction (execute_submission's `read_only`),
+    so the classifier is a convenience and the database is the boundary. Not written to the
+    query log: that history is the Analyst's work, and this is the Builder
+    checking the key."""
+    try:
+        scenario = get_scenario(session, scenario_id)
+    except ScenarioNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    stored = scenario.ground_truth.get("expected_query")
+    try:
+        sql = normalize_expected_query(stored) if isinstance(stored, str) else ""
+    except ScenarioNarrativeSchemaError as exc:
+        raise HTTPException(status.HTTP_422_UNPROCESSABLE_CONTENT, detail=str(exc)) from exc
+    if not sql:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, detail="This scenario has no expected query"
+        )
+
+    settings = request.app.state.settings
+    try:
+        result = execute_submission(
+            settings.sandbox_dsn(),
+            sql,
+            confirmed=False,
+            timeout_seconds=settings.query_timeout_seconds,
+            read_only=True,
+        )
+    except QueryConfirmationRequiredError as exc:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_CONTENT, detail="The expected query is not read-only"
+        ) from exc
+    return QueryExecuteResponse(
+        status=result.status,
+        columns=result.columns,
+        rows=result.rows[:EXPECTED_QUERY_PREVIEW_ROWS],
+        row_count=result.row_count,
+        truncated=result.truncated or len(result.rows) > EXPECTED_QUERY_PREVIEW_ROWS,
+        duration_ms=result.duration_ms,
+        error_message=result.error_message,
+    )
 
 
 @router.post("/{scenario_id}/approve", response_model=ScenarioRead)

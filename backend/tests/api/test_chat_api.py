@@ -1941,3 +1941,114 @@ class TestCompleteThreadRoute:
             f"/api/v1/chat/threads/{rich_thread_id}/complete", headers=admin_auth
         )
         assert second.status_code == 409
+
+
+class TestDeleteThreadRoute:
+    """Unit 37 (MEADOWOPS-DOM-025): admin-only soft delete that every
+    connected inbox hears about."""
+
+    def test_admin_can_delete_a_thread_and_it_disappears_from_the_list(
+        self,
+        client: TestClient,
+        admin_auth: dict[str, str],
+        analyst_auth: dict[str, str],
+        thread_id: str,
+    ) -> None:
+        response = client.delete(f"/api/v1/chat/threads/{thread_id}", headers=admin_auth)
+        assert response.status_code == 204
+        for auth in (admin_auth, analyst_auth):
+            ids = [t["id"] for t in client.get("/api/v1/chat/threads", headers=auth).json()]
+            assert thread_id not in ids
+
+    def test_analyst_cannot_delete_a_thread(
+        self, client: TestClient, analyst_auth: dict[str, str], thread_id: str
+    ) -> None:
+        response = client.delete(f"/api/v1/chat/threads/{thread_id}", headers=analyst_auth)
+        assert response.status_code == 403
+        ids = [t["id"] for t in client.get("/api/v1/chat/threads", headers=analyst_auth).json()]
+        assert thread_id in ids
+
+    def test_service_credential_cannot_delete_a_thread(
+        self, client: TestClient, thread_id: str
+    ) -> None:
+        response = client.delete(f"/api/v1/chat/threads/{thread_id}", headers=_SERVICE_AUTH)
+        assert response.status_code in (401, 403)
+
+    def test_unauthenticated_request_is_rejected(
+        self, client: TestClient, thread_id: str
+    ) -> None:
+        assert client.delete(f"/api/v1/chat/threads/{thread_id}").status_code == 401
+
+    def test_unknown_thread_returns_404(
+        self, client: TestClient, admin_auth: dict[str, str]
+    ) -> None:
+        response = client.delete(f"/api/v1/chat/threads/{uuid.uuid4()}", headers=admin_auth)
+        assert response.status_code == 404
+
+    def test_deleting_twice_returns_404_the_second_time(
+        self, client: TestClient, admin_auth: dict[str, str], thread_id: str
+    ) -> None:
+        assert client.delete(f"/api/v1/chat/threads/{thread_id}", headers=admin_auth).status_code == 204
+        assert client.delete(f"/api/v1/chat/threads/{thread_id}", headers=admin_auth).status_code == 404
+
+    def test_a_completed_thread_cannot_be_deleted_and_returns_409(
+        self,
+        client: TestClient,
+        admin_auth: dict[str, str],
+        db_session: Session,
+        thread_id: str,
+    ) -> None:
+        thread = db_session.get(ChatThread, uuid.UUID(thread_id))
+        thread.status = ChatThreadStatus.COMPLETED
+        db_session.commit()
+        response = client.delete(f"/api/v1/chat/threads/{thread_id}", headers=admin_auth)
+        assert response.status_code == 409
+        ids = [t["id"] for t in client.get("/api/v1/chat/threads", headers=admin_auth).json()]
+        assert thread_id in ids
+
+    def test_a_deleted_thread_rejects_messages_and_reads(
+        self, client: TestClient, admin_auth: dict[str, str], thread_id: str
+    ) -> None:
+        client.delete(f"/api/v1/chat/threads/{thread_id}", headers=admin_auth)
+        assert (
+            client.get(f"/api/v1/chat/threads/{thread_id}/messages", headers=admin_auth).status_code
+            == 404
+        )
+        assert (
+            client.post(
+                f"/api/v1/chat/threads/{thread_id}/messages",
+                json={"body": "hello?"},
+                headers=admin_auth,
+            ).status_code
+            == 404
+        )
+
+    def test_the_same_scenario_and_persona_can_be_reopened_as_a_fresh_thread(
+        self,
+        client: TestClient,
+        admin_auth: dict[str, str],
+        scenario_id: str,
+        thread_id: str,
+    ) -> None:
+        client.delete(f"/api/v1/chat/threads/{thread_id}", headers=admin_auth)
+        again = client.post(
+            "/api/v1/chat/threads",
+            json={"scenario_id": scenario_id, "persona": "cfo"},
+            headers=admin_auth,
+        )
+        assert again.status_code == 201
+        assert again.json()["id"] != thread_id
+
+    def test_deleting_broadcasts_a_thread_deleted_event_to_connected_sockets(
+        self,
+        client: TestClient,
+        admin_auth: dict[str, str],
+        analyst_auth: dict[str, str],
+        thread_id: str,
+    ) -> None:
+        ticket = client.post("/api/v1/chat/ws-ticket", headers=analyst_auth).json()["ticket"]
+        with client.websocket_connect(f"/api/v1/chat/ws/chat?ticket={ticket}") as ws:
+            response = client.delete(f"/api/v1/chat/threads/{thread_id}", headers=admin_auth)
+            assert response.status_code == 204
+            payload = ws.receive_json()
+            assert payload == {"type": "chat.thread_deleted", "thread_id": thread_id}

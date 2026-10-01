@@ -27,7 +27,7 @@ from app.db.enums import (
 from app.db.exception_flags import ExceptionFlag
 from app.db.scenario import Scenario
 from app.services.baseline_data import seed_master_data
-from app.services.chat import get_or_create_thread, send_message
+from app.services.chat import delete_thread, get_or_create_thread, send_message
 from app.services.exception_rule_defaults import seed_exception_rule_thresholds
 from app.services.notifications import (
     NotificationNotFoundError,
@@ -236,6 +236,42 @@ class TestSweepThreadDeadlines:
         assert len(notifications) == 1
         assert notifications[0].kind == NotificationKind.DEADLINE_MISSED
         assert notifications[0].thread_id == thread.id
+
+    def test_a_deleted_thread_is_never_swept(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID
+    ) -> None:
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        send_message(
+            session, thread_id=thread.id, sender_user_id=admin_id,
+            sender_role=UserRole.ADMIN, body="VP wants a status update",
+        )
+        session.refresh(thread)
+        thread.deadline_at = datetime.now(timezone.utc) - timedelta(hours=1)
+        session.flush()
+        delete_thread(session, thread.id)
+
+        sweep_thread_deadlines(
+            session, now=datetime.now(timezone.utc), approaching_within=timedelta(hours=24)
+        )
+        assert list_notifications_for_user(session, user_id=admin_id) == []
+
+    def test_notifications_for_a_deleted_thread_are_not_listed(
+        self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID
+    ) -> None:
+        # Code review (Unit 37): the thread 404s once deleted, so a listed
+        # notification would pin the unread badge and open a dead link.
+        thread = get_or_create_thread(
+            session, scenario_id=scenario_id, persona=StakeholderPersona.CFO
+        )
+        create_notification(
+            session, user_id=admin_id, thread_id=thread.id, kind=NotificationKind.DEADLINE_MISSED
+        )
+        session.flush()
+        assert len(list_notifications_for_user(session, user_id=admin_id)) == 1
+        delete_thread(session, thread.id)
+        assert list_notifications_for_user(session, user_id=admin_id) == []
 
     def test_sweeping_an_already_overdue_thread_twice_does_not_double_fire(
         self, session: Session, scenario_id: uuid.UUID, admin_id: uuid.UUID

@@ -40,6 +40,10 @@ export function listThreads(): Promise<Response> {
   return chatFetch("/api/v1/chat/threads");
 }
 
+export function deleteThread(threadId: string): Promise<Response> {
+  return chatFetch(`/api/v1/chat/threads/${encodeURIComponent(threadId)}`, { method: "DELETE" });
+}
+
 export function markThreadRead(threadId: string): Promise<Response> {
   return chatFetch(`/api/v1/chat/threads/${encodeURIComponent(threadId)}/read`, {
     method: "POST",

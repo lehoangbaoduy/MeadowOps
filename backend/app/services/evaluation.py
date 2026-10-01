@@ -46,7 +46,11 @@ from app.domain.evaluation import (
     build_outcome,
     generate_evaluation,
 )
-from app.domain.persona_chat import PERSONA_PROFILES, build_known_information
+from app.domain.persona_chat import (
+    PERSONA_PROFILES,
+    build_known_information,
+    without_builder_only_keys,
+)
 from app.domain.prompt_templates import EVALUATION_TEMPLATE
 from app.services.chat import get_thread, list_messages
 from app.services.persona_chat import ScenarioCancelledError
@@ -131,7 +135,7 @@ def complete_thread_and_generate_evaluation(
     profile = PERSONA_PROFILES[thread.persona]
     result = generate_evaluation(
         claude_client,
-        ground_truth_package=scenario.ground_truth,
+        ground_truth_package=without_builder_only_keys(scenario.ground_truth),
         evidence_package=build_known_information(scenario.ground_truth),
         stakeholder_context=f"{profile.name} ({profile.priorities}; {profile.style})",
         expected_cluster_behaviors=EXPECTED_CLUSTER_BEHAVIORS[scenario.competency_cluster],
