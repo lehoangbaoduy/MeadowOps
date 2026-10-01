@@ -34,13 +34,15 @@ def _placeholders_in(template_text: str) -> set[str]:
 
 
 class TestTemplateRegistry:
-    def test_exactly_five_templates_are_registered(self):
+    def test_exactly_seven_templates_are_registered(self):
         # Three from PRD line 470's original skeleton set, plus
         # sufficiency_check (Unit 23, PRD 6.13 - not part of that original
         # three-way list since 6.13's own sufficiency check post-dates it),
         # plus stakeholder_opening (Unit 35, follow-on to Unit 23 - a
-        # sibling to stakeholder_roleplay, not an edit to it).
-        assert len(ALL_TEMPLATES) == 5
+        # sibling to stakeholder_roleplay, not an edit to it), plus
+        # scenario_narrative_text and scenario_expected_query (Unit 39 - the
+        # Builder's separate regenerate buttons, siblings to scenario_generation).
+        assert len(ALL_TEMPLATES) == 7
 
     def test_registered_templates_match_the_prd_use_cases(self):
         names = {t.name for t in ALL_TEMPLATES}
@@ -50,6 +52,8 @@ class TestTemplateRegistry:
             "stakeholder_opening",
             "sufficiency_check",
             "draft_evaluation",
+            "scenario_narrative_text",
+            "scenario_expected_query",
         }
 
     def test_every_template_has_a_version(self):

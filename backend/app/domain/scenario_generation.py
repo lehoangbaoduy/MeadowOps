@@ -29,12 +29,19 @@ suffix rather than folded into the template text itself.
 from __future__ import annotations
 
 import json
+import re
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import sqlparse
 
 from app.domain.claude_client import ClaudeAPIError, ClaudeClient
-from app.domain.prompt_templates import GENERATION_TEMPLATE
+from app.domain.persona_chat import without_builder_only_keys
+from app.domain.prompt_templates import (
+    EXPECTED_QUERY_TEMPLATE,
+    GENERATION_TEMPLATE,
+    NARRATIVE_TEXT_TEMPLATE,
+)
 from app.domain.query_classifier import StatementType, split_statements, classify_statement
 
 # Placeholder pending the real Anthropic SDK adapter (Phase 4, blocker B3) -
@@ -286,3 +293,133 @@ def generate_scenario_narrative(
             last_error = exc
     assert last_error is not None  # every loop iteration above sets it on failure
     raise ScenarioGenerationFailedError(last_error)
+
+
+_SMALL_MAX_TOKENS = 1024
+_CODE_FENCE_RE = re.compile(r"^```[a-zA-Z]*\s*\n?(.*?)\n?```$", re.DOTALL)
+
+
+def _strip_code_fence(text: str) -> str:
+    stripped = text.strip()
+    match = _CODE_FENCE_RE.match(stripped)
+    return match.group(1).strip() if match else stripped
+
+
+def _rendered_facts(ground_truth: dict) -> str:
+    # The old narrative/query are deliberately left out: a regenerate should
+    # produce a fresh answer from the facts, not paraphrase what it replaces.
+    return json.dumps(without_builder_only_keys(ground_truth), sort_keys=True, default=str)
+
+
+def build_narrative_prompt(
+    *, scenario_type: str, difficulty_tier: str, competency_cluster: str, ground_truth: dict
+) -> str:
+    return NARRATIVE_TEXT_TEMPLATE.render(
+        {
+            "scenario_type": scenario_type,
+            "difficulty_tier": difficulty_tier,
+            "competency_cluster": competency_cluster,
+            "ground_truth_package": _rendered_facts(ground_truth),
+        }
+    )
+
+
+def build_expected_query_prompt(
+    *,
+    scenario_type: str,
+    difficulty_tier: str,
+    competency_cluster: str,
+    ground_truth: dict,
+    schema_summary: str,
+) -> str:
+    return EXPECTED_QUERY_TEMPLATE.render(
+        {
+            "scenario_type": scenario_type,
+            "difficulty_tier": difficulty_tier,
+            "competency_cluster": competency_cluster,
+            "ground_truth_package": _rendered_facts(ground_truth),
+            "schema_summary": schema_summary,
+        }
+    )
+
+
+def _generate_text_with_retry(
+    client: ClaudeClient, *, system: str, prompt: str, parse: Callable[[str], str]
+) -> str:
+    """Same PRD 9.2 rule as generate_scenario_narrative: one automatic retry
+    on an API error or an answer `parse` rejects, then surface the failure."""
+    last_error: Exception | None = None
+    for _attempt in range(_MAX_ATTEMPTS):
+        try:
+            response = client.create_message(
+                model=_CLAUDE_MODEL,
+                system=system,
+                messages=[{"role": "user", "content": prompt}],
+                max_tokens=_SMALL_MAX_TOKENS,
+            )
+            return parse(response.content)
+        except (ClaudeAPIError, ScenarioNarrativeSchemaError) as exc:
+            last_error = exc
+    assert last_error is not None
+    raise ScenarioGenerationFailedError(last_error)
+
+
+def _parse_narrative_text(content: str) -> str:
+    text = normalize_narrative(_strip_code_fence(content))
+    if not text:
+        raise ScenarioNarrativeSchemaError("the narrative came back empty")
+    return text
+
+
+def _parse_expected_query(content: str) -> str:
+    query = normalize_expected_query(_strip_code_fence(content))
+    if not query:
+        raise ScenarioNarrativeSchemaError("the expected query came back empty")
+    return query
+
+
+def generate_narrative_text(
+    client: ClaudeClient,
+    *,
+    scenario_type: str,
+    difficulty_tier: str,
+    competency_cluster: str,
+    ground_truth: dict,
+) -> str:
+    """Unit 39: a fresh Builder-only narrative from the scenario's facts."""
+    return _generate_text_with_retry(
+        client,
+        system="You write concise, factual supply-chain scenario narratives. Plain text only.",
+        prompt=build_narrative_prompt(
+            scenario_type=scenario_type,
+            difficulty_tier=difficulty_tier,
+            competency_cluster=competency_cluster,
+            ground_truth=ground_truth,
+        ),
+        parse=_parse_narrative_text,
+    )
+
+
+def generate_expected_query(
+    client: ClaudeClient,
+    *,
+    scenario_type: str,
+    difficulty_tier: str,
+    competency_cluster: str,
+    ground_truth: dict,
+    schema_summary: str,
+) -> str:
+    """Unit 39: a fresh single read-only SELECT, validated exactly like one
+    typed by hand (normalize_expected_query)."""
+    return _generate_text_with_retry(
+        client,
+        system="You write a single PostgreSQL SELECT statement. SQL only, no prose.",
+        prompt=build_expected_query_prompt(
+            scenario_type=scenario_type,
+            difficulty_tier=difficulty_tier,
+            competency_cluster=competency_cluster,
+            ground_truth=ground_truth,
+            schema_summary=schema_summary,
+        ),
+        parse=_parse_expected_query,
+    )

@@ -225,10 +225,66 @@ EVALUATION_TEMPLATE = PromptTemplate(
     ),
 )
 
+# Unit 39 (MEADOWOPS-DOM-027): siblings to GENERATION_TEMPLATE for the
+# Builder's two separate "regenerate" buttons. New templates, not edits to
+# the frozen v1 generation text (ER-6). Both answer in plain text, not JSON.
+NARRATIVE_TEXT_TEMPLATE = PromptTemplate(
+    name="scenario_narrative_text",
+    version="v1",
+    required_context=frozenset(
+        {"scenario_type", "difficulty_tier", "competency_cluster", "ground_truth_package"}
+    ),
+    template=(
+        "You are writing the Builder-only narrative for a supply-chain work "
+        "scenario (type {scenario_type}, difficulty tier {difficulty_tier}, "
+        "{competency_cluster} competency cluster). The narrative tells the "
+        "Builder, in plain language, what is going on in this scenario so "
+        "they can follow the Analyst's work and help if she is stuck. It is "
+        "never shown to the Analyst.\n\n"
+        "Scenario facts (do not exceed or contradict these; reference only "
+        "identifiers that appear here):\n{ground_truth_package}\n\n"
+        "Write two to four short paragraphs. State what happened, why it "
+        "matters to the business, and what a good analysis would uncover. "
+        "Do not invent numbers or identifiers. Respond with the narrative "
+        "text only - no heading, no markdown fences."
+    ),
+)
+
+EXPECTED_QUERY_TEMPLATE = PromptTemplate(
+    name="scenario_expected_query",
+    version="v1",
+    required_context=frozenset(
+        {
+            "scenario_type",
+            "difficulty_tier",
+            "competency_cluster",
+            "ground_truth_package",
+            "schema_summary",
+        }
+    ),
+    template=(
+        "You are writing the Builder-only expected query for a supply-chain "
+        "work scenario (type {scenario_type}, difficulty tier "
+        "{difficulty_tier}, {competency_cluster} competency cluster): a SQL "
+        "query that would let an Analyst find the answer, so the Builder can "
+        "check her work.\n\n"
+        "Scenario facts:\n{ground_truth_package}\n\n"
+        "Tables the Analyst can query (PostgreSQL, schema sandbox):\n"
+        "{schema_summary}\n\n"
+        "Write exactly ONE read-only SELECT statement using only the tables "
+        "and columns listed above, each table referenced as "
+        "sandbox.<table_name>. No INSERT, UPDATE, DELETE or DDL, and no second "
+        "statement. Respond with the SQL only - no explanation, no markdown "
+        "fences."
+    ),
+)
+
 ALL_TEMPLATES = (
     GENERATION_TEMPLATE,
     STAKEHOLDER_ROLEPLAY_TEMPLATE,
     STAKEHOLDER_OPENING_TEMPLATE,
     SUFFICIENCY_CHECK_TEMPLATE,
     EVALUATION_TEMPLATE,
+    NARRATIVE_TEXT_TEMPLATE,
+    EXPECTED_QUERY_TEMPLATE,
 )

@@ -19,7 +19,11 @@ from app.domain.scenario_generation import (
     ScenarioGenerationFailedError,
     ScenarioNarrative,
     ScenarioNarrativeSchemaError,
+    build_expected_query_prompt,
     build_generation_prompt,
+    build_narrative_prompt,
+    generate_expected_query,
+    generate_narrative_text,
     generate_scenario_narrative,
     parse_narrative_response,
 )
@@ -335,3 +339,112 @@ class TestGenerateScenarioNarrative:
         with pytest.raises(ScenarioGenerationFailedError):
             generate_scenario_narrative(client, **self._kwargs())
         assert len(client.call_log) == 2
+
+
+_GROUND_TRUTH = {
+    "known_cause": "Reorder point misconfigured at WH-EAST",
+    "evidence": {"product_id": "SKU-COR-001", "warehouse_id": "WH-EAST", "measured_value": "4.00"},
+    "supporting_signals": ["stock fell below cover"],
+    "distractors": ["a promotion last week"],
+    "narrative": "OLD-NARRATIVE-MARKER",
+    "expected_query": "SELECT 'OLD-QUERY-MARKER'",
+}
+_SCHEMA_SUMMARY = "sandbox.inventory_snapshot(product_id text, warehouse_id text, quantity_on_hand integer)"
+
+
+class TestNarrativeAndQueryPrompts:
+    def test_the_narrative_prompt_carries_the_facts_but_not_the_old_builder_notes(self) -> None:
+        prompt = build_narrative_prompt(
+            scenario_type="data_quality_issue",
+            difficulty_tier="standard",
+            competency_cluster="analysis_diagnosis",
+            ground_truth=_GROUND_TRUTH,
+        )
+        assert "Reorder point misconfigured" in prompt
+        assert "SKU-COR-001" in prompt
+        assert "OLD-NARRATIVE-MARKER" not in prompt
+        assert "OLD-QUERY-MARKER" not in prompt
+
+    def test_the_query_prompt_includes_the_sandbox_schema_and_asks_for_one_select(self) -> None:
+        prompt = build_expected_query_prompt(
+            scenario_type="data_quality_issue",
+            difficulty_tier="standard",
+            competency_cluster="analysis_diagnosis",
+            ground_truth=_GROUND_TRUTH,
+            schema_summary=_SCHEMA_SUMMARY,
+        )
+        assert "sandbox.inventory_snapshot" in prompt
+        assert "SELECT" in prompt
+        assert "OLD-QUERY-MARKER" not in prompt
+
+
+def _client(*contents: str | Exception) -> MockClaudeClient:
+    return MockClaudeClient(
+        script=[c if isinstance(c, Exception) else ClaudeResponse(content=c) for c in contents]
+    )
+
+
+def _generate_query(client: MockClaudeClient) -> str:
+    return generate_expected_query(
+        client,
+        scenario_type="data_quality_issue",
+        difficulty_tier="standard",
+        competency_cluster="analysis_diagnosis",
+        ground_truth=_GROUND_TRUTH,
+        schema_summary=_SCHEMA_SUMMARY,
+    )
+
+
+def _generate_narrative(client: MockClaudeClient) -> str:
+    return generate_narrative_text(
+        client,
+        scenario_type="data_quality_issue",
+        difficulty_tier="standard",
+        competency_cluster="analysis_diagnosis",
+        ground_truth=_GROUND_TRUTH,
+    )
+
+
+class TestGenerateExpectedQuery:
+    def test_returns_the_single_select_without_fences_or_trailing_semicolon(self) -> None:
+        client = _client("```sql\nSELECT product_id FROM sandbox.inventory_snapshot;\n```")
+        assert _generate_query(client) == "SELECT product_id FROM sandbox.inventory_snapshot"
+
+    def test_retries_once_when_the_first_answer_is_not_a_read_only_select(self) -> None:
+        client = _client("DELETE FROM sandbox.product", "SELECT 1")
+        assert _generate_query(client) == "SELECT 1"
+        assert len(client.call_log) == 2
+
+    def test_retries_once_after_an_api_error(self) -> None:
+        client = _client(ClaudeAPIError("overloaded"), "SELECT 1")
+        assert _generate_query(client) == "SELECT 1"
+
+    def test_fails_after_the_one_retry_is_used_up(self) -> None:
+        client = _client("DELETE FROM sandbox.product", "UPDATE sandbox.product SET x = 1")
+        with pytest.raises(ScenarioGenerationFailedError):
+            _generate_query(client)
+        assert len(client.call_log) == 2
+
+    def test_an_empty_answer_counts_as_a_failure(self) -> None:
+        client = _client("   ", "")
+        with pytest.raises(ScenarioGenerationFailedError):
+            _generate_query(client)
+
+
+class TestGenerateNarrativeText:
+    def test_returns_the_trimmed_text(self) -> None:
+        assert _generate_narrative(_client("  Stock fell at WH-EAST.  \n")) == "Stock fell at WH-EAST."
+
+    def test_retries_once_on_an_empty_answer_then_succeeds(self) -> None:
+        client = _client("", "Stock fell at WH-EAST.")
+        assert _generate_narrative(client) == "Stock fell at WH-EAST."
+        assert len(client.call_log) == 2
+
+    def test_fails_after_the_one_retry_is_used_up(self) -> None:
+        with pytest.raises(ScenarioGenerationFailedError):
+            _generate_narrative(_client(ClaudeAPIError("down"), ClaudeAPIError("down")))
+
+    def test_an_over_long_answer_counts_as_a_failure(self) -> None:
+        too_long = "x" * 5000
+        with pytest.raises(ScenarioGenerationFailedError):
+            _generate_narrative(_client(too_long, too_long))

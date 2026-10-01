@@ -46,6 +46,8 @@ from app.services.scenario_service import (
     approve_scenario,
     cancel_scenario,
     create_scenario_from_exception_flag,
+    regenerate_expected_query,
+    regenerate_narrative,
     regenerate_scenario,
     update_ground_truth,
     validate_referenced_entity_ids,
@@ -567,9 +569,11 @@ class TestCancelScenario:
 
         assert cancelled.status == ScenarioStatus.CANCELLED
 
-    def test_raises_when_scenario_is_already_active(
+    def test_cancels_an_active_scenario(
         self, session: Session, builder_id: uuid.UUID
     ) -> None:
+        # Unit 39: removing the live scenario sends it to Cancelled (it used
+        # to be a lifecycle terminus).
         flag = _open_flag(session)
         scenario = create_scenario_from_exception_flag(
             session,
@@ -583,6 +587,25 @@ class TestCancelScenario:
         _complete_ground_truth(scenario)
         approve_scenario(session, scenario.id)
         activate_scenario(session, scenario.id)
+
+        cancelled = cancel_scenario(session, scenario.id)
+
+        assert cancelled.status == ScenarioStatus.CANCELLED
+
+    def test_raises_when_scenario_is_already_cancelled(
+        self, session: Session, builder_id: uuid.UUID
+    ) -> None:
+        flag = _open_flag(session)
+        scenario = create_scenario_from_exception_flag(
+            session,
+            exception_flag_id=flag.id,
+            scenario_type=ScenarioType.DATA_QUALITY_ISSUE,
+            competency_cluster=CompetencyCluster.ANALYSIS_DIAGNOSIS,
+            difficulty_tier=DifficultyTier.STANDARD,
+            title="x",
+            created_by=builder_id,
+        )
+        cancel_scenario(session, scenario.id)
 
         with pytest.raises(ScenarioTransitionError):
             cancel_scenario(session, scenario.id)
@@ -704,3 +727,132 @@ class TestGroundTruthImmuneToLaterMasterDataEdits:
 
         session.refresh(scenario)
         assert scenario.ground_truth == original_ground_truth
+
+
+def _scenario_in_status(session: Session, builder_id: uuid.UUID, target: str) -> Scenario:
+    flag = _open_flag(session)
+    scenario = create_scenario_from_exception_flag(
+        session,
+        exception_flag_id=flag.id,
+        scenario_type=ScenarioType.DATA_QUALITY_ISSUE,
+        competency_cluster=CompetencyCluster.ANALYSIS_DIAGNOSIS,
+        difficulty_tier=DifficultyTier.STANDARD,
+        title="x",
+        created_by=builder_id,
+    )
+    if target == "draft":
+        return scenario
+    if target == "cancelled":
+        return cancel_scenario(session, scenario.id)
+    _complete_ground_truth(scenario)
+    approve_scenario(session, scenario.id)
+    if target == "active":
+        activate_scenario(session, scenario.id)
+    return scenario
+
+
+class TestRegenerateNarrativeAndQuery:
+    """Unit 39 (MEADOWOPS-DOM-027): the Builder's two separate buttons. Both
+    notes are Builder-only and ungraded, so unlike the rest of ground_truth
+    they may be regenerated while the scenario is live."""
+
+    def test_regenerate_narrative_replaces_only_the_narrative(
+        self, session: Session, builder_id: uuid.UUID
+    ) -> None:
+        scenario = _scenario_in_status(session, builder_id, "draft")
+        before = dict(scenario.ground_truth)
+        client = MockClaudeClient(script=[ClaudeResponse(content="A fresh story.")])
+
+        updated = regenerate_narrative(session, scenario.id, client)
+
+        assert updated.ground_truth["narrative"] == "A fresh story."
+        assert {k: v for k, v in updated.ground_truth.items() if k != "narrative"} == before
+
+    def test_regenerate_expected_query_gives_the_model_the_real_sandbox_tables(
+        self, session: Session, builder_id: uuid.UUID
+    ) -> None:
+        scenario = _scenario_in_status(session, builder_id, "draft")
+        client = MockClaudeClient(script=[ClaudeResponse(content="SELECT 1 AS one;")])
+
+        updated = regenerate_expected_query(session, scenario.id, client)
+
+        assert updated.ground_truth["expected_query"] == "SELECT 1 AS one"
+        prompt = client.call_log[0]["messages"][0]["content"]
+        assert "sandbox.customer" in prompt
+        assert "sandbox.inventory_snapshot" in prompt
+
+    @pytest.mark.parametrize("status", ["approved", "active"])
+    def test_works_on_a_live_scenario_too(
+        self, session: Session, builder_id: uuid.UUID, status: str
+    ) -> None:
+        scenario = _scenario_in_status(session, builder_id, status)
+        client = MockClaudeClient(
+            script=[ClaudeResponse(content="Story."), ClaudeResponse(content="SELECT 1")]
+        )
+
+        regenerate_narrative(session, scenario.id, client)
+        regenerate_expected_query(session, scenario.id, client)
+
+        assert scenario.ground_truth["narrative"] == "Story."
+        assert scenario.ground_truth["expected_query"] == "SELECT 1"
+
+    def test_refused_for_a_cancelled_scenario(
+        self, session: Session, builder_id: uuid.UUID
+    ) -> None:
+        scenario = _scenario_in_status(session, builder_id, "cancelled")
+        client = MockClaudeClient(script=[ClaudeResponse(content="unused")])
+        with pytest.raises(ScenarioTransitionError):
+            regenerate_narrative(session, scenario.id, client)
+        with pytest.raises(ScenarioTransitionError):
+            regenerate_expected_query(session, scenario.id, client)
+        assert client.call_log == []
+
+    def test_a_failed_generation_leaves_the_scenario_untouched(
+        self, session: Session, builder_id: uuid.UUID
+    ) -> None:
+        scenario = _scenario_in_status(session, builder_id, "draft")
+        update_ground_truth(session, scenario.id, {"narrative": "Mine", "expected_query": "SELECT 7"})
+        client = MockClaudeClient(
+            script=[ClaudeAPIError("down"), ClaudeAPIError("down"), ClaudeAPIError("down"), ClaudeAPIError("down")]
+        )
+        with pytest.raises(ScenarioGenerationFailedError):
+            regenerate_narrative(session, scenario.id, client)
+        with pytest.raises(ScenarioGenerationFailedError):
+            regenerate_expected_query(session, scenario.id, client)
+        assert scenario.ground_truth["narrative"] == "Mine"
+        assert scenario.ground_truth["expected_query"] == "SELECT 7"
+
+    def test_unknown_scenario_raises_not_found(self, session: Session) -> None:
+        client = MockClaudeClient(script=[ClaudeResponse(content="unused")])
+        with pytest.raises(ScenarioNotFoundError):
+            regenerate_narrative(session, uuid.uuid4(), client)
+
+
+class TestEditingBuilderNotesOnALiveScenario:
+    def test_the_notes_can_be_edited_while_active(
+        self, session: Session, builder_id: uuid.UUID
+    ) -> None:
+        scenario = _scenario_in_status(session, builder_id, "active")
+        updated = update_ground_truth(
+            session, scenario.id, {"narrative": "Edited", "expected_query": "SELECT 2"}
+        )
+        assert updated.ground_truth["narrative"] == "Edited"
+        assert updated.ground_truth["expected_query"] == "SELECT 2"
+
+    def test_graded_fields_stay_locked_once_the_scenario_is_live(
+        self, session: Session, builder_id: uuid.UUID
+    ) -> None:
+        scenario = _scenario_in_status(session, builder_id, "active")
+        with pytest.raises(ScenarioTransitionError):
+            update_ground_truth(session, scenario.id, {"uncertainty": "tampered"})
+        with pytest.raises(ScenarioTransitionError):
+            update_ground_truth(
+                session, scenario.id, {"narrative": "ok", "uncertainty": "tampered"}
+            )
+
+    def test_nothing_can_be_edited_on_a_cancelled_scenario(
+        self, session: Session, builder_id: uuid.UUID
+    ) -> None:
+        scenario = _scenario_in_status(session, builder_id, "cancelled")
+        with pytest.raises(ScenarioTransitionError):
+            update_ground_truth(session, scenario.id, {"narrative": "late"})

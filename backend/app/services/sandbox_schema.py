@@ -87,6 +87,16 @@ def describe_sandbox_schema(metadata: MetaData) -> SandboxSchemaDescription:
     return SandboxSchemaDescription(tables=tables, relationships=relationships)
 
 
+def sandbox_schema_summary(metadata: MetaData) -> str:
+    """One line per queryable table, "sandbox.<table>(col type, ...)" - what
+    the scenario generators hand the model so the SQL it writes uses names
+    that really exist (Unit 39)."""
+    return "\n".join(
+        f"{table.qualified_name}({', '.join(f'{c.name} {c.type.lower()}' for c in table.columns)})"
+        for table in describe_sandbox_schema(metadata).tables
+    )
+
+
 def sandbox_has_tables(sandbox_dsn: str) -> bool:
     """True once a refresh has populated the sandbox with at least one
     mirrored table. Read as the restricted sandbox role (what a query will

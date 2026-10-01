@@ -16,6 +16,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 
+import type { ScenarioStatus } from "../../types";
+import { RegenerateButton } from "./regenerate-button";
+
 interface RunResult {
   status: string;
   columns: string[];
@@ -41,7 +44,16 @@ function formatCell(value: unknown): string {
  * backend route, which re-validates it as a single SELECT and runs it as the
  * restricted sandbox role.
  */
-export function ExpectedQueryPanel({ id, query }: { id: string; query: string }) {
+export function ExpectedQueryPanel({
+  id,
+  query,
+  status,
+}: {
+  id: string;
+  query: string;
+  status: ScenarioStatus;
+}) {
+  const canRegenerate = status !== "cancelled";
   const [isRunning, setIsRunning] = useState(false);
   const [result, setResult] = useState<RunResult | null>(null);
   const [copied, setCopied] = useState(false);
@@ -79,6 +91,16 @@ export function ExpectedQueryPanel({ id, query }: { id: string; query: string })
         <div className="flex flex-wrap items-center gap-2">
           <CardTitle className="text-base">Expected query</CardTitle>
           <Badge variant="secondary">Builder only</Badge>
+          {canRegenerate && (
+            <div className="ml-auto">
+              <RegenerateButton
+                id={id}
+                action="regenerate-expected-query"
+                noun="query"
+                hasExisting={query !== ""}
+              />
+            </div>
+          )}
         </div>
         <CardDescription>
           A query that should surface the problem. Use it to check the Analyst&apos;s work or to
@@ -111,7 +133,9 @@ export function ExpectedQueryPanel({ id, query }: { id: string; query: string })
           </>
         ) : (
           <p className="text-sm italic text-muted-foreground">
-            No expected query yet. Add one below, or regenerate the scenario to have it drafted.
+            {canRegenerate
+              ? "No expected query yet. Generate one, or write your own."
+              : "No expected query was recorded for this scenario."}
           </p>
         )}
 

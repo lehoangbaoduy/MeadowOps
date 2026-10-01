@@ -53,6 +53,8 @@ from app.services.scenario_service import (
     create_scenario_from_exception_flag,
     get_scenario,
     list_scenarios,
+    regenerate_expected_query,
+    regenerate_narrative,
     regenerate_scenario,
     update_ground_truth,
 )
@@ -198,6 +200,53 @@ def regenerate_scenario_route(
     session.commit()
     session.refresh(scenario)
     return scenario
+
+
+def _regenerate_builder_note(
+    regenerate, scenario_id: uuid.UUID, session: Session, claude_client: ClaudeClient | None
+) -> Scenario:
+    if claude_client is None:
+        raise HTTPException(
+            status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Scenario generation is not configured (no Claude client)",
+        )
+    try:
+        scenario = regenerate(session, scenario_id, claude_client)
+    except ScenarioNotFoundError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail=str(exc)) from exc
+    except ScenarioTransitionError as exc:
+        session.rollback()
+        raise HTTPException(status.HTTP_409_CONFLICT, detail=str(exc)) from exc
+    except ScenarioGenerationFailedError as exc:
+        session.rollback()
+        raise HTTPException(status.HTTP_502_BAD_GATEWAY, detail=str(exc)) from exc
+    session.commit()
+    session.refresh(scenario)
+    return scenario
+
+
+@router.post("/{scenario_id}/regenerate-narrative", response_model=ScenarioRead)
+def regenerate_narrative_route(
+    scenario_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    claude_client: ClaudeClient | None = Depends(get_claude_client),
+    _identity: dict[str, str] = Depends(require_admin),
+) -> Scenario:
+    """Unit 39 (MEADOWOPS-DOM-027): regenerates only the Builder-only
+    narrative; allowed on a draft, approved or active scenario."""
+    return _regenerate_builder_note(regenerate_narrative, scenario_id, session, claude_client)
+
+
+@router.post("/{scenario_id}/regenerate-expected-query", response_model=ScenarioRead)
+def regenerate_expected_query_route(
+    scenario_id: uuid.UUID,
+    session: Session = Depends(get_session),
+    claude_client: ClaudeClient | None = Depends(get_claude_client),
+    _identity: dict[str, str] = Depends(require_admin),
+) -> Scenario:
+    """Unit 39 (MEADOWOPS-DOM-027): regenerates only the Builder-only
+    expected query (one validated read-only SELECT)."""
+    return _regenerate_builder_note(regenerate_expected_query, scenario_id, session, claude_client)
 
 
 # Rows shown in the Builder's check - the full result is not the point, and

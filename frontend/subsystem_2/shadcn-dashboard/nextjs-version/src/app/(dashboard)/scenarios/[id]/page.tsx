@@ -10,6 +10,7 @@ import {
   SCENARIO_TYPE_OPTIONS,
   type Scenario,
 } from "../types";
+import { BuilderNotesForm } from "./components/builder-notes-form";
 import { ExpectedQueryPanel } from "./components/expected-query-panel";
 import { GroundTruthEditForm } from "./components/ground-truth-edit-form";
 import { GroundTruthPreview } from "./components/ground-truth-preview";
@@ -56,13 +57,24 @@ export default async function ScenarioDetailPage({
         <ScenarioActions id={scenario.id} status={scenario.status} />
       </div>
 
-      <NarrativeCard narrative={scenario.ground_truth.narrative ?? ""} />
-      <ExpectedQueryPanel id={scenario.id} query={scenario.ground_truth.expected_query ?? ""} />
+      <NarrativeCard
+        id={scenario.id}
+        narrative={scenario.ground_truth.narrative ?? ""}
+        status={scenario.status}
+      />
+      <ExpectedQueryPanel
+        id={scenario.id}
+        query={scenario.ground_truth.expected_query ?? ""}
+        status={scenario.status}
+      />
 
       <GroundTruthPreview groundTruth={scenario.ground_truth} />
 
       {scenario.status === "draft" && (
         <GroundTruthEditForm id={scenario.id} groundTruth={scenario.ground_truth} />
+      )}
+      {(scenario.status === "approved" || scenario.status === "active") && (
+        <BuilderNotesForm id={scenario.id} groundTruth={scenario.ground_truth} />
       )}
 
       <ScenarioThreads threads={threads} />

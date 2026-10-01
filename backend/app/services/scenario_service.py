@@ -21,6 +21,8 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+import app.db  # noqa: F401 - registers every table on Base.metadata (schema summary below)
+from app.db.base import Base
 from app.db.chat import ChatThread
 from app.db.dimensions import Product, Supplier, Warehouse
 from app.db.enums import (
@@ -42,7 +44,12 @@ from app.domain.scenario import (
     can_transition,
     validate_for_approval,
 )
-from app.domain.scenario_generation import generate_scenario_narrative
+from app.services.sandbox_schema import sandbox_schema_summary
+from app.domain.scenario_generation import (
+    generate_expected_query,
+    generate_narrative_text,
+    generate_scenario_narrative,
+)
 
 # Keyed by the app.domain.scenario_generation.ScenarioNarrative.
 # referenced_entity_ids field a Claude response carries. String-PK entity
@@ -284,6 +291,66 @@ def regenerate_scenario(
     return scenario
 
 
+# Unit 39 (MEADOWOPS-DOM-027): the Builder-only narrative and expected query
+# are not graded content (they are withheld from the evaluator and every
+# persona prompt), so they stay editable/regenerable while a scenario is live.
+# Everything else in ground_truth is locked after the draft stage.
+BUILDER_NOTE_KEYS = frozenset({"narrative", "expected_query"})
+
+
+def _may_edit_builder_notes(scenario: Scenario, updates: dict) -> bool:
+    return (
+        scenario.status != ScenarioStatus.CANCELLED
+        and bool(updates)
+        and set(updates) <= BUILDER_NOTE_KEYS
+    )
+
+
+def _scenario_for_builder_note(session: Session, scenario_id: uuid.UUID) -> Scenario:
+    scenario = _get_scenario(session, scenario_id)
+    if scenario.status == ScenarioStatus.CANCELLED:
+        raise ScenarioTransitionError(f"scenario {scenario_id} is cancelled")
+    return scenario
+
+
+def regenerate_narrative(
+    session: Session, scenario_id: uuid.UUID, claude_client: ClaudeClient
+) -> Scenario:
+    """Unit 39: a fresh Builder-only narrative from the scenario's own facts.
+    Nothing else in ground_truth changes, and a failed generation (after the
+    one automatic retry) leaves the existing narrative untouched."""
+    scenario = _scenario_for_builder_note(session, scenario_id)
+    narrative = generate_narrative_text(
+        claude_client,
+        scenario_type=scenario.scenario_type.value,
+        difficulty_tier=scenario.difficulty_tier.value,
+        competency_cluster=scenario.competency_cluster.value,
+        ground_truth=scenario.ground_truth,
+    )
+    scenario.ground_truth = {**scenario.ground_truth, "narrative": narrative}
+    session.flush()
+    return scenario
+
+
+def regenerate_expected_query(
+    session: Session, scenario_id: uuid.UUID, claude_client: ClaudeClient
+) -> Scenario:
+    """Unit 39: a fresh single-SELECT expected query, written against the
+    real sandbox tables and validated like a hand-typed one."""
+    scenario = _scenario_for_builder_note(session, scenario_id)
+    query = generate_expected_query(
+        claude_client,
+        scenario_type=scenario.scenario_type.value,
+        difficulty_tier=scenario.difficulty_tier.value,
+        competency_cluster=scenario.competency_cluster.value,
+        ground_truth=scenario.ground_truth,
+        schema_summary=sandbox_schema_summary(Base.metadata),
+    )
+    scenario.ground_truth = {**scenario.ground_truth, "expected_query": query}
+    session.flush()
+    return scenario
+
+
 def update_ground_truth(session: Session, scenario_id: uuid.UUID, updates: dict) -> Scenario:
     """Merges `updates` into the scenario's ground_truth (6.4's "edit"
     control). Draft-only (code review, HIGH): without this guard, editing
@@ -293,7 +360,7 @@ def update_ground_truth(session: Session, scenario_id: uuid.UUID, updates: dict)
     downstream would know the approval gate had been bypassed after the
     fact."""
     scenario = _get_scenario(session, scenario_id)
-    if scenario.status != ScenarioStatus.DRAFT:
+    if scenario.status != ScenarioStatus.DRAFT and not _may_edit_builder_notes(scenario, updates):
         raise ScenarioTransitionError(
             f"scenario {scenario_id} ground_truth can only be edited while in "
             f"draft (currently {scenario.status.value})"
@@ -328,10 +395,11 @@ def activate_scenario(session: Session, scenario_id: uuid.UUID) -> Scenario:
     - not "only one scenario active across this system's entire history".
     That distinction matters here because ScenarioStatus has no
     active->completed transition (app.domain.scenario.VALID_TRANSITIONS):
-    activation was deliberately left as this unit's own lifecycle terminus,
-    so every scenario that has ever been activated stays status=ACTIVE
-    forever (see B13 in prd/MeadowOps_progress.md for the deferred "real"
-    terminal-status fix this punts on). A DB-level "at most one row with
+    a scenario that has been activated stays status=ACTIVE until the
+    Builder removes it (Unit 39 added active->cancelled), so every
+    scenario activated and never removed stays ACTIVE (see B13 in
+    prd/MeadowOps_progress.md for the deferred "real" terminal-status fix
+    this punts on). A DB-level "at most one row with
     status=active, ever" constraint was tried first (migration 0023) and
     reverted - it broke real, correct multi-scenario history
     (app.services.evaluation_service's difficulty-tier lookups, the QA

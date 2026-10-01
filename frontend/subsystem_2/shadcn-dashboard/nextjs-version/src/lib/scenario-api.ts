@@ -67,6 +67,19 @@ export function regenerateScenario(id: string): Promise<Response> {
   });
 }
 
+export function regenerateNarrative(id: string): Promise<Response> {
+  return scenarioFetch(`/api/v1/admin/scenarios/${encodeURIComponent(id)}/regenerate-narrative`, {
+    method: "POST",
+  });
+}
+
+export function regenerateExpectedQuery(id: string): Promise<Response> {
+  return scenarioFetch(
+    `/api/v1/admin/scenarios/${encodeURIComponent(id)}/regenerate-expected-query`,
+    { method: "POST" }
+  );
+}
+
 export function runExpectedQuery(id: string): Promise<Response> {
   return scenarioFetch(`/api/v1/admin/scenarios/${encodeURIComponent(id)}/expected-query/run`, {
     method: "POST",

@@ -182,6 +182,8 @@ class TestAuth:
             ("patch", "/{id}/ground-truth"),
             ("post", "/{id}/regenerate"),
             ("post", "/{id}/expected-query/run"),
+            ("post", "/{id}/regenerate-narrative"),
+            ("post", "/{id}/regenerate-expected-query"),
             ("post", "/{id}/approve"),
             ("post", "/{id}/activate"),
             ("post", "/{id}/cancel"),
@@ -616,6 +618,138 @@ class TestNarrativeAndExpectedQuery:
         assert truth["expected_query"] == self._SELECT
 
 
+class TestBuilderNotesOnALiveScenario:
+    """Unit 39 (MEADOWOPS-DOM-027): the narrative and expected query can be
+    edited and regenerated after the scenario is approved/active; the graded
+    fields cannot."""
+
+    def _activate(self, client: TestClient, admin_auth: dict[str, str], flag_id: str) -> str:
+        created = client.post(
+            "/api/v1/admin/scenarios", json=_create_payload(flag_id), headers=admin_auth
+        ).json()
+        client.patch(
+            f"/api/v1/admin/scenarios/{created['id']}/ground-truth",
+            json=_complete_ground_truth_payload(),
+            headers=admin_auth,
+        )
+        client.post(f"/api/v1/admin/scenarios/{created['id']}/approve", headers=admin_auth)
+        client.post(f"/api/v1/admin/scenarios/{created['id']}/activate", headers=admin_auth)
+        return created["id"]
+
+    def _script(self, client: TestClient, *contents: str | Exception) -> None:
+        client.app.state.claude_client = MockClaudeClient(
+            script=[c if isinstance(c, Exception) else ClaudeResponse(content=c) for c in contents]
+        )
+
+    def test_the_notes_can_be_patched_on_an_active_scenario(
+        self, client: TestClient, admin_auth: dict[str, str], open_flag_id: str
+    ) -> None:
+        scenario_id = self._activate(client, admin_auth, open_flag_id)
+        response = client.patch(
+            f"/api/v1/admin/scenarios/{scenario_id}/ground-truth",
+            json={"narrative": "Live note", "expected_query": "SELECT 1"},
+            headers=admin_auth,
+        )
+        assert response.status_code == 200
+        assert response.json()["ground_truth"]["narrative"] == "Live note"
+
+    def test_a_graded_field_is_still_locked_on_an_active_scenario(
+        self, client: TestClient, admin_auth: dict[str, str], open_flag_id: str
+    ) -> None:
+        scenario_id = self._activate(client, admin_auth, open_flag_id)
+        response = client.patch(
+            f"/api/v1/admin/scenarios/{scenario_id}/ground-truth",
+            json={"narrative": "ok", "uncertainty": "tampered"},
+            headers=admin_auth,
+        )
+        assert response.status_code == 409
+
+    def test_regenerate_narrative_replaces_only_the_narrative(
+        self, client: TestClient, admin_auth: dict[str, str], open_flag_id: str
+    ) -> None:
+        scenario_id = self._activate(client, admin_auth, open_flag_id)
+        self._script(client, "A brand new story.")
+
+        response = client.post(
+            f"/api/v1/admin/scenarios/{scenario_id}/regenerate-narrative", headers=admin_auth
+        )
+
+        assert response.status_code == 200
+        truth = response.json()["ground_truth"]
+        assert truth["narrative"] == "A brand new story."
+        assert truth["uncertainty"] == "moderate"
+
+    def test_regenerate_expected_query_stores_a_validated_select(
+        self, client: TestClient, admin_auth: dict[str, str], open_flag_id: str
+    ) -> None:
+        scenario_id = self._activate(client, admin_auth, open_flag_id)
+        self._script(client, "```sql\nSELECT 1 AS one;\n```")
+
+        response = client.post(
+            f"/api/v1/admin/scenarios/{scenario_id}/regenerate-expected-query",
+            headers=admin_auth,
+        )
+
+        assert response.status_code == 200
+        assert response.json()["ground_truth"]["expected_query"] == "SELECT 1 AS one"
+
+    @pytest.mark.parametrize("action", ["regenerate-narrative", "regenerate-expected-query"])
+    def test_unknown_scenario_returns_404(
+        self, client: TestClient, admin_auth: dict[str, str], action: str
+    ) -> None:
+        self._script(client, "unused")
+        response = client.post(
+            f"/api/v1/admin/scenarios/{uuid.uuid4()}/{action}", headers=admin_auth
+        )
+        assert response.status_code == 404
+
+    @pytest.mark.parametrize("action", ["regenerate-narrative", "regenerate-expected-query"])
+    def test_a_cancelled_scenario_returns_409(
+        self, client: TestClient, admin_auth: dict[str, str], open_flag_id: str, action: str
+    ) -> None:
+        scenario_id = self._activate(client, admin_auth, open_flag_id)
+        client.post(f"/api/v1/admin/scenarios/{scenario_id}/cancel", headers=admin_auth)
+        self._script(client, "unused")
+        response = client.post(
+            f"/api/v1/admin/scenarios/{scenario_id}/{action}", headers=admin_auth
+        )
+        assert response.status_code == 409
+
+    @pytest.mark.parametrize("action", ["regenerate-narrative", "regenerate-expected-query"])
+    def test_a_failed_generation_returns_502_and_changes_nothing(
+        self, client: TestClient, admin_auth: dict[str, str], open_flag_id: str, action: str
+    ) -> None:
+        scenario_id = self._activate(client, admin_auth, open_flag_id)
+        client.patch(
+            f"/api/v1/admin/scenarios/{scenario_id}/ground-truth",
+            json={"narrative": "Mine", "expected_query": "SELECT 7"},
+            headers=admin_auth,
+        )
+        self._script(client, ClaudeAPIError("down"), ClaudeAPIError("down"))
+
+        response = client.post(
+            f"/api/v1/admin/scenarios/{scenario_id}/{action}", headers=admin_auth
+        )
+
+        assert response.status_code == 502
+        truth = client.get(
+            f"/api/v1/admin/scenarios/{scenario_id}", headers=admin_auth
+        ).json()["ground_truth"]
+        assert truth["narrative"] == "Mine"
+        assert truth["expected_query"] == "SELECT 7"
+
+    @pytest.mark.parametrize("action", ["regenerate-narrative", "regenerate-expected-query"])
+    def test_returns_503_when_no_claude_client_is_configured(
+        self, client: TestClient, admin_auth: dict[str, str], open_flag_id: str, action: str
+    ) -> None:
+        scenario_id = self._activate(client, admin_auth, open_flag_id)
+        client.app.state.claude_client = None
+        response = client.post(
+            f"/api/v1/admin/scenarios/{scenario_id}/{action}", headers=admin_auth
+        )
+        assert response.status_code == 503
+
+
 class TestActivateScenario:
     def test_activate_before_approve_returns_409(
         self, client: TestClient, admin_auth: dict[str, str], open_flag_id: str
@@ -691,6 +825,27 @@ class TestActivateScenario:
 
 
 class TestCancelScenario:
+    def test_an_active_scenario_can_be_removed_and_becomes_cancelled(
+        self, client: TestClient, admin_auth: dict[str, str], open_flag_id: str
+    ) -> None:
+        created = client.post(
+            "/api/v1/admin/scenarios", json=_create_payload(open_flag_id), headers=admin_auth
+        ).json()
+        client.patch(
+            f"/api/v1/admin/scenarios/{created['id']}/ground-truth",
+            json=_complete_ground_truth_payload(),
+            headers=admin_auth,
+        )
+        client.post(f"/api/v1/admin/scenarios/{created['id']}/approve", headers=admin_auth)
+        client.post(f"/api/v1/admin/scenarios/{created['id']}/activate", headers=admin_auth)
+
+        response = client.post(
+            f"/api/v1/admin/scenarios/{created['id']}/cancel", headers=admin_auth
+        )
+
+        assert response.status_code == 200
+        assert response.json()["status"] == "cancelled"
+
     def test_cancel_from_draft(
         self, client: TestClient, admin_auth: dict[str, str], open_flag_id: str
     ) -> None:
