@@ -69,7 +69,7 @@ export function AppSidebar({ role }: { role?: string | null }) {
       </SidebarContent>
 
       <SidebarFooter>
-        <NavUser />
+        <NavUser role={role} />
       </SidebarFooter>
       <SidebarRail />
     </Sidebar>

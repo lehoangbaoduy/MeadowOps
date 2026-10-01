@@ -12,6 +12,8 @@ import { SidebarTrigger } from "@/components/ui/sidebar";
 import { ThemeToggle } from "@/components/theme-toggle";
 import { CustomizerButton } from "@/components/theme-customizer";
 import { NotificationsMenu } from "@/components/notifications-menu";
+import { clearAllDraftBuffers } from "@/app/(app)/chat/composer-draft";
+import { roleDetail, roleLabel } from "@/lib/role-label";
 import { Button } from "@/components/ui/button";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import {
@@ -54,7 +56,7 @@ function useBreadcrumb() {
   );
 }
 
-export function AppHeader() {
+export function AppHeader({ role }: { role: string | null }) {
   const crumbs = useBreadcrumb();
   const router = useRouter();
   const isMac = useIsMac();
@@ -129,7 +131,7 @@ export function AppHeader() {
         <ThemeToggle />
         <CustomizerButton />
         <div className="mx-1 h-6 w-px shrink-0 self-center bg-border" />
-        <UserMenu />
+        <UserMenu role={role} />
       </div>
 
       <CommandDialog open={open} onOpenChange={setOpen}>
@@ -170,27 +172,39 @@ export function AppHeader() {
   );
 }
 
-function UserMenu() {
+function UserMenu({ role }: { role: string | null }) {
+  const router = useRouter();
+  const label = roleLabel(role);
+  const initial = label.charAt(0);
+
+  // Unit 39: "Log out" used to be a plain link to /login, which never ended the
+  // session - the middleware just bounced the still-signed-in user straight
+  // back to the dashboard. Same teardown as the sidebar's NavUser.
+  async function handleLogOut() {
+    clearAllDraftBuffers();
+    await fetch("/api/logout", { method: "POST" });
+    router.push("/login");
+    router.refresh();
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" className="h-9 gap-2 px-1.5">
           <Avatar className="size-7">
-            <AvatarFallback>B</AvatarFallback>
+            <AvatarFallback>{initial}</AvatarFallback>
           </Avatar>
-          <span className="hidden text-sm font-medium lg:inline">Builder</span>
+          <span className="hidden text-sm font-medium lg:inline">{label}</span>
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-64">
         <DropdownMenuLabel className="flex items-center gap-2">
           <Avatar className="size-8 shrink-0">
-            <AvatarFallback>B</AvatarFallback>
+            <AvatarFallback>{initial}</AvatarFallback>
           </Avatar>
           <div className="grid min-w-0">
-            <span className="truncate text-sm font-medium">Builder</span>
-            <span className="truncate text-xs text-muted-foreground">
-              Shared bearer-token access (PRD 8.4)
-            </span>
+            <span className="truncate text-sm font-medium">{label}</span>
+            <span className="truncate text-xs text-muted-foreground">{roleDetail(role)}</span>
           </div>
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
@@ -202,10 +216,8 @@ function UserMenu() {
           </DropdownMenuItem>
         </DropdownMenuGroup>
         <DropdownMenuSeparator />
-        <DropdownMenuItem asChild>
-          <Link href="/login">
-            <IconLogout className="size-4" /> Log out
-          </Link>
+        <DropdownMenuItem onClick={handleLogOut}>
+          <IconLogout className="size-4" /> Log out
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

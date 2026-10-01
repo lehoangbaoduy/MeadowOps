@@ -29,8 +29,11 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 import { clearAllDraftBuffers } from "@/app/(app)/chat/composer-draft";
+import { roleDetail, roleLabel } from "@/lib/role-label";
 
-export function NavUser() {
+export function NavUser({ role }: { role?: string | null }) {
+  const label = roleLabel(role);
+  const initial = label.charAt(0);
   const { isMobile } = useSidebar();
   const { resolvedTheme, setTheme } = useTheme();
   const router = useRouter();
@@ -56,13 +59,11 @@ export function NavUser() {
               className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground"
             >
               <Avatar className="size-8 rounded-lg">
-                <AvatarFallback className="rounded-lg">B</AvatarFallback>
+                <AvatarFallback className="rounded-lg">{initial}</AvatarFallback>
               </Avatar>
               <div className="grid flex-1 text-left leading-tight">
-                <span className="truncate text-sm font-medium">Builder</span>
-                <span className="truncate text-xs text-muted-foreground">
-                  Shared bearer-token access
-                </span>
+                <span className="truncate text-sm font-medium">{label}</span>
+                <span className="truncate text-xs text-muted-foreground">{roleDetail(role)}</span>
               </div>
               <IconDotsVertical className="ml-auto size-4 text-muted-foreground" />
             </SidebarMenuButton>
@@ -76,13 +77,11 @@ export function NavUser() {
             <DropdownMenuLabel className="p-0 font-normal">
               <div className="flex items-center gap-2 px-1 py-1.5">
                 <Avatar className="size-8 rounded-lg">
-                  <AvatarFallback className="rounded-lg">B</AvatarFallback>
+                  <AvatarFallback className="rounded-lg">{initial}</AvatarFallback>
                 </Avatar>
                 <div className="grid flex-1 leading-tight">
-                  <span className="truncate text-sm font-medium">Builder</span>
-                  <span className="truncate text-xs text-muted-foreground">
-                    Shared bearer-token access (PRD 8.4)
-                  </span>
+                  <span className="truncate text-sm font-medium">{label}</span>
+                  <span className="truncate text-xs text-muted-foreground">{roleDetail(role)}</span>
                 </div>
               </div>
             </DropdownMenuLabel>

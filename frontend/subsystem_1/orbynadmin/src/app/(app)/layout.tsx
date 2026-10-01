@@ -14,7 +14,7 @@ export default async function AppLayout({
       <SidebarProvider>
         <AppSidebar role={role} />
         <SidebarInset className="min-w-0">
-          <AppHeader />
+          <AppHeader role={role} />
           <main className="app-main min-w-0 flex-1 p-4 md:p-6">{children}</main>
         </SidebarInset>
         <ThemeCustomizer />
